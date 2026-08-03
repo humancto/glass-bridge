@@ -1,0 +1,20 @@
+[package]
+name = "agx-visual"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Bounded visual-codec interface and QR/PNG baseline for GlassBridge"
+publish = false
+
+[dependencies]
+image.workspace = true
+qrcode.workspace = true
+quircs.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+agx-core = { path = "../agx-core" }
+
+[lints]
+workspace = true

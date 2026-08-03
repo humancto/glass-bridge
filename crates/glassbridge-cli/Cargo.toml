@@ -13,9 +13,11 @@ path = "src/main.rs"
 
 [dependencies]
 agx-core = { path = "../agx-core" }
+agx-visual = { path = "../agx-visual" }
 anyhow.workspace = true
 clap.workspace = true
 getrandom.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [lints]

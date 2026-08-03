@@ -1,23 +1,25 @@
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use agx_core::{
-    ChannelConfig, Direction, EnvelopeRequest, Policy, PolicyState, create_signed_envelope,
-    decode_frames, encode_frames, generate_signing_key, import_authorized, key_id,
-    signing_key_from_bytes, simulate_channel, verify_receipt, verify_signed_envelope,
+    ChannelConfig, Direction, EnvelopeRequest, MAX_OPTICAL_FRAMES, Policy, PolicyState,
+    create_signed_envelope, decode_frames, encode_frames, generate_signing_key, import_authorized,
+    key_id, signing_key_from_bytes, simulate_channel, verify_receipt, verify_signed_envelope,
     verifying_key_from_bytes,
 };
+use agx_visual::{MAX_PNG_BYTES, QrEcc, QrPngCodec, VisualCodec};
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 
 #[derive(Debug, Parser)]
 #[command(
     name = "glassbridge",
     version,
     about = "GlassBridge / AGX research prototype",
-    long_about = "Create and verify signed AGX envelopes, exercise the bounded lossy-frame loopback, and demonstrate quarantine/import receipts. Not a production cross-domain solution."
+    long_about = "Create and verify signed AGX envelopes, exercise bounded lossy transport, render/decode real QR PNG frames, and demonstrate policy-controlled quarantine/import receipts. Not a production cross-domain solution."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -91,6 +93,51 @@ enum Command {
         #[arg(long, default_value_t = 42)]
         seed: u64,
     },
+    /// Render an AGX file as a directory of byte-exact QR/PNG transport frames.
+    QrExport {
+        #[arg(long)]
+        envelope: PathBuf,
+        #[arg(long)]
+        output_dir: PathBuf,
+        #[arg(long, default_value_t = 512)]
+        symbol_size: usize,
+        #[arg(long)]
+        frames: Option<usize>,
+        #[arg(long, value_enum, default_value_t = CliQrEcc::Medium)]
+        ecc: CliQrEcc,
+        #[arg(long, default_value_t = 4)]
+        module_pixels: u32,
+    },
+    /// Decode QR/PNG transport frames and reconstruct the original AGX file.
+    QrDecode {
+        #[arg(long)]
+        input_dir: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Prove envelope -> lossy channel -> QR PNG -> decoder -> envelope recovery.
+    QrLoopback {
+        #[arg(long)]
+        envelope: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        frames_dir: PathBuf,
+        #[arg(long, default_value_t = 512)]
+        symbol_size: usize,
+        #[arg(long, default_value_t = 25)]
+        loss: u8,
+        #[arg(long, default_value_t = 3)]
+        corruption: u8,
+        #[arg(long, default_value_t = 5)]
+        duplicates: u8,
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+        #[arg(long, value_enum, default_value_t = CliQrEcc::Medium)]
+        ecc: CliQrEcc,
+        #[arg(long, default_value_t = 4)]
+        module_pixels: u32,
+    },
     /// Verify an envelope, quarantine it, and optionally approve atomic import.
     Receive {
         #[arg(long)]
@@ -116,6 +163,14 @@ enum CliDirection {
     Outbound,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CliQrEcc {
+    Low,
+    Medium,
+    Quartile,
+    High,
+}
+
 impl From<CliDirection> for Direction {
     fn from(value: CliDirection) -> Self {
         match value {
@@ -125,6 +180,18 @@ impl From<CliDirection> for Direction {
     }
 }
 
+impl From<CliQrEcc> for QrEcc {
+    fn from(value: CliQrEcc) -> Self {
+        match value {
+            CliQrEcc::Low => Self::Low,
+            CliQrEcc::Medium => Self::Medium,
+            CliQrEcc::Quartile => Self::Quartile,
+            CliQrEcc::High => Self::High,
+        }
+    }
+}
+
+#[allow(clippy::too_many_lines)] // CLI dispatch stays explicit and auditable.
 fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Demo {
@@ -178,6 +245,47 @@ fn main() -> Result<()> {
                 duplicate_percent: duplicates,
                 seed,
             },
+        ),
+        Command::QrExport {
+            envelope,
+            output_dir,
+            symbol_size,
+            frames,
+            ecc,
+            module_pixels,
+        } => qr_export(
+            &envelope,
+            &output_dir,
+            symbol_size,
+            frames,
+            ecc.into(),
+            module_pixels,
+        ),
+        Command::QrDecode { input_dir, output } => qr_decode(&input_dir, &output),
+        Command::QrLoopback {
+            envelope,
+            output,
+            frames_dir,
+            symbol_size,
+            loss,
+            corruption,
+            duplicates,
+            seed,
+            ecc,
+            module_pixels,
+        } => qr_loopback(
+            &envelope,
+            &output,
+            &frames_dir,
+            symbol_size,
+            ChannelConfig {
+                loss_percent: loss,
+                corruption_percent: corruption,
+                duplicate_percent: duplicates,
+                seed,
+            },
+            ecc.into(),
+            module_pixels,
         ),
         Command::Receive {
             envelope,
@@ -433,6 +541,308 @@ fn loopback(
         decoded.rank, decoded.source_count, decoded.rejected_frames
     );
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct QrExportIndex {
+    schema: &'static str,
+    codec: &'static str,
+    error_correction: &'static str,
+    module_pixels: u32,
+    session_id: String,
+    envelope_bytes: usize,
+    source_symbols: usize,
+    symbol_bytes: usize,
+    rendered_frames: usize,
+    png_bytes: usize,
+    minimum_qr_version: Option<i16>,
+    maximum_qr_version: Option<i16>,
+    image_width: Option<u32>,
+    image_height: Option<u32>,
+}
+
+#[derive(Debug)]
+struct QrRenderStats {
+    rendered: usize,
+    png_bytes: usize,
+    minimum_version: Option<i16>,
+    maximum_version: Option<i16>,
+    width: Option<u32>,
+    height: Option<u32>,
+}
+
+#[derive(Debug)]
+struct QrReadStats {
+    images: usize,
+    decoded: usize,
+    rejected: usize,
+    minimum_version: Option<usize>,
+    maximum_version: Option<usize>,
+}
+
+fn qr_export(
+    envelope_path: &Path,
+    output_dir: &Path,
+    symbol_size: usize,
+    frame_count: Option<usize>,
+    ecc: QrEcc,
+    module_pixels: u32,
+) -> Result<()> {
+    let envelope = fs::read(envelope_path)
+        .with_context(|| format!("read envelope {}", envelope_path.display()))?;
+    let session_id = random_session_id()?;
+    let encoded = encode_frames(&envelope, session_id, symbol_size, frame_count)?;
+    let codec = QrPngCodec::new(ecc, module_pixels)?;
+    create_new_directory(output_dir)?;
+    let render = render_qr_frames(output_dir, &encoded.frames, codec)?;
+    let index = QrExportIndex {
+        schema: "agx-qr-export/1",
+        codec: codec.id(),
+        error_correction: codec.error_correction().label(),
+        module_pixels: codec.module_pixels(),
+        session_id: hex_string(&session_id),
+        envelope_bytes: envelope.len(),
+        source_symbols: encoded.source_count,
+        symbol_bytes: encoded.symbol_size,
+        rendered_frames: render.rendered,
+        png_bytes: render.png_bytes,
+        minimum_qr_version: render.minimum_version,
+        maximum_qr_version: render.maximum_version,
+        image_width: render.width,
+        image_height: render.height,
+    };
+    write_new(
+        &output_dir.join("index.json"),
+        &serde_json::to_vec_pretty(&index)?,
+    )?;
+    println!("QR EXPORT: PASS");
+    println!("  frame directory:   {}", output_dir.display());
+    println!("  codec:             {}", codec.id());
+    println!("  error correction:  {}", codec.error_correction().label());
+    println!("  source symbols:    {}", encoded.source_count);
+    println!("  QR frames:         {}", render.rendered);
+    println!("  PNG bytes:         {}", render.png_bytes);
+    if let (Some(minimum), Some(maximum)) = (render.minimum_version, render.maximum_version) {
+        println!("  QR versions:       {minimum}..={maximum}");
+    }
+    Ok(())
+}
+
+fn qr_decode(input_dir: &Path, output: &Path) -> Result<()> {
+    let codec = QrPngCodec::new(QrEcc::Medium, 4)?;
+    let (frames, images) = read_qr_frames(input_dir, codec)?;
+    let decoded = decode_frames(&frames)?;
+    write_new(output, &decoded.bytes)?;
+    println!("QR DECODE: PASS");
+    println!("  frame directory:   {}", input_dir.display());
+    println!("  images found:      {}", images.images);
+    println!("  images decoded:    {}", images.decoded);
+    println!("  images rejected:   {}", images.rejected);
+    println!(
+        "  transport rank:    {}/{}",
+        decoded.rank, decoded.source_count
+    );
+    println!("  transport rejected:{}", decoded.rejected_frames);
+    println!("  recovered:         {}", output.display());
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn qr_loopback(
+    envelope_path: &Path,
+    output: &Path,
+    frames_dir: &Path,
+    symbol_size: usize,
+    channel: ChannelConfig,
+    ecc: QrEcc,
+    module_pixels: u32,
+) -> Result<()> {
+    let envelope = fs::read(envelope_path)
+        .with_context(|| format!("read envelope {}", envelope_path.display()))?;
+    let session_id = random_session_id()?;
+    let encoded = encode_frames(&envelope, session_id, symbol_size, None)?;
+    let (delivered, channel_stats) = simulate_channel(&encoded.frames, channel)?;
+    let codec = QrPngCodec::new(ecc, module_pixels)?;
+    create_new_directory(frames_dir)?;
+    let render = render_qr_frames(frames_dir, &delivered, codec)?;
+    let index = QrExportIndex {
+        schema: "agx-qr-export/1",
+        codec: codec.id(),
+        error_correction: codec.error_correction().label(),
+        module_pixels: codec.module_pixels(),
+        session_id: hex_string(&session_id),
+        envelope_bytes: envelope.len(),
+        source_symbols: encoded.source_count,
+        symbol_bytes: encoded.symbol_size,
+        rendered_frames: render.rendered,
+        png_bytes: render.png_bytes,
+        minimum_qr_version: render.minimum_version,
+        maximum_qr_version: render.maximum_version,
+        image_width: render.width,
+        image_height: render.height,
+    };
+    write_new(
+        &frames_dir.join("index.json"),
+        &serde_json::to_vec_pretty(&index)?,
+    )?;
+
+    let (frames, images) = read_qr_frames(frames_dir, codec)?;
+    let decoded = decode_frames(&frames)?;
+    if decoded.bytes != envelope {
+        bail!("QR-recovered envelope differs from sender envelope");
+    }
+    write_new(output, &decoded.bytes)?;
+    println!("QR OPTICAL LOOPBACK: PASS");
+    println!("  codec:              {}", codec.id());
+    println!("  frame directory:    {}", frames_dir.display());
+    println!("  envelope bytes:     {}", envelope.len());
+    println!("  source symbols:     {}", encoded.source_count);
+    println!("  frames emitted:     {}", channel_stats.emitted);
+    println!("  frames dropped:     {}", channel_stats.dropped);
+    println!("  frames corrupted:   {}", channel_stats.corrupted);
+    println!("  frames duplicated:  {}", channel_stats.duplicated);
+    println!("  QR images decoded:  {}", images.decoded);
+    println!("  QR images rejected: {}", images.rejected);
+    if let (Some(minimum), Some(maximum)) = (images.minimum_version, images.maximum_version) {
+        println!("  detected versions:  {minimum}..={maximum}");
+    }
+    println!(
+        "  decoder rank:       {}/{}",
+        decoded.rank, decoded.source_count
+    );
+    println!("  CRC frames rejected:{}", decoded.rejected_frames);
+    println!("  recovered envelope: {}", output.display());
+    Ok(())
+}
+
+fn create_new_directory(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
+    }
+    fs::create_dir(path).with_context(|| format!("create new directory {}", path.display()))?;
+    Ok(())
+}
+
+fn render_qr_frames(
+    output_dir: &Path,
+    frames: &[Vec<u8>],
+    codec: QrPngCodec,
+) -> Result<QrRenderStats> {
+    if frames.len() > MAX_OPTICAL_FRAMES {
+        bail!("frame set exceeds configured limit");
+    }
+    let mut stats = QrRenderStats {
+        rendered: 0,
+        png_bytes: 0,
+        minimum_version: None,
+        maximum_version: None,
+        width: None,
+        height: None,
+    };
+    for (index, frame) in frames.iter().enumerate() {
+        let rendered = codec
+            .encode(frame)
+            .with_context(|| format!("render optical frame {index}"))?;
+        let path = output_dir.join(format!("frame-{index:06}.png"));
+        write_new(&path, &rendered.png)?;
+        stats.rendered += 1;
+        stats.png_bytes = stats
+            .png_bytes
+            .checked_add(rendered.png.len())
+            .context("PNG byte count overflow")?;
+        stats.minimum_version = Some(
+            stats
+                .minimum_version
+                .map_or(rendered.qr_version, |value| value.min(rendered.qr_version)),
+        );
+        stats.maximum_version = Some(
+            stats
+                .maximum_version
+                .map_or(rendered.qr_version, |value| value.max(rendered.qr_version)),
+        );
+        stats.width.get_or_insert(rendered.width);
+        stats.height.get_or_insert(rendered.height);
+    }
+    Ok(stats)
+}
+
+fn read_qr_frames(input_dir: &Path, codec: QrPngCodec) -> Result<(Vec<Vec<u8>>, QrReadStats)> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(input_dir)
+        .with_context(|| format!("read frame directory {}", input_dir.display()))?
+    {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        if !path
+            .extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("png"))
+        {
+            continue;
+        }
+        paths.push(path);
+        if paths.len() > MAX_OPTICAL_FRAMES {
+            bail!("frame directory exceeds configured file-count limit");
+        }
+    }
+    paths.sort_unstable();
+
+    let mut frames = Vec::with_capacity(paths.len());
+    let mut stats = QrReadStats {
+        images: paths.len(),
+        decoded: 0,
+        rejected: 0,
+        minimum_version: None,
+        maximum_version: None,
+    };
+    for path in paths {
+        let Some(artifact) = read_bounded(&path, MAX_PNG_BYTES)? else {
+            stats.rejected += 1;
+            continue;
+        };
+        match codec.decode(&artifact) {
+            Ok(decoded) => {
+                stats.minimum_version = Some(
+                    stats
+                        .minimum_version
+                        .map_or(decoded.qr_version, |value| value.min(decoded.qr_version)),
+                );
+                stats.maximum_version = Some(
+                    stats
+                        .maximum_version
+                        .map_or(decoded.qr_version, |value| value.max(decoded.qr_version)),
+                );
+                stats.decoded += 1;
+                frames.push(decoded.bytes);
+            }
+            Err(_) => stats.rejected += 1,
+        }
+    }
+    Ok((frames, stats))
+}
+
+fn read_bounded(path: &Path, limit: usize) -> Result<Option<Vec<u8>>> {
+    let byte_limit = u64::try_from(limit)
+        .context("convert read limit")?
+        .checked_add(1)
+        .context("read limit overflow")?;
+    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut bytes = Vec::new();
+    file.take(byte_limit)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("read bounded image {}", path.display()))?;
+    Ok((bytes.len() <= limit).then_some(bytes))
+}
+
+fn random_session_id() -> Result<[u8; 16]> {
+    let mut session_id = [0_u8; 16];
+    getrandom::fill(&mut session_id).context("generate optical session id")?;
+    Ok(session_id)
 }
 
 fn receive(
