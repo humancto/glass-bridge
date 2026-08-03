@@ -10,6 +10,7 @@ authors = ["HumanCTO"]
 
 [workspace.dependencies]
 anyhow = "1.0.104"
+base64 = "0.22.1"
 clap = { version = "4.6.5", features = ["derive"] }
 coset = "0.4.2"
 crc32fast = "1.5.0"

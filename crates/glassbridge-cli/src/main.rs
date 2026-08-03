@@ -9,12 +9,17 @@ use agx_core::{
     key_id, signing_key_from_bytes, simulate_channel, verify_receipt, verify_signed_envelope,
     verifying_key_from_bytes,
 };
-use agx_visual::{MAX_PNG_BYTES, QrEcc, QrPngCodec, VisualCodec};
+use agx_visual::{MAX_PNG_BYTES, MAX_QR_FRAME_BYTES, QrEcc, QrPngCodec, VisualCodec};
 use anyhow::{Context, Result, bail};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
 mod video;
+
+const DEFAULT_RECEIVER_URL: &str = "https://humancto.github.io/glass-bridge/receive.html";
+const WEB_FRAME_PREFIX: &str = "AGF1B64:";
+const WEB_QR_CODEC_ID: &str = "qr/png+agf-base64url-v1";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -49,6 +54,8 @@ enum Command {
         fps: u8,
         #[arg(long, default_value_t = 24)]
         frames: usize,
+        #[arg(long, default_value = DEFAULT_RECEIVER_URL)]
+        receiver_url: String,
     },
     /// Generate a raw 32-byte Ed25519 secret/public key pair.
     Keygen {
@@ -276,7 +283,8 @@ fn main() -> Result<()> {
             output_dir,
             fps,
             frames,
-        } => screen_demo(&output_dir, fps, frames),
+            receiver_url,
+        } => screen_demo(&output_dir, fps, frames, &receiver_url),
         Command::Keygen { secret, public } => keygen(&secret, &public),
         Command::Pack {
             input,
@@ -593,13 +601,14 @@ fn demo(base: &Path, loss: u8, corruption: u8, duplicates: u8) -> Result<()> {
 }
 
 #[allow(clippy::too_many_lines)] // The bundle keeps one coherent, reviewable demo fixture.
-fn screen_demo(base: &Path, fps: u8, frame_count: usize) -> Result<()> {
+fn screen_demo(base: &Path, fps: u8, frame_count: usize, receiver_url: &str) -> Result<()> {
     if !(1..=10).contains(&fps) {
         bail!("screen demo fps must be between 1 and 10");
     }
     if !(1..=600).contains(&frame_count) {
         bail!("screen demo frame count must be between 1 and 600");
     }
+    validate_receiver_url(receiver_url)?;
     create_new_directory(base)?;
     let base = fs::canonicalize(base)?;
     let now = unix_now()?;
@@ -662,10 +671,21 @@ fn screen_demo(base: &Path, fps: u8, frame_count: usize) -> Result<()> {
     let frames_dir = base.join("frames");
     fs::create_dir(&frames_dir)?;
     let codec = QrPngCodec::new(QrEcc::Medium, 4)?;
-    let render = render_qr_frames(&frames_dir, &encoded.frames, codec)?;
+    let web_frames = encoded
+        .frames
+        .iter()
+        .map(|frame| wrap_web_frame(frame))
+        .collect::<Vec<_>>();
+    let render = render_qr_frames(&frames_dir, &web_frames, codec)?;
+
+    let pairing_url = pairing_url(receiver_url, &sender.verifying_key().to_bytes());
+    let pairing_qr = codec
+        .encode(pairing_url.as_bytes())
+        .context("render phone receiver pairing QR")?;
+    write_new(&base.join("pairing.png"), &pairing_qr.png)?;
     let index = QrExportIndex {
         schema: "agx-qr-export/1",
-        codec: codec.id(),
+        codec: WEB_QR_CODEC_ID,
         error_correction: codec.error_correction().label(),
         module_pixels: codec.module_pixels(),
         session_id: hex_string(&session_id),
@@ -685,13 +705,21 @@ fn screen_demo(base: &Path, fps: u8, frame_count: usize) -> Result<()> {
     )?;
 
     let receive_command = receive_demo_command(&base);
-    let player = screen_demo_html(render.rendered, fps, envelope.len(), &receive_command);
+    let sender_fingerprint = hex_string(&key_id(&sender.verifying_key()));
+    let player = screen_demo_html(
+        render.rendered,
+        fps,
+        envelope.len(),
+        &sender_fingerprint,
+        receiver_url,
+        &receive_command,
+    );
     write_new(&base.join("player.html"), player.as_bytes())?;
     write_new(
         &base.join("NEXT-STEPS.txt"),
         format!(
-            "1. Open {}\n2. Fullscreen the player and start a phone video recording.\n3. Record for at least 15 seconds with the entire QR square visible.\n4. Move the recording to this laptop.\n5. Replace the video placeholder and run:\n\n{receive_command}\n",
-            base.join("player.html").display()
+            "DIRECT PHONE DEMO\n\n1. Open {}\n2. Scan the PAIR PHONE QR with the phone's normal camera.\n3. Confirm sender fingerprint {sender_fingerprint} on the phone and allow camera access.\n4. Aim the phone at the laptop and start the animated transfer.\n5. When VERIFIED appears, save or share the recovered file.\n\nThe payload crosses by light; the receiver page is loaded separately over HTTPS.\n\nPRERECORDED-VIDEO FALLBACK\n\nRecord at least 15 seconds, replace the video placeholder, and run:\n\n{receive_command}\n",
+            base.join("player.html").display(),
         )
         .as_bytes(),
     )?;
@@ -705,6 +733,8 @@ fn screen_demo(base: &Path, fps: u8, frame_count: usize) -> Result<()> {
     println!("  signed envelope:    {} bytes", envelope.len());
     println!("  source symbols:     {}", encoded.source_count);
     println!("  repeating frames:   {} at {} fps", render.rendered, fps);
+    println!("  phone receiver:     {receiver_url}");
+    println!("  sender fingerprint: {sender_fingerprint}");
     println!("  suggested recording:15 seconds");
     println!(
         "\nOpen the player with:\n  open '{}'",
@@ -715,6 +745,50 @@ fn screen_demo(base: &Path, fps: u8, frame_count: usize) -> Result<()> {
         base.join("NEXT-STEPS.txt").display()
     );
     Ok(())
+}
+
+fn validate_receiver_url(value: &str) -> Result<()> {
+    let local = value.starts_with("http://localhost:") || value.starts_with("http://127.0.0.1:");
+    if value.len() > 1_024
+        || value.contains('#')
+        || value.chars().any(|character| {
+            character.is_control() || character.is_whitespace() || "'\"<>".contains(character)
+        })
+        || !(value.starts_with("https://") || local)
+    {
+        bail!(
+            "receiver URL must be HTTPS (or local development HTTP), fragment-free, and at most 1024 bytes"
+        );
+    }
+    Ok(())
+}
+
+fn pairing_url(receiver_url: &str, sender_public_key: &[u8; 32]) -> String {
+    format!(
+        "{receiver_url}#v=1&key={}&boundary=demo%2Fphone-laptop",
+        URL_SAFE_NO_PAD.encode(sender_public_key)
+    )
+}
+
+fn wrap_web_frame(frame: &[u8]) -> Vec<u8> {
+    let encoded = URL_SAFE_NO_PAD.encode(frame);
+    let mut wrapped = Vec::with_capacity(WEB_FRAME_PREFIX.len() + encoded.len());
+    wrapped.extend_from_slice(WEB_FRAME_PREFIX.as_bytes());
+    wrapped.extend_from_slice(encoded.as_bytes());
+    wrapped
+}
+
+fn unwrap_web_frame(frame: &[u8]) -> Result<Vec<u8>> {
+    let Some(encoded) = frame.strip_prefix(WEB_FRAME_PREFIX.as_bytes()) else {
+        return Ok(frame.to_vec());
+    };
+    let decoded = URL_SAFE_NO_PAD
+        .decode(encoded)
+        .context("decode browser-safe optical frame")?;
+    if decoded.is_empty() || decoded.len() > MAX_QR_FRAME_BYTES {
+        bail!("browser-safe optical frame exceeds configured limits");
+    }
+    Ok(decoded)
 }
 
 fn receive_demo_command(base: &Path) -> String {
@@ -747,6 +821,8 @@ fn screen_demo_html(
     frame_count: usize,
     fps: u8,
     envelope_bytes: usize,
+    sender_fingerprint: &str,
+    receiver_url: &str,
     receive_command: &str,
 ) -> String {
     const TEMPLATE: &str = r#"<!doctype html>
@@ -780,19 +856,21 @@ fn screen_demo_html(
 </head>
 <body>
   <section class="stage" id="stage">
-    <header><div class="brand">GLASSBRIDGE <b>/ PHOTONS</b></div><div class="status" id="status">READY · FRAME 1/__FRAME_COUNT__</div></header>
+    <header><div class="brand">GLASSBRIDGE <b>/ LIVE PHONE</b></div><div class="status" id="status">PAIR PHONE · SCAN THIS ONCE</div></header>
     <div class="display"><div class="qr-shell"><img id="qr" alt="GlassBridge optical transport frame"></div><div id="countdown"></div></div>
     <div class="controls">
-      <div><button class="primary" id="start">Start with countdown</button> <button id="fullscreen">Fullscreen</button></div>
+      <div><button id="pair">1 · Pair phone</button> <button class="primary" id="start">2 · Start transfer</button> <button id="fullscreen">Fullscreen</button></div>
       <label>Speed <input id="fps" type="range" min="1" max="10" value="__FPS__"> <b id="fpsValue">__FPS__ FPS</b></label>
-      <div class="status">__ENVELOPE_BYTES__-byte signed envelope · <span id="loops">0 loops</span></div>
+      <div class="status">sender <b>__SENDER_FINGERPRINT__</b> · __ENVELOPE_BYTES__-byte signed envelope · <span id="loops">0 loops</span></div>
     </div>
   </section>
   <section class="details">
-    <h1>Record the light.</h1>
-    <ol><li>Hold your phone steady in landscape with the entire white QR border visible.</li><li>Start video recording, then press “Start with countdown.”</li><li>Record for at least 15 seconds. Avoid glare and autofocus hunting.</li><li>Move the recording to this laptop and run the command below.</li></ol>
+    <h1>Scan. Verify. Download.</h1>
+    <ol><li>Use the phone's normal camera to scan the pairing QR now displayed.</li><li>Confirm that the phone shows sender fingerprint <strong>__SENDER_FINGERPRINT__</strong>, then allow camera access.</li><li>Aim the phone at this screen, then press “2 · Start transfer.”</li><li>Keep the whole white border visible until the phone reports VERIFIED.</li><li>Save or share the recovered file directly from the phone.</li></ol>
+    <p>Receiver: <a href="__RECEIVER_URL__">__RECEIVER_URL__</a>. The receiver page is loaded over HTTPS; the payload itself crosses in the animated QR stream.</p>
+    <h2>Recorded-video diagnostic fallback</h2>
     <pre id="command">__RECEIVE_COMMAND__</pre>
-    <p>This demo tests a real screen → phone camera → recorded-video path. The recording still has to be returned to the laptop for decoding; a live phone receiver is a later adapter.</p>
+    <p>If live scanning fails on a device, record at least 15 seconds and use the command above. That path runs the same signed-envelope verification and policy workflow on the laptop.</p>
   </section>
   <script>
     const total = __FRAME_COUNT__;
@@ -802,14 +880,17 @@ fn screen_demo_html(
     const start = document.getElementById('start'), countdown = document.getElementById('countdown');
     function path(i) { return `frames/frame-${String(i).padStart(6,'0')}.png`; }
     function render() { qr.src = path(index); status.textContent = `PLAYING · FRAME ${index + 1}/${total}`; index++; if (index === total) { index = 0; loops++; document.getElementById('loops').textContent = `${loops} loops`; } }
-    function stop() { if (timer) clearInterval(timer); timer = null; start.textContent = 'Start with countdown'; status.textContent = `PAUSED · NEXT FRAME ${index + 1}/${total}`; }
-    function play() { stop(); render(); timer = setInterval(render, 1000 / Number(fps.value)); start.textContent = 'Pause'; }
-    function begin() { if (timer) { stop(); return; } if (countdownTimer) return; let n = 3; countdown.textContent = n; countdownTimer = setInterval(() => { n--; if (n === 0) { clearInterval(countdownTimer); countdownTimer = null; countdown.textContent = ''; play(); } else countdown.textContent = n; }, 700); }
+    function clearPlayback() { if (timer) clearInterval(timer); timer = null; }
+    function pause() { clearPlayback(); start.textContent = '2 · Start transfer'; status.textContent = `PAUSED · NEXT FRAME ${index + 1}/${total}`; }
+    function play() { clearPlayback(); render(); timer = setInterval(render, 1000 / Number(fps.value)); start.textContent = 'Pause transfer'; }
+    function begin() { if (timer) { pause(); return; } if (countdownTimer) return; let n = 3; countdown.textContent = n; countdownTimer = setInterval(() => { n--; if (n === 0) { clearInterval(countdownTimer); countdownTimer = null; countdown.textContent = ''; play(); } else countdown.textContent = n; }, 700); }
+    function showPairing() { clearPlayback(); qr.src = 'pairing.png'; status.textContent = 'PAIR PHONE · SCAN THIS ONCE'; start.textContent = '2 · Start transfer'; }
     start.addEventListener('click', begin);
+    document.getElementById('pair').addEventListener('click', showPairing);
     fps.addEventListener('input', () => { fpsValue.textContent = `${fps.value} FPS`; if (timer) play(); });
     document.getElementById('fullscreen').addEventListener('click', () => document.getElementById('stage').requestFullscreen());
     document.addEventListener('keydown', event => { if (event.code === 'Space') { event.preventDefault(); begin(); } });
-    qr.src = path(0);
+    showPairing();
   </script>
 </body>
 </html>"#;
@@ -817,6 +898,8 @@ fn screen_demo_html(
         .replace("__FRAME_COUNT__", &frame_count.to_string())
         .replace("__FPS__", &fps.to_string())
         .replace("__ENVELOPE_BYTES__", &envelope_bytes.to_string())
+        .replace("__SENDER_FINGERPRINT__", sender_fingerprint)
+        .replace("__RECEIVER_URL__", &escape_html(receiver_url))
         .replace("__RECEIVE_COMMAND__", &escape_html(receive_command))
 }
 
@@ -1181,6 +1264,10 @@ fn read_qr_frames(input_dir: &Path, codec: QrPngCodec) -> Result<(Vec<Vec<u8>>, 
         };
         match codec.decode(&artifact) {
             Ok(decoded) => {
+                let Ok(transport_frame) = unwrap_web_frame(&decoded.bytes) else {
+                    stats.rejected += 1;
+                    continue;
+                };
                 stats.minimum_version = Some(
                     stats
                         .minimum_version
@@ -1192,7 +1279,7 @@ fn read_qr_frames(input_dir: &Path, codec: QrPngCodec) -> Result<(Vec<Vec<u8>>, 
                         .map_or(decoded.qr_version, |value| value.max(decoded.qr_version)),
                 );
                 stats.decoded += 1;
-                frames.push(decoded.bytes);
+                frames.push(transport_frame);
             }
             Err(_) => stats.rejected += 1,
         }
@@ -1363,13 +1450,34 @@ mod cli_tests {
 
     #[test]
     fn physical_demo_player_is_self_contained_and_resolves_placeholders() {
-        let html = screen_demo_html(24, 4, 1_234, "glassbridge receive <capture>");
-        assert!(html.contains("FRAME 1/24"));
+        let html = screen_demo_html(
+            24,
+            4,
+            1_234,
+            "0123456789abcdef",
+            DEFAULT_RECEIVER_URL,
+            "glassbridge receive <capture>",
+        );
+        assert!(html.contains("PAIR PHONE · SCAN THIS ONCE"));
         assert!(html.contains("value=\"4\""));
         assert!(!html.contains("1_234-byte"));
         assert!(html.contains("1234-byte signed envelope"));
+        assert!(html.contains("0123456789abcdef"));
+        assert!(html.contains(DEFAULT_RECEIVER_URL));
         assert!(html.contains("glassbridge receive &lt;capture&gt;"));
         assert!(!html.contains("__FRAME_COUNT__"));
+    }
+
+    #[test]
+    fn browser_frame_wrapper_round_trips_and_pairing_pins_key() {
+        let frame = b"AGF1\0binary\xffframe";
+        assert_eq!(unwrap_web_frame(&wrap_web_frame(frame)).unwrap(), frame);
+        let url = pairing_url(DEFAULT_RECEIVER_URL, &[7_u8; 32]);
+        assert!(url.starts_with(DEFAULT_RECEIVER_URL));
+        assert!(url.contains("#v=1&key="));
+        assert!(url.ends_with("&boundary=demo%2Fphone-laptop"));
+        assert!(validate_receiver_url(DEFAULT_RECEIVER_URL).is_ok());
+        assert!(validate_receiver_url("http://not-secure.example/receive").is_err());
     }
 
     #[test]

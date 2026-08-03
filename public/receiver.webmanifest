@@ -1,0 +1,18 @@
+{
+  "name": "GlassBridge Optical Receiver",
+  "short_name": "GlassBridge",
+  "description": "Receive and verify signed AGX transfers through a camera.",
+  "start_url": "./receive.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#060a0d",
+  "theme_color": "#08100e",
+  "icons": [
+    {
+      "src": "./glassbridge-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

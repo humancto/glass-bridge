@@ -132,6 +132,7 @@ export default function Home() {
             <span>GlassBridge <b>/ AGX</b></span>
           </a>
           <div className="top-links">
+            <a href="receive.html">Live demo</a>
             <a href="#decision">Decision</a>
             <a href="#architecture">Architecture</a>
             <a href="#backlog">Build plan</a>
@@ -147,8 +148,8 @@ export default function Home() {
               A fast, verifiable optical gateway for controlled data exchange across air-gapped boundaries—without removable media, transient networking, or invisible policy decisions.
             </p>
             <div className="hero-actions">
-              <a className="button button-primary" href="#decision">Read the decision</a>
-              <a className="button button-secondary" href="#backlog">Start the build</a>
+              <a className="button button-primary" href="receive.html">Open phone receiver</a>
+              <a className="button button-secondary" href="#decision">Read the decision</a>
             </div>
             <div className="hero-meta">
               <div><span>Research cut</span><strong>{researchDate}</strong></div>
