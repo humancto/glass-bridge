@@ -28,3 +28,16 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --all-targets --all-features --locked
       - run: cargo run --locked -p glassbridge-cli -- demo --output-dir work/ci-demo
+      - run: ffmpeg -version
+      - run: >-
+          cargo run --locked -p glassbridge-cli -- video-loopback
+          --envelope test-vectors/agx1/valid-envelope.hex
+          --output-dir work/ci-video
+          --frames 10
+          --session-id 474c4153534252494447454d34434931
+          --fps 30
+          --crf 23
+          --scale-percent 100
+          --loss 10
+          --corruption 0
+          --duplicates 0

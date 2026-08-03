@@ -14,6 +14,8 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
+mod video;
+
 #[derive(Debug, Parser)]
 #[command(
     name = "glassbridge",
@@ -137,6 +139,44 @@ enum Command {
         ecc: CliQrEcc,
         #[arg(long, default_value_t = 4)]
         module_pixels: u32,
+    },
+    /// Encode QR frames into H.264 video, extract them, and recover the AGX file.
+    VideoLoopback {
+        #[arg(long)]
+        envelope: PathBuf,
+        #[arg(long)]
+        output_dir: PathBuf,
+        #[arg(long, requires = "boundary")]
+        public_key: Option<PathBuf>,
+        #[arg(long, requires = "public_key")]
+        boundary: Option<String>,
+        #[arg(long, default_value_t = 512)]
+        symbol_size: usize,
+        #[arg(long)]
+        frames: Option<usize>,
+        /// Fixed 16-byte session ID as 32 hex characters for reproducible runs.
+        #[arg(long, value_parser = parse_session_id)]
+        session_id: Option<[u8; 16]>,
+        #[arg(long, default_value_t = 10)]
+        fps: u8,
+        #[arg(long, default_value_t = 23)]
+        crf: u8,
+        #[arg(long, default_value_t = 100)]
+        scale_percent: u8,
+        #[arg(long, default_value_t = 15)]
+        loss: u8,
+        #[arg(long, default_value_t = 2)]
+        corruption: u8,
+        #[arg(long, default_value_t = 3)]
+        duplicates: u8,
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+        #[arg(long, value_enum, default_value_t = CliQrEcc::Medium)]
+        ecc: CliQrEcc,
+        #[arg(long, default_value_t = 4)]
+        module_pixels: u32,
+        #[arg(long, default_value = "ffmpeg")]
+        ffmpeg: PathBuf,
     },
     /// Verify an envelope, quarantine it, and optionally approve atomic import.
     Receive {
@@ -287,6 +327,45 @@ fn main() -> Result<()> {
             ecc.into(),
             module_pixels,
         ),
+        Command::VideoLoopback {
+            envelope,
+            output_dir,
+            public_key,
+            boundary,
+            symbol_size,
+            frames,
+            session_id,
+            fps,
+            crf,
+            scale_percent,
+            loss,
+            corruption,
+            duplicates,
+            seed,
+            ecc,
+            module_pixels,
+            ffmpeg,
+        } => video::loopback(&video::LoopbackConfig {
+            envelope,
+            output_dir,
+            public_key,
+            boundary,
+            symbol_size,
+            frame_count: frames,
+            session_id,
+            fps,
+            crf,
+            scale_percent,
+            channel: ChannelConfig {
+                loss_percent: loss,
+                corruption_percent: corruption,
+                duplicate_percent: duplicates,
+                seed,
+            },
+            ecc: ecc.into(),
+            module_pixels,
+            ffmpeg,
+        }),
         Command::Receive {
             envelope,
             sender_public_key,
@@ -943,4 +1022,17 @@ fn hex_string(bytes: &[u8]) -> String {
         output.push(HEX[(byte & 0x0f) as usize] as char);
     }
     output
+}
+
+fn parse_session_id(value: &str) -> std::result::Result<[u8; 16], String> {
+    if value.len() != 32 {
+        return Err("session ID must contain exactly 32 hexadecimal characters".into());
+    }
+    let mut session_id = [0_u8; 16];
+    for (index, byte) in session_id.iter_mut().enumerate() {
+        let offset = index * 2;
+        *byte = u8::from_str_radix(&value[offset..offset + 2], 16)
+            .map_err(|_| "session ID must contain only hexadecimal characters")?;
+    }
+    Ok(session_id)
 }
