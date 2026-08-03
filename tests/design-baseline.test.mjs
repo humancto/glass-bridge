@@ -4,6 +4,10 @@ import test from "node:test";
 
 const pageUrl = new URL("../app/page.tsx", import.meta.url);
 const indexUrl = new URL("../index.html", import.meta.url);
+const researchDocumentUrl = new URL(
+  "../research/GlassBridge_AGX_PRD.html",
+  import.meta.url,
+);
 
 test("contains the complete public design baseline", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -45,4 +49,15 @@ test("uses product-specific metadata and no starter copy", async () => {
   assert.match(index, /GlassBridge \/ AGX/);
   assert.match(index, /air-gapped boundaries/i);
   assert.doesNotMatch(`${page}\n${index}`, /Your site is taking shape|Starter Project/);
+});
+
+test("exports a self-contained, sanitized research document", async () => {
+  const html = await readFile(researchDocumentUrl, "utf8");
+
+  assert.match(html, /^<!doctype html>/i);
+  assert.match(html, /<style>[\s\S]+<\/style>/i);
+  assert.match(html, /id="threat-model"/);
+  assert.match(html, /id="backlog"/);
+  assert.match(html, /id="sources"/);
+  assert.doesNotMatch(html, /<script|\/@vite\/client|\/Users\//i);
 });
