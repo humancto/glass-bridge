@@ -1,0 +1,39 @@
+; AGX/1 milestone-1 experimental CDDL
+; Deterministic CBOR, definite lengths only.
+
+agx-envelope = {
+  1: "AGX1",
+  2: bstr, ; serialized cose-sign1
+  3: bstr  ; exact payload bytes
+}
+
+cose-sign1 = [
+  protected: bstr, ; encoded { 1: -8, 4: bstr .size 8 }
+  unprotected: {},
+  payload: bstr .cbor agx-manifest,
+  signature: bstr .size 64
+]
+
+agx-manifest = {
+  1: 1,                         ; version
+  2: bstr .size 16,             ; envelope id
+  3: non-empty-tstr,            ; intended boundary
+  4: direction,
+  5: non-empty-tstr,            ; purpose
+  6: non-empty-tstr,            ; policy id
+  7: bstr .size 32,             ; SHA-256(policy id UTF-8)
+  8: uint,                       ; sequence
+  9: uint,                       ; created Unix seconds
+  10: [ agx-object ]             ; exactly one object in milestone 1
+}
+
+agx-object = {
+  1: 1,                         ; object id
+  2: non-empty-tstr,            ; untrusted display name
+  3: non-empty-tstr,            ; media type
+  4: uint,                       ; exact byte length
+  5: bstr .size 32              ; SHA-256(payload)
+}
+
+direction = 1 / 2               ; inbound / outbound
+non-empty-tstr = tstr .size (1..512)

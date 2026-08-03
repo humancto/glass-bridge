@@ -1,0 +1,22 @@
+[package]
+name = "glassbridge-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Runnable CLI for the GlassBridge AGX research prototype"
+publish = false
+
+[[bin]]
+name = "glassbridge"
+path = "src/main.rs"
+
+[dependencies]
+agx-core = { path = "../agx-core" }
+anyhow.workspace = true
+clap.workspace = true
+getrandom.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
