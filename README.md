@@ -19,6 +19,8 @@ Animated QR transfer, fountain coding, and high-density visual channels already 
 
 The repository currently ships a polished, source-backed design review covering the product vision, threat model, security architecture, AGX envelope, transport roadmap, benchmarks, research hypotheses, prior art, risks, and implementation backlog.
 
+[Open the self-contained research document](research/GlassBridge_AGX_PRD.html). It can be downloaded and reviewed locally without installing dependencies or running a server.
+
 Run it locally:
 
 ```bash
