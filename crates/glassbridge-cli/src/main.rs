@@ -41,6 +41,15 @@ enum Command {
         #[arg(long, default_value_t = 10)]
         duplicates: u8,
     },
+    /// Build a fullscreen QR player for an immediate laptop-to-phone camera test.
+    ScreenDemo {
+        #[arg(long, default_value = "work/phone-demo")]
+        output_dir: PathBuf,
+        #[arg(long, default_value_t = 4)]
+        fps: u8,
+        #[arg(long, default_value_t = 24)]
+        frames: usize,
+    },
     /// Generate a raw 32-byte Ed25519 secret/public key pair.
     Keygen {
         #[arg(long)]
@@ -263,6 +272,11 @@ fn main() -> Result<()> {
             corruption,
             duplicates,
         } => demo(&output_dir, loss, corruption, duplicates),
+        Command::ScreenDemo {
+            output_dir,
+            fps,
+            frames,
+        } => screen_demo(&output_dir, fps, frames),
         Command::Keygen { secret, public } => keygen(&secret, &public),
         Command::Pack {
             input,
@@ -576,6 +590,241 @@ fn demo(base: &Path, loss: u8, corruption: u8, duplicates: u8) -> Result<()> {
         receipt.event
     );
     Ok(())
+}
+
+#[allow(clippy::too_many_lines)] // The bundle keeps one coherent, reviewable demo fixture.
+fn screen_demo(base: &Path, fps: u8, frame_count: usize) -> Result<()> {
+    if !(1..=10).contains(&fps) {
+        bail!("screen demo fps must be between 1 and 10");
+    }
+    if !(1..=600).contains(&frame_count) {
+        bail!("screen demo frame count must be between 1 and 600");
+    }
+    create_new_directory(base)?;
+    let base = fs::canonicalize(base)?;
+    let now = unix_now()?;
+    let sender = generate_signing_key().context("generate demo sender key")?;
+    let receiver = generate_signing_key().context("generate demo receiver key")?;
+    write_new(
+        &base.join("sender.public"),
+        &sender.verifying_key().to_bytes(),
+    )?;
+    write_secret(&base.join("receiver.secret"), &receiver.to_bytes())?;
+    write_new(
+        &base.join("receiver.public"),
+        &receiver.verifying_key().to_bytes(),
+    )?;
+
+    let policy = Policy {
+        version: 1,
+        id: "phone-demo/v1".into(),
+        boundary: "demo/phone-laptop".into(),
+        allowed_directions: vec![Direction::Inbound],
+        allowed_purposes: vec!["physical-optical-demo".into()],
+        allowed_media_types: vec!["text/plain".into()],
+        allowed_signer_key_ids: vec![hex_string(&key_id(&sender.verifying_key()))],
+        max_payload_bytes: 64 * 1024,
+        minimum_sequence: 1,
+        require_approval: true,
+    };
+    write_new(
+        &base.join("policy.json"),
+        &serde_json::to_vec_pretty(&policy)?,
+    )?;
+
+    let mut payload = format!(
+        "GlassBridge laptop-to-phone optical demo\ncreated_unix={now}\nIf you recovered this file, real photons crossed the camera boundary.\n"
+    );
+    while payload.len() < 2_048 {
+        payload.push_str("AGX preserves provenance, policy, integrity, and an auditable import decision across this optical link.\n");
+    }
+    payload.truncate(2_048);
+    write_new(&base.join("sample-input.txt"), payload.as_bytes())?;
+    let envelope = create_signed_envelope(
+        &EnvelopeRequest {
+            payload: payload.as_bytes(),
+            boundary: &policy.boundary,
+            direction: Direction::Inbound,
+            purpose: "physical-optical-demo",
+            policy_id: &policy.id,
+            policy_digest: policy.digest()?,
+            display_name: "phone-camera-demo.txt",
+            media_type: "text/plain",
+            sequence: 1,
+            created_unix: now,
+        },
+        &sender,
+    )?;
+    write_new(&base.join("sender-envelope.agx"), &envelope)?;
+
+    let session_id = random_session_id()?;
+    let encoded = encode_frames(&envelope, session_id, 512, Some(frame_count))?;
+    let frames_dir = base.join("frames");
+    fs::create_dir(&frames_dir)?;
+    let codec = QrPngCodec::new(QrEcc::Medium, 4)?;
+    let render = render_qr_frames(&frames_dir, &encoded.frames, codec)?;
+    let index = QrExportIndex {
+        schema: "agx-qr-export/1",
+        codec: codec.id(),
+        error_correction: codec.error_correction().label(),
+        module_pixels: codec.module_pixels(),
+        session_id: hex_string(&session_id),
+        envelope_bytes: envelope.len(),
+        source_symbols: encoded.source_count,
+        symbol_bytes: encoded.symbol_size,
+        rendered_frames: render.rendered,
+        png_bytes: render.png_bytes,
+        minimum_qr_version: render.minimum_version,
+        maximum_qr_version: render.maximum_version,
+        image_width: render.width,
+        image_height: render.height,
+    };
+    write_new(
+        &frames_dir.join("index.json"),
+        &serde_json::to_vec_pretty(&index)?,
+    )?;
+
+    let receive_command = receive_demo_command(&base);
+    let player = screen_demo_html(render.rendered, fps, envelope.len(), &receive_command);
+    write_new(&base.join("player.html"), player.as_bytes())?;
+    write_new(
+        &base.join("NEXT-STEPS.txt"),
+        format!(
+            "1. Open {}\n2. Fullscreen the player and start a phone video recording.\n3. Record for at least 15 seconds with the entire QR square visible.\n4. Move the recording to this laptop.\n5. Replace the video placeholder and run:\n\n{receive_command}\n",
+            base.join("player.html").display()
+        )
+        .as_bytes(),
+    )?;
+
+    println!("PHONE + LAPTOP SCREEN DEMO: READY");
+    println!("  demo directory:     {}", base.display());
+    println!(
+        "  fullscreen player:  {}",
+        base.join("player.html").display()
+    );
+    println!("  signed envelope:    {} bytes", envelope.len());
+    println!("  source symbols:     {}", encoded.source_count);
+    println!("  repeating frames:   {} at {} fps", render.rendered, fps);
+    println!("  suggested recording:15 seconds");
+    println!(
+        "\nOpen the player with:\n  open '{}'",
+        base.join("player.html").display()
+    );
+    println!(
+        "\nAfter recording, follow:\n  {}",
+        base.join("NEXT-STEPS.txt").display()
+    );
+    Ok(())
+}
+
+fn receive_demo_command(base: &Path) -> String {
+    format!(
+        concat!(
+            "cargo run --locked -p glassbridge-cli -- video-receive \\\n",
+            "  --video {} \\\n",
+            "  --output-dir {} \\\n",
+            "  --sender-public-key {} \\\n",
+            "  --receiver-secret-key {} \\\n",
+            "  --policy-file {} \\\n",
+            "  --workspace {} \\\n",
+            "  --boundary demo/phone-laptop \\\n",
+            "  --approve"
+        ),
+        shell_quote(Path::new("/path/to/phone-recording.mov")),
+        shell_quote(&base.join("reception-evidence")),
+        shell_quote(&base.join("sender.public")),
+        shell_quote(&base.join("receiver.secret")),
+        shell_quote(&base.join("policy.json")),
+        shell_quote(&base.join("receiver-workspace")),
+    )
+}
+
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\"'\"'"))
+}
+
+fn screen_demo_html(
+    frame_count: usize,
+    fps: u8,
+    envelope_bytes: usize,
+    receive_command: &str,
+) -> String {
+    const TEMPLATE: &str = r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GlassBridge Physical Optical Demo</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #070b12; color: #e9f3ff; }
+    .stage { min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; padding: 18px; gap: 14px; }
+    header, .controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { font-weight: 800; letter-spacing: .08em; } .brand b { color: #63e6be; }
+    .status { color: #9bb0c7; font-size: 13px; }
+    .display { display: grid; place-items: center; min-height: 0; position: relative; }
+    .qr-shell { background: white; padding: 12px; box-shadow: 0 0 80px rgba(99,230,190,.12); }
+    #qr { display: block; width: min(76vmin, 820px); height: min(76vmin, 820px); image-rendering: pixelated; }
+    #countdown { position: absolute; font: 900 min(22vmin,220px)/1 system-ui; color: #63e6be; text-shadow: 0 8px 40px #000; pointer-events: none; }
+    button { border: 1px solid #2c4057; background: #111b28; color: #fff; border-radius: 9px; padding: 11px 16px; font: inherit; cursor: pointer; }
+    button.primary { background: #0b6b54; border-color: #20a980; }
+    label { color: #9bb0c7; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    input { accent-color: #63e6be; }
+    .details { max-width: 980px; margin: 0 auto; padding: 36px 20px 70px; }
+    .details h1 { font: 700 clamp(28px,5vw,52px)/1.05 system-ui; margin: 0 0 12px; }
+    .details p, .details li { color: #aebfd0; line-height: 1.65; }
+    pre { overflow: auto; padding: 16px; background: #0d1520; border: 1px solid #1f3042; border-radius: 10px; color: #c9ffe9; white-space: pre-wrap; }
+    @media (max-width: 680px) { header, .controls { flex-wrap: wrap; } #qr { width: 84vmin; height: 84vmin; } }
+  </style>
+</head>
+<body>
+  <section class="stage" id="stage">
+    <header><div class="brand">GLASSBRIDGE <b>/ PHOTONS</b></div><div class="status" id="status">READY · FRAME 1/__FRAME_COUNT__</div></header>
+    <div class="display"><div class="qr-shell"><img id="qr" alt="GlassBridge optical transport frame"></div><div id="countdown"></div></div>
+    <div class="controls">
+      <div><button class="primary" id="start">Start with countdown</button> <button id="fullscreen">Fullscreen</button></div>
+      <label>Speed <input id="fps" type="range" min="1" max="10" value="__FPS__"> <b id="fpsValue">__FPS__ FPS</b></label>
+      <div class="status">__ENVELOPE_BYTES__-byte signed envelope · <span id="loops">0 loops</span></div>
+    </div>
+  </section>
+  <section class="details">
+    <h1>Record the light.</h1>
+    <ol><li>Hold your phone steady in landscape with the entire white QR border visible.</li><li>Start video recording, then press “Start with countdown.”</li><li>Record for at least 15 seconds. Avoid glare and autofocus hunting.</li><li>Move the recording to this laptop and run the command below.</li></ol>
+    <pre id="command">__RECEIVE_COMMAND__</pre>
+    <p>This demo tests a real screen → phone camera → recorded-video path. The recording still has to be returned to the laptop for decoding; a live phone receiver is a later adapter.</p>
+  </section>
+  <script>
+    const total = __FRAME_COUNT__;
+    let index = 0, loops = 0, timer = null, countdownTimer = null;
+    const qr = document.getElementById('qr'), status = document.getElementById('status');
+    const fps = document.getElementById('fps'), fpsValue = document.getElementById('fpsValue');
+    const start = document.getElementById('start'), countdown = document.getElementById('countdown');
+    function path(i) { return `frames/frame-${String(i).padStart(6,'0')}.png`; }
+    function render() { qr.src = path(index); status.textContent = `PLAYING · FRAME ${index + 1}/${total}`; index++; if (index === total) { index = 0; loops++; document.getElementById('loops').textContent = `${loops} loops`; } }
+    function stop() { if (timer) clearInterval(timer); timer = null; start.textContent = 'Start with countdown'; status.textContent = `PAUSED · NEXT FRAME ${index + 1}/${total}`; }
+    function play() { stop(); render(); timer = setInterval(render, 1000 / Number(fps.value)); start.textContent = 'Pause'; }
+    function begin() { if (timer) { stop(); return; } if (countdownTimer) return; let n = 3; countdown.textContent = n; countdownTimer = setInterval(() => { n--; if (n === 0) { clearInterval(countdownTimer); countdownTimer = null; countdown.textContent = ''; play(); } else countdown.textContent = n; }, 700); }
+    start.addEventListener('click', begin);
+    fps.addEventListener('input', () => { fpsValue.textContent = `${fps.value} FPS`; if (timer) play(); });
+    document.getElementById('fullscreen').addEventListener('click', () => document.getElementById('stage').requestFullscreen());
+    document.addEventListener('keydown', event => { if (event.code === 'Space') { event.preventDefault(); begin(); } });
+    qr.src = path(0);
+  </script>
+</body>
+</html>"#;
+    TEMPLATE
+        .replace("__FRAME_COUNT__", &frame_count.to_string())
+        .replace("__FPS__", &fps.to_string())
+        .replace("__ENVELOPE_BYTES__", &envelope_bytes.to_string())
+        .replace("__RECEIVE_COMMAND__", &escape_html(receive_command))
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn keygen(secret_path: &Path, public_path: &Path) -> Result<()> {
@@ -1106,4 +1355,29 @@ fn parse_session_id(value: &str) -> std::result::Result<[u8; 16], String> {
             .map_err(|_| "session ID must contain only hexadecimal characters")?;
     }
     Ok(session_id)
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn physical_demo_player_is_self_contained_and_resolves_placeholders() {
+        let html = screen_demo_html(24, 4, 1_234, "glassbridge receive <capture>");
+        assert!(html.contains("FRAME 1/24"));
+        assert!(html.contains("value=\"4\""));
+        assert!(!html.contains("1_234-byte"));
+        assert!(html.contains("1234-byte signed envelope"));
+        assert!(html.contains("glassbridge receive &lt;capture&gt;"));
+        assert!(!html.contains("__FRAME_COUNT__"));
+    }
+
+    #[test]
+    fn parses_fixed_optical_session_identifier() {
+        assert_eq!(
+            parse_session_id("474c4153534252494447454d3444454d").unwrap(),
+            *b"GLASSBRIDGEM4DEM"
+        );
+        assert!(parse_session_id("not-hex").is_err());
+    }
 }
