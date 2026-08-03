@@ -28,6 +28,11 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --all-targets --all-features --locked
       - run: cargo run --locked -p glassbridge-cli -- demo --output-dir work/ci-demo
+      - run: >-
+          cargo run --locked -p glassbridge-cli -- screen-demo
+          --output-dir work/ci-screen-demo
+          --fps 4
+          --frames 24
       - run: sudo apt-get update && sudo apt-get install --yes ffmpeg
       - run: ffmpeg -version
       - run: >-
