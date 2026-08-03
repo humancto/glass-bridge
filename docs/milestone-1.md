@@ -34,6 +34,8 @@ Every run uses fresh sender and receiver keys and writes its evidence under a un
 - Ed25519 signatures in COSE_Sign1 protected headers
 - signed target boundary, direction, purpose, policy identifier, sequence, object length, and digest
 - exact expected-boundary enforcement
+- default-deny policy checks for policy digest, signer, direction, purpose, media type, size, sequence floor, replay, and rollback
+- persistent envelope replay cache and per-boundary/policy/purpose sequence high-water marks
 - CRC rejection before fountain-equation admission
 - rank-based recovery that tolerates dropped, reordered, duplicated, and corrupt frames
 - generated receiver paths; sender display names are retained only as untrusted metadata
@@ -62,8 +64,8 @@ This milestone is not an optical transfer product yet.
 - The repair code is a bounded random linear XOR prototype, not LT, RaptorQ, or a performance claim.
 - Envelope and payload processing are in memory.
 - Raw 32-byte key files are for prototype ergonomics; production key storage and offline trust bundles are not implemented.
-- Policy is signed metadata plus exact boundary checking, not the planned default-deny policy engine.
-- Sequence is not yet backed by a persistent replay/rollback database.
+- Policy files are local unsigned configuration; signed policy distribution, role delegation, quorum, expiration, and rotation are not implemented.
+- Policy-state updates assume a single receiver process; inter-process locking and transactional recovery are not implemented.
 - The quarantine workspace is assumed to be a dedicated directory controlled by the receiver process; hardened component-by-component no-follow traversal remains future work.
 - Crash recovery across the final rename and receipt-write boundary is not yet implemented; the journals expose state but do not automatically repair it.
 - There is no encryption, scanning, CDR, GUI, camera isolation, radio inventory, or hardware one-way guarantee.
@@ -71,4 +73,4 @@ This milestone is not an optical transfer product yet.
 
 ## Next implementation gate
 
-Before physical QR transport, the next gate is to add golden AGX vectors, persistent policy/replay state, explicit denial codes, a serialized AGX-OT frame header specification, and a file/video codec abstraction. That preserves the security contract while transport work begins independently.
+Before physical QR transport, the next gate is to freeze the serialized AGX-OT frame header, add a file/video codec abstraction, and integrate the first real QR encoder/decoder behind it. Golden AGX vectors, persistent policy/replay state, and explicit denial codes are now implemented.

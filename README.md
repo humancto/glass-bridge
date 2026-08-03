@@ -2,7 +2,7 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 1 / pre-alpha. The repository now contains a signed AGX envelope, lossy frame-loopback prototype, bounded receiver, quarantine/import workflow, and signed receipts. It does **not** yet use a screen or camera and must not be used as a production security control.
+> **Project status:** runnable milestone 2 / pre-alpha. The repository now contains a signed AGX envelope, local default-deny policy and replay state, lossy frame-loopback prototype, bounded receiver, quarantine/import workflow, signed receipts, and deterministic golden vectors. It does **not** yet use a screen or camera and must not be used as a production security control.
 
 ## See it work
 
@@ -12,7 +12,7 @@ With Rust 1.91.1 installed:
 cargo run --locked -p glassbridge-cli -- demo
 ```
 
-The command creates fresh sender and receiver keys, signs a sample payload, drops and corrupts frames, reconstructs the envelope, verifies its signature and digest, places it in quarantine, imports it under a generated safe name, and verifies the receiver's signed receipt.
+The command creates fresh sender and receiver keys, binds a local policy into the manifest, signs a sample payload, drops and corrupts frames, reconstructs the envelope, verifies its signature and digest, produces a default-deny policy decision, places it in quarantine, imports it under a generated safe name, records replay state, and verifies the receiver's signed receipt.
 
 A successful run ends with output similar to:
 
@@ -22,10 +22,11 @@ GlassBridge milestone demo: PASS
   frames corrupted:    5 (rejected by CRC: 5)
   decoder rank:        21/21
   signature + digest:  VERIFIED
+  policy decision:     GB-ALLOW
   signed receipt:      ...receipt.cose (imported)
 ```
 
-See [Milestone 1](docs/milestone-1.md) for implemented properties and explicit limitations. The protocol snapshot is documented in [AGX-0001](spec/AGX-0001.md) and [CDDL](spec/agx1.cddl).
+See [Milestone 1](docs/milestone-1.md) and [Milestone 2](docs/milestone-2.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), and [CDDL](spec/agx1.cddl).
 
 ## Why GlassBridge
 
@@ -65,7 +66,8 @@ The current Rust prototype demonstrates:
 
 ```text
 file -> canonical AGX envelope -> signature -> lossy frame transport
-     -> reconstruction -> verification -> quarantine -> audit receipt
+     -> reconstruction -> verification -> policy -> quarantine
+     -> import -> replay state -> audit receipt
 ```
 
 The optical codec and camera stages are currently represented by a deterministic frame-channel simulator. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
@@ -83,18 +85,20 @@ cargo run --locked -p glassbridge-cli -- pack \
   --secret-key sender.secret \
   --boundary lab/firmware-in \
   --purpose firmware-update \
-  --policy firmware-in/v1
+  --policy-file policy.json
 
 cargo run --locked -p glassbridge-cli -- verify \
   --envelope artifact.agx --public-key sender.public \
   --boundary lab/firmware-in
 ```
 
+`policy.json` is bounded, rejects unknown fields, and must allow the key identifier printed by `keygen`. A complete example is available at [test-vectors/agx1/policy.json](test-vectors/agx1/policy.json).
+
 ## What is not implemented yet
 
 - QR rendering, camera capture, or physical optical transfer
 - a production LT/RaptorQ implementation or adaptive transport controller
-- the complete policy engine, trust-bundle rotation, or replay database
+- multi-role trust-bundle rotation, threshold authorization, or concurrent policy-state locking
 - malware scanning or content disarm and reconstruction
 - encryption, macOS GUI, hardware direction enforcement, or certification
 - stable wire-format/API compatibility guarantees

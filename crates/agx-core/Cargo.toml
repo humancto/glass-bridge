@@ -7,6 +7,9 @@ authors.workspace = true
 description = "Bounded AGX envelope, transport, and quarantine primitives"
 publish = false
 
+[features]
+test-vectors = []
+
 [dependencies]
 coset.workspace = true
 crc32fast.workspace = true

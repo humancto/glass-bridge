@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use agx_core::{
-    ChannelConfig, Direction, EnvelopeRequest, create_signed_envelope, decode_frames,
-    encode_frames, generate_signing_key, import_verified, signing_key_from_bytes, simulate_channel,
-    verify_receipt, verify_signed_envelope, verifying_key_from_bytes,
+    ChannelConfig, Direction, EnvelopeRequest, Policy, PolicyState, create_signed_envelope,
+    decode_frames, encode_frames, generate_signing_key, import_authorized, key_id,
+    signing_key_from_bytes, simulate_channel, verify_receipt, verify_signed_envelope,
+    verifying_key_from_bytes,
 };
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -58,7 +59,7 @@ enum Command {
         #[arg(long)]
         purpose: String,
         #[arg(long)]
-        policy: String,
+        policy_file: PathBuf,
         #[arg(long, default_value = "application/octet-stream")]
         media_type: String,
         #[arg(long, default_value_t = 1)]
@@ -99,6 +100,8 @@ enum Command {
         #[arg(long)]
         receiver_secret_key: PathBuf,
         #[arg(long)]
+        policy_file: PathBuf,
+        #[arg(long)]
         workspace: PathBuf,
         #[arg(long)]
         boundary: String,
@@ -138,7 +141,7 @@ fn main() -> Result<()> {
             boundary,
             direction,
             purpose,
-            policy,
+            policy_file,
             media_type,
             sequence,
         } => pack(
@@ -148,7 +151,7 @@ fn main() -> Result<()> {
             &boundary,
             direction.into(),
             &purpose,
-            &policy,
+            &policy_file,
             &media_type,
             sequence,
         ),
@@ -180,6 +183,7 @@ fn main() -> Result<()> {
             envelope,
             sender_public_key,
             receiver_secret_key,
+            policy_file,
             workspace,
             boundary,
             approve,
@@ -187,6 +191,7 @@ fn main() -> Result<()> {
             &envelope,
             &sender_public_key,
             &receiver_secret_key,
+            &policy_file,
             &workspace,
             &boundary,
             approve,
@@ -216,6 +221,23 @@ fn demo(base: &Path, loss: u8, corruption: u8, duplicates: u8) -> Result<()> {
         &receiver.verifying_key().to_bytes(),
     )?;
 
+    let policy = Policy {
+        version: 1,
+        id: "demo-firmware-in/v1".into(),
+        boundary: "demo-lab/firmware-in".into(),
+        allowed_directions: vec![Direction::Inbound],
+        allowed_purposes: vec!["firmware-update".into()],
+        allowed_media_types: vec!["application/octet-stream".into()],
+        allowed_signer_key_ids: vec![hex_string(&key_id(&sender.verifying_key()))],
+        max_payload_bytes: 1_048_576,
+        minimum_sequence: 1,
+        require_approval: true,
+    };
+    write_new(
+        &run_dir.join("policy.json"),
+        &serde_json::to_vec_pretty(&policy)?,
+    )?;
+
     let payload =
         b"GlassBridge milestone one: signed, bounded, policy-addressed optical transfer.\n"
             .repeat(128);
@@ -225,7 +247,8 @@ fn demo(base: &Path, loss: u8, corruption: u8, duplicates: u8) -> Result<()> {
         boundary: "demo-lab/firmware-in",
         direction: Direction::Inbound,
         purpose: "firmware-update",
-        policy_id: "demo-firmware-in/v1",
+        policy_id: &policy.id,
+        policy_digest: policy.digest()?,
         display_name: "sample-firmware.bin",
         media_type: "application/octet-stream",
         sequence: 1,
@@ -260,9 +283,13 @@ fn demo(base: &Path, loss: u8, corruption: u8, duplicates: u8) -> Result<()> {
         Some("demo-lab/firmware-in"),
     )
     .context("verify reconstructed AGX envelope")?;
-    let outcome = import_verified(
-        &verified,
-        &run_dir.join("receiver-workspace"),
+    let receiver_workspace = run_dir.join("receiver-workspace");
+    let state_path = receiver_workspace.join("policy-state.json");
+    let mut policy_state = PolicyState::load(&state_path)?;
+    let authorization = policy.authorize(&verified, &policy_state)?;
+    let outcome = import_authorized(
+        &authorization,
+        &receiver_workspace,
         true,
         &receiver,
         unix_now()?,
@@ -270,6 +297,10 @@ fn demo(base: &Path, loss: u8, corruption: u8, duplicates: u8) -> Result<()> {
         decoded.rejected_frames,
     )
     .context("quarantine and import verified payload")?;
+    if outcome.imported_path.is_some() {
+        policy_state.record_import(&verified.manifest)?;
+        policy_state.save(&state_path)?;
+    }
     let receipt_path = outcome.receipt_path.context("demo did not emit receipt")?;
     let receipt_bytes = fs::read(&receipt_path)?;
     let receipt = verify_receipt(&receipt_bytes, &receiver.verifying_key())
@@ -294,6 +325,7 @@ fn demo(base: &Path, loss: u8, corruption: u8, duplicates: u8) -> Result<()> {
         decoded.rank, decoded.source_count
     );
     println!("  signature + digest:  VERIFIED");
+    println!("  policy decision:     GB-ALLOW");
     println!(
         "  boundary + policy:   {} / {}",
         verified.manifest.boundary, verified.manifest.policy_id
@@ -319,6 +351,10 @@ fn keygen(secret_path: &Path, public_path: &Path) -> Result<()> {
     write_new(public_path, &signing_key.verifying_key().to_bytes())?;
     println!("created secret key: {}", secret_path.display());
     println!("created public key: {}", public_path.display());
+    println!(
+        "signer key id:      {}",
+        hex_string(&key_id(&signing_key.verifying_key()))
+    );
     Ok(())
 }
 
@@ -330,12 +366,13 @@ fn pack(
     boundary: &str,
     direction: Direction,
     purpose: &str,
-    policy: &str,
+    policy_file: &Path,
     media_type: &str,
     sequence: u64,
 ) -> Result<()> {
     let payload = fs::read(input).with_context(|| format!("read {}", input.display()))?;
     let signing_key = signing_key_from_bytes(&fs::read(secret_key_path)?)?;
+    let policy = load_policy(policy_file)?;
     let display_name = input
         .file_name()
         .and_then(|value| value.to_str())
@@ -345,13 +382,20 @@ fn pack(
         boundary,
         direction,
         purpose,
-        policy_id: policy,
+        policy_id: &policy.id,
+        policy_digest: policy.digest()?,
         display_name,
         media_type,
         sequence,
         created_unix: unix_now()?,
     };
     let envelope = create_signed_envelope(&request, &signing_key)?;
+    let verified = verify_signed_envelope(&envelope, &signing_key.verifying_key(), None)?;
+    let empty_state = PolicyState {
+        version: 1,
+        ..PolicyState::default()
+    };
+    policy.authorize(&verified, &empty_state)?;
     write_new(output, &envelope)?;
     println!(
         "created signed envelope: {} ({} bytes)",
@@ -395,6 +439,7 @@ fn receive(
     envelope_path: &Path,
     sender_public_key_path: &Path,
     receiver_secret_key_path: &Path,
+    policy_file: &Path,
     workspace: &Path,
     boundary: &str,
     approve: bool,
@@ -402,9 +447,13 @@ fn receive(
     let envelope = fs::read(envelope_path)?;
     let sender_key = verifying_key_from_bytes(&fs::read(sender_public_key_path)?)?;
     let receiver_key = signing_key_from_bytes(&fs::read(receiver_secret_key_path)?)?;
+    let policy = load_policy(policy_file)?;
     let verified = verify_signed_envelope(&envelope, &sender_key, Some(boundary))?;
-    let outcome = import_verified(
-        &verified,
+    let state_path = workspace.join("policy-state.json");
+    let mut policy_state = PolicyState::load(&state_path)?;
+    let authorization = policy.authorize(&verified, &policy_state)?;
+    let outcome = import_authorized(
+        &authorization,
         workspace,
         approve,
         &receiver_key,
@@ -412,6 +461,10 @@ fn receive(
         1,
         0,
     )?;
+    if outcome.imported_path.is_some() {
+        policy_state.record_import(&verified.manifest)?;
+        policy_state.save(&state_path)?;
+    }
     if let Some(path) = outcome.imported_path {
         println!("IMPORTED {}", path.display());
     } else {
@@ -465,6 +518,11 @@ fn unix_now() -> Result<u64> {
         .duration_since(UNIX_EPOCH)
         .context("system clock is before the Unix epoch")?
         .as_secs())
+}
+
+fn load_policy(path: &Path) -> Result<Policy> {
+    let bytes = fs::read(path).with_context(|| format!("read policy {}", path.display()))?;
+    Policy::from_json(&bytes).with_context(|| format!("parse policy {}", path.display()))
 }
 
 fn hex_string(bytes: &[u8]) -> String {
