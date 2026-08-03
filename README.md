@@ -2,7 +2,30 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** public design baseline / pre-alpha. This repository currently contains the product and research definition site. It does **not** yet contain a working optical transfer implementation and must not be used as a security control.
+> **Project status:** runnable milestone 1 / pre-alpha. The repository now contains a signed AGX envelope, lossy frame-loopback prototype, bounded receiver, quarantine/import workflow, and signed receipts. It does **not** yet use a screen or camera and must not be used as a production security control.
+
+## See it work
+
+With Rust 1.91.1 installed:
+
+```bash
+cargo run --locked -p glassbridge-cli -- demo
+```
+
+The command creates fresh sender and receiver keys, signs a sample payload, drops and corrupts frames, reconstructs the envelope, verifies its signature and digest, places it in quarantine, imports it under a generated safe name, and verifies the receiver's signed receipt.
+
+A successful run ends with output similar to:
+
+```text
+GlassBridge milestone demo: PASS
+  frames dropped:      20
+  frames corrupted:    5 (rejected by CRC: 5)
+  decoder rank:        21/21
+  signature + digest:  VERIFIED
+  signed receipt:      ...receipt.cose (imported)
+```
+
+See [Milestone 1](docs/milestone-1.md) for implemented properties and explicit limitations. The protocol snapshot is documented in [AGX-0001](spec/AGX-0001.md) and [CDDL](spec/agx1.cddl).
 
 ## Why GlassBridge
 
@@ -15,7 +38,7 @@ Animated QR transfer, fountain coding, and high-density visual channels already 
 - typed audit receipts; and
 - verified goodput rather than nominal optical throughput.
 
-## Review the design
+## Review the research design
 
 The repository currently ships a polished, source-backed design review covering the product vision, threat model, security architecture, AGX envelope, transport roadmap, benchmarks, research hypotheses, prior art, risks, and implementation backlog.
 
@@ -36,16 +59,45 @@ Validate the production build and document checks:
 npm test
 ```
 
-## Intended implementation
+## Current vertical slice
 
-The first working release will be a Rust-first vertical slice that demonstrates:
+The current Rust prototype demonstrates:
 
 ```text
 file -> canonical AGX envelope -> signature -> lossy frame transport
      -> reconstruction -> verification -> quarantine -> audit receipt
 ```
 
-Claims in the design are proposals or research hypotheses until backed by code, test vectors, and reproducible measurements.
+The optical codec and camera stages are currently represented by a deterministic frame-channel simulator. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
+
+Useful commands:
+
+```bash
+# Generate sender keys
+cargo run --locked -p glassbridge-cli -- keygen \
+  --secret sender.secret --public sender.public
+
+# Create and verify an AGX envelope
+cargo run --locked -p glassbridge-cli -- pack \
+  --input artifact.bin --output artifact.agx \
+  --secret-key sender.secret \
+  --boundary lab/firmware-in \
+  --purpose firmware-update \
+  --policy firmware-in/v1
+
+cargo run --locked -p glassbridge-cli -- verify \
+  --envelope artifact.agx --public-key sender.public \
+  --boundary lab/firmware-in
+```
+
+## What is not implemented yet
+
+- QR rendering, camera capture, or physical optical transfer
+- a production LT/RaptorQ implementation or adaptive transport controller
+- the complete policy engine, trust-bundle rotation, or replay database
+- malware scanning or content disarm and reconstruction
+- encryption, macOS GUI, hardware direction enforcement, or certification
+- stable wire-format/API compatibility guarantees
 
 ## Project principles
 
