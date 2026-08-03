@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "id": "golden-firmware-in/v1",
+  "boundary": "golden-lab/firmware-in",
+  "allowed_directions": [
+    "inbound"
+  ],
+  "allowed_purposes": [
+    "firmware-update"
+  ],
+  "allowed_media_types": [
+    "application/octet-stream"
+  ],
+  "allowed_signer_key_ids": [
+    "10ba682c8ad13513"
+  ],
+  "max_payload_bytes": 4096,
+  "minimum_sequence": 7,
+  "require_approval": true
+}

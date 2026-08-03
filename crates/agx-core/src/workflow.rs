@@ -7,9 +7,8 @@ use minicbor::{Decoder, Encoder};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::envelope::{
-    EnvelopeError, VerifiedEnvelope, key_id, sign_cose_payload, verify_cose_payload,
-};
+use crate::envelope::{EnvelopeError, key_id, sign_cose_payload, verify_cose_payload};
+use crate::policy::Authorization;
 
 const RECEIPT_AAD: &[u8] = b"GlassBridge/AGX1/import-receipt";
 const MAX_RECEIPT_BYTES: usize = 64 * 1024;
@@ -59,8 +58,8 @@ pub enum WorkflowError {
 ///
 /// Returns an error for unsafe identifiers, replayed destinations, filesystem
 /// failures, or receipt serialization/signing failures.
-pub fn import_verified(
-    verified: &VerifiedEnvelope,
+pub fn import_authorized(
+    authorization: &Authorization<'_>,
     workspace: &Path,
     approve: bool,
     receiver_signing_key: &SigningKey,
@@ -68,6 +67,7 @@ pub fn import_verified(
     accepted_frames: usize,
     rejected_frames: usize,
 ) -> Result<WorkflowOutcome, WorkflowError> {
+    let verified = authorization.verified();
     let envelope_id = &verified.manifest.envelope_id;
     if envelope_id.len() != 32 || !envelope_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(WorkflowError::InvalidEnvelopeId);
@@ -90,6 +90,7 @@ pub fn import_verified(
         "envelope_id": envelope_id,
         "boundary": verified.manifest.boundary,
         "policy_id": verified.manifest.policy_id,
+        "policy_decision": "GB-ALLOW",
         "display_name_untrusted": verified.manifest.objects[0].display_name,
         "payload_sha256": verified.manifest.objects[0].sha256,
         "accepted_frames": accepted_frames,
@@ -353,20 +354,38 @@ mod tests {
 
     use super::*;
     use crate::envelope::{
-        Direction, EnvelopeRequest, create_signed_envelope, generate_signing_key,
+        Direction, EnvelopeRequest, create_signed_envelope, generate_signing_key, key_id,
         verify_signed_envelope,
     };
+    use crate::policy::{Policy, PolicyState};
+
+    fn policy_for(signer: &SigningKey, boundary: &str, purpose: &str, policy_id: &str) -> Policy {
+        Policy {
+            version: 1,
+            id: policy_id.into(),
+            boundary: boundary.into(),
+            allowed_directions: vec![Direction::Inbound],
+            allowed_purposes: vec![purpose.into()],
+            allowed_media_types: vec!["application/octet-stream".into()],
+            allowed_signer_key_ids: vec![hex::encode(key_id(&signer.verifying_key()))],
+            max_payload_bytes: 1_024,
+            minimum_sequence: 1,
+            require_approval: true,
+        }
+    }
 
     #[test]
     fn quarantines_imports_and_verifies_a_signed_receipt() {
         let sender = generate_signing_key().unwrap();
         let receiver = generate_signing_key().unwrap();
+        let policy = policy_for(&sender, "lab/config-in", "configuration", "config/v1");
         let request = EnvelopeRequest {
             payload: b"approved configuration",
             boundary: "lab/config-in",
             direction: Direction::Inbound,
             purpose: "configuration",
             policy_id: "config/v1",
+            policy_digest: policy.digest().unwrap(),
             display_name: "../../dangerous-name.sh",
             media_type: "application/octet-stream",
             sequence: 7,
@@ -376,9 +395,14 @@ mod tests {
         let verified =
             verify_signed_envelope(&envelope, &sender.verifying_key(), Some("lab/config-in"))
                 .unwrap();
+        let state = PolicyState {
+            version: 1,
+            ..PolicyState::default()
+        };
+        let authorization = policy.authorize(&verified, &state).unwrap();
         let workspace = tempdir().unwrap();
-        let outcome = import_verified(
-            &verified,
+        let outcome = import_authorized(
+            &authorization,
             workspace.path(),
             true,
             &receiver,
@@ -400,12 +424,14 @@ mod tests {
     fn approval_false_leaves_data_in_quarantine() {
         let sender = generate_signing_key().unwrap();
         let receiver = generate_signing_key().unwrap();
+        let policy = policy_for(&sender, "lab/review", "review", "review/v1");
         let request = EnvelopeRequest {
             payload: b"review me",
             boundary: "lab/review",
             direction: Direction::Inbound,
             purpose: "review",
             policy_id: "review/v1",
+            policy_digest: policy.digest().unwrap(),
             display_name: "review.bin",
             media_type: "application/octet-stream",
             sequence: 1,
@@ -413,9 +439,14 @@ mod tests {
         };
         let envelope = create_signed_envelope(&request, &sender).unwrap();
         let verified = verify_signed_envelope(&envelope, &sender.verifying_key(), None).unwrap();
+        let state = PolicyState {
+            version: 1,
+            ..PolicyState::default()
+        };
+        let authorization = policy.authorize(&verified, &state).unwrap();
         let workspace = tempdir().unwrap();
         let outcome =
-            import_verified(&verified, workspace.path(), false, &receiver, 2, 1, 0).unwrap();
+            import_authorized(&authorization, workspace.path(), false, &receiver, 2, 1, 0).unwrap();
         assert!(outcome.imported_path.is_none());
         assert!(outcome.quarantine_dir.join("object-0001.part").exists());
     }

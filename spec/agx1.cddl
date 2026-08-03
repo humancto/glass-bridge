@@ -21,7 +21,7 @@ agx-manifest = {
   4: direction,
   5: non-empty-tstr,            ; purpose
   6: non-empty-tstr,            ; policy id
-  7: bstr .size 32,             ; SHA-256(policy id UTF-8)
+  7: bstr .size 32,             ; SHA-256(deterministic policy CBOR)
   8: uint,                       ; sequence
   9: uint,                       ; created Unix seconds
   10: [ agx-object ]             ; exactly one object in milestone 1

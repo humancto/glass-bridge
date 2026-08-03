@@ -5,7 +5,7 @@ use coset::{
 };
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use minicbor::{Decoder, Encoder};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -15,7 +15,7 @@ const MAX_ENVELOPE_BYTES: usize = 64 * 1024 * 1024 + 64 * 1024;
 const MAX_PAYLOAD_BYTES: usize = 64 * 1024 * 1024;
 const MAX_TEXT_BYTES: usize = 512;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     Inbound,
@@ -69,6 +69,7 @@ pub struct EnvelopeRequest<'a> {
     pub direction: Direction,
     pub purpose: &'a str,
     pub policy_id: &'a str,
+    pub policy_digest: [u8; 32],
     pub display_name: &'a str,
     pub media_type: &'a str,
     pub sequence: u64,
@@ -164,13 +165,36 @@ pub fn create_signed_envelope(
     request: &EnvelopeRequest<'_>,
     signing_key: &SigningKey,
 ) -> Result<Vec<u8>, EnvelopeError> {
-    validate_request(request)?;
-
     let mut envelope_id = [0_u8; 16];
     getrandom::fill(&mut envelope_id).map_err(|error| EnvelopeError::Random(error.to_string()))?;
+    create_signed_envelope_with_id_inner(request, signing_key, envelope_id)
+}
+
+/// Creates a deterministic envelope for interoperability test vectors.
+///
+/// This entry point is feature-gated because production callers must generate
+/// unpredictable, non-repeating envelope identifiers.
+///
+/// # Errors
+///
+/// Returns an error under the same conditions as [`create_signed_envelope`].
+#[cfg(any(test, feature = "test-vectors"))]
+pub fn create_signed_envelope_with_id(
+    request: &EnvelopeRequest<'_>,
+    signing_key: &SigningKey,
+    envelope_id: [u8; 16],
+) -> Result<Vec<u8>, EnvelopeError> {
+    create_signed_envelope_with_id_inner(request, signing_key, envelope_id)
+}
+
+fn create_signed_envelope_with_id_inner(
+    request: &EnvelopeRequest<'_>,
+    signing_key: &SigningKey,
+    envelope_id: [u8; 16],
+) -> Result<Vec<u8>, EnvelopeError> {
+    validate_request(request)?;
 
     let payload_digest: [u8; 32] = Sha256::digest(request.payload).into();
-    let policy_digest: [u8; 32] = Sha256::digest(request.policy_id.as_bytes()).into();
     let object = ObjectManifest {
         id: 1,
         display_name: request.display_name.to_owned(),
@@ -185,7 +209,7 @@ pub fn create_signed_envelope(
         direction: request.direction,
         purpose: request.purpose.to_owned(),
         policy_id: request.policy_id.to_owned(),
-        policy_digest: hex::encode(policy_digest),
+        policy_digest: hex::encode(request.policy_digest),
         sequence: request.sequence,
         created_unix: request.created_unix,
         objects: vec![object],
@@ -575,6 +599,7 @@ fn decode_error(error: minicbor::decode::Error) -> EnvelopeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy::Policy;
 
     fn request(payload: &[u8]) -> EnvelopeRequest<'_> {
         EnvelopeRequest {
@@ -583,6 +608,7 @@ mod tests {
             direction: Direction::Inbound,
             purpose: "firmware-update",
             policy_id: "firmware-in/v1",
+            policy_digest: Sha256::digest(b"firmware-in/v1 test policy").into(),
             display_name: "controller.bin",
             media_type: "application/octet-stream",
             sequence: 42,
@@ -627,5 +653,51 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, EnvelopeError::BoundaryMismatch { .. }));
+    }
+
+    #[test]
+    fn matches_and_verifies_committed_golden_vectors() {
+        let policy =
+            Policy::from_json(include_bytes!("../../../test-vectors/agx1/policy.json")).unwrap();
+        let secret =
+            hex::decode(include_str!("../../../test-vectors/agx1/test-only-secret.hex").trim())
+                .unwrap();
+        let signing_key = signing_key_from_bytes(&secret).unwrap();
+        let request = EnvelopeRequest {
+            payload: include_bytes!("../../../test-vectors/agx1/payload.txt"),
+            boundary: &policy.boundary,
+            direction: Direction::Inbound,
+            purpose: "firmware-update",
+            policy_id: &policy.id,
+            policy_digest: policy.digest().unwrap(),
+            display_name: "golden.bin",
+            media_type: "application/octet-stream",
+            sequence: 7,
+            created_unix: 1_786_003_200,
+        };
+        let generated = create_signed_envelope_with_id(
+            &request,
+            &signing_key,
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        )
+        .unwrap();
+        let committed =
+            hex::decode(include_str!("../../../test-vectors/agx1/valid-envelope.hex").trim())
+                .unwrap();
+        assert_eq!(generated, committed);
+        let verified = verify_signed_envelope(
+            &committed,
+            &signing_key.verifying_key(),
+            Some("golden-lab/firmware-in"),
+        )
+        .unwrap();
+        assert_eq!(verified.payload, request.payload);
+
+        let tampered =
+            hex::decode(include_str!("../../../test-vectors/agx1/tampered-payload.hex").trim())
+                .unwrap();
+        let error =
+            verify_signed_envelope(&tampered, &signing_key.verifying_key(), None).unwrap_err();
+        assert!(matches!(error, EnvelopeError::DigestMismatch));
     }
 }
