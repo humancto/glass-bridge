@@ -4,16 +4,16 @@ use std::process::{Command, Output};
 use std::time::Instant;
 
 use agx_core::{
-    ChannelConfig, ChannelStats, decode_frames, encode_frames, simulate_channel,
-    verify_signed_envelope, verifying_key_from_bytes,
+    ChannelConfig, ChannelStats, MAX_OPTICAL_FRAMES, decode_frames, encode_frames,
+    simulate_channel, verify_signed_envelope, verifying_key_from_bytes,
 };
 use agx_visual::{QrEcc, QrPngCodec, VisualCodec};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use super::{
-    create_new_directory, hex_string, random_session_id, read_qr_frames, render_qr_frames,
-    unix_now, write_new,
+    create_new_directory, hex_string, random_session_id, read_qr_frames, receive_with_counts,
+    render_qr_frames, unix_now, write_new,
 };
 
 const MAX_VIDEO_BYTES: u64 = 512 * 1024 * 1024;
@@ -33,6 +33,51 @@ pub(super) struct LoopbackConfig {
     pub ecc: QrEcc,
     pub module_pixels: u32,
     pub ffmpeg: PathBuf,
+}
+
+pub(super) struct ReceiveConfig {
+    pub video: PathBuf,
+    pub output_dir: PathBuf,
+    pub sender_public_key: PathBuf,
+    pub receiver_secret_key: PathBuf,
+    pub policy_file: PathBuf,
+    pub workspace: PathBuf,
+    pub boundary: String,
+    pub approve: bool,
+    pub max_frames: usize,
+    pub ffmpeg: PathBuf,
+}
+
+#[derive(Debug, Serialize)]
+struct ReceptionRecord {
+    schema: &'static str,
+    status: &'static str,
+    created_unix: u64,
+    source: &'static str,
+    host_os: &'static str,
+    host_arch: &'static str,
+    ffmpeg_version: String,
+    video_bytes: u64,
+    maximum_frames: usize,
+    extracted_frames: usize,
+    decoded_qr_frames: usize,
+    rejected_qr_frames: usize,
+    accepted_transport_frames: usize,
+    rejected_crc_frames: usize,
+    decoder_rank: usize,
+    required_rank: usize,
+    recovered_envelope_bytes: usize,
+    envelope_id: String,
+    signer_key_id: String,
+    boundary: String,
+    policy_id: String,
+    purpose: String,
+    sequence: u64,
+    cryptographic_verification: &'static str,
+    policy_workflow: &'static str,
+    extraction_ms: u64,
+    decode_verify_policy_ms: u64,
+    total_ms: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -110,6 +155,116 @@ struct TimingResult {
     total: u64,
     emitted_channel_duration: u64,
     encoded_video_duration: u64,
+}
+
+pub(super) fn receive_recording(config: &ReceiveConfig) -> Result<()> {
+    validate_receive(config)?;
+    let started = Instant::now();
+    let source_metadata = fs::metadata(&config.video)
+        .with_context(|| format!("inspect video {}", config.video.display()))?;
+    if !source_metadata.is_file() {
+        bail!("video input must be a regular file");
+    }
+    if source_metadata.len() == 0 || source_metadata.len() > MAX_VIDEO_BYTES {
+        bail!("video input exceeds configured size limits");
+    }
+    let source_video = fs::canonicalize(&config.video)?;
+
+    create_new_directory(&config.output_dir)?;
+    let output_root = fs::canonicalize(&config.output_dir)?;
+    let extracted_frames = output_root.join("extracted-frames");
+    fs::create_dir(&extracted_frames)?;
+
+    let version = ffmpeg_version(&config.ffmpeg)?;
+    let extract_started = Instant::now();
+    extract_video(
+        &config.ffmpeg,
+        &source_video,
+        &extracted_frames,
+        config.max_frames,
+    )?;
+    let extraction_ms = elapsed_millis(extract_started)?;
+
+    let receive_started = Instant::now();
+    let codec = QrPngCodec::new(QrEcc::Medium, 4)?;
+    let (frames, images) = read_qr_frames(&extracted_frames, codec)?;
+    let decoded = decode_frames(&frames)?;
+    let sender_key = verifying_key_from_bytes(&fs::read(&config.sender_public_key)?)?;
+    let verified = verify_signed_envelope(&decoded.bytes, &sender_key, Some(&config.boundary))?;
+    let recovered_path = output_root.join("recovered.agx");
+    write_new(&recovered_path, &decoded.bytes)?;
+
+    receive_with_counts(
+        &recovered_path,
+        &config.sender_public_key,
+        &config.receiver_secret_key,
+        &config.policy_file,
+        &config.workspace,
+        &config.boundary,
+        config.approve,
+        decoded.accepted_frames,
+        decoded.rejected_frames,
+    )?;
+    let receive_ms = elapsed_millis(receive_started)?;
+    let record = ReceptionRecord {
+        schema: "glassbridge-reception/1",
+        status: "pass",
+        created_unix: unix_now()?,
+        source: "prerecorded-video",
+        host_os: std::env::consts::OS,
+        host_arch: std::env::consts::ARCH,
+        ffmpeg_version: version,
+        video_bytes: source_metadata.len(),
+        maximum_frames: config.max_frames,
+        extracted_frames: images.images,
+        decoded_qr_frames: images.decoded,
+        rejected_qr_frames: images.rejected,
+        accepted_transport_frames: decoded.accepted_frames,
+        rejected_crc_frames: decoded.rejected_frames,
+        decoder_rank: decoded.rank,
+        required_rank: decoded.source_count,
+        recovered_envelope_bytes: decoded.bytes.len(),
+        envelope_id: verified.manifest.envelope_id,
+        signer_key_id: verified.signer_key_id,
+        boundary: verified.manifest.boundary,
+        policy_id: verified.manifest.policy_id,
+        purpose: verified.manifest.purpose,
+        sequence: verified.manifest.sequence,
+        cryptographic_verification: "verified",
+        policy_workflow: if config.approve {
+            "approved-import"
+        } else {
+            "quarantine-only"
+        },
+        extraction_ms,
+        decode_verify_policy_ms: receive_ms,
+        total_ms: elapsed_millis(started)?,
+    };
+    write_new(
+        &output_root.join("reception.json"),
+        &serde_json::to_vec_pretty(&record)?,
+    )?;
+    println!("PRERECORDED VIDEO RECEIVE: PASS");
+    println!("  source video:       {} bytes", record.video_bytes);
+    println!(
+        "  extracted/decoded:  {}/{}",
+        record.extracted_frames, record.decoded_qr_frames
+    );
+    println!(
+        "  decoder rank:       {}/{}",
+        record.decoder_rank, record.required_rank
+    );
+    println!("  signature + digest: VERIFIED");
+    println!("  policy workflow:    {}", record.policy_workflow);
+    println!("  reception evidence: reception.json");
+    Ok(())
+}
+
+fn validate_receive(config: &ReceiveConfig) -> Result<()> {
+    if config.max_frames == 0 || config.max_frames > MAX_OPTICAL_FRAMES {
+        bail!("maximum video frames must be between 1 and {MAX_OPTICAL_FRAMES}");
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_lines)] // One benchmark record is assembled from one measured pipeline.
@@ -354,8 +509,16 @@ fn extract_video(
         .arg("error")
         .arg("-nostdin")
         .arg("-n")
+        .arg("-protocol_whitelist")
+        .arg("file")
+        .arg("-probesize")
+        .arg("10485760")
+        .arg("-analyzeduration")
+        .arg("10000000")
         .arg("-i")
         .arg(video)
+        .arg("-t")
+        .arg("300")
         .arg("-fps_mode")
         .arg("passthrough")
         .arg("-frames:v")
@@ -463,6 +626,21 @@ mod tests {
         }
     }
 
+    fn receive_configuration() -> ReceiveConfig {
+        ReceiveConfig {
+            video: "capture.mp4".into(),
+            output_dir: "evidence".into(),
+            sender_public_key: "sender.public".into(),
+            receiver_secret_key: "receiver.secret".into(),
+            policy_file: "policy.json".into(),
+            workspace: "receiver".into(),
+            boundary: "lab/firmware-in".into(),
+            approve: false,
+            max_frames: MAX_OPTICAL_FRAMES,
+            ffmpeg: "ffmpeg".into(),
+        }
+    }
+
     #[test]
     fn validates_benchmark_controls() {
         assert!(validate(&configuration()).is_ok());
@@ -484,5 +662,15 @@ mod tests {
     fn calculates_channel_duration_and_integer_goodput() {
         assert_eq!(channel_duration(40, 30).unwrap(), 1_333);
         assert_eq!(goodput(10_429, 1_333).unwrap(), 7_823);
+    }
+
+    #[test]
+    fn bounds_prerecorded_video_frame_extraction() {
+        assert!(validate_receive(&receive_configuration()).is_ok());
+        let mut invalid = receive_configuration();
+        invalid.max_frames = 0;
+        assert!(validate_receive(&invalid).is_err());
+        invalid.max_frames = MAX_OPTICAL_FRAMES + 1;
+        assert!(validate_receive(&invalid).is_err());
     }
 }

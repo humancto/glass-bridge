@@ -2,7 +2,7 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 4 / pre-alpha. The repository now contains a signed AGX envelope, local default-deny policy and replay state, bounded one-way repair transport, real binary QR PNG encoding/decoding, an H.264 file-video harness with raw benchmark records, quarantine/import workflow, signed receipts, and deterministic golden vectors. It does **not** yet capture a display through a physical camera and must not be used as a production security control.
+> **Project status:** runnable milestone 5 / pre-alpha. The repository now contains a signed AGX envelope, local default-deny policy and replay state, bounded one-way repair transport, real binary QR PNG encoding/decoding, an H.264 benchmark harness, bounded prerecorded-video reception, quarantine/import workflow, signed receipts, and deterministic golden vectors. It does **not** yet capture a display through a live physical camera and must not be used as a production security control.
 
 ## See it work
 
@@ -47,7 +47,21 @@ cargo run --locked -p glassbridge-cli -- video-loopback \
   --session-id 474c4153534252494447454d3444454d
 ```
 
-This writes `channel.mp4`, the extracted frames, `recovered.agx`, and a raw `benchmark.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), and [Milestone 4](docs/milestone-4.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), and [CDDL](spec/agx1.cddl).
+This writes `channel.mp4`, the extracted frames, `recovered.agx`, and a raw `benchmark.json`. A prerecorded camera/video file can then enter the complete receiver workflow:
+
+```bash
+cargo run --locked -p glassbridge-cli -- video-receive \
+  --video capture.mp4 \
+  --output-dir reception-evidence \
+  --sender-public-key sender.public \
+  --receiver-secret-key receiver.secret \
+  --policy-file policy.json \
+  --workspace receiver-workspace \
+  --boundary lab/firmware-in \
+  --approve
+```
+
+That path extracts bounded video frames, recovers and verifies the signed AGX envelope, enforces local policy/replay state, imports or quarantines it, emits the receiver's signed receipt, and writes `reception.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), [Milestone 4](docs/milestone-4.md), and [Milestone 5](docs/milestone-5.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), [RECEPTION-0001](spec/RECEPTION-0001.md), and [CDDL](spec/agx1.cddl).
 
 ## Why GlassBridge
 
@@ -91,7 +105,7 @@ file -> canonical AGX envelope -> signature -> one-way repair frames
      -> policy -> quarantine -> import -> replay state -> audit receipt
 ```
 
-The QR codec now renders and decodes real binary PNG images, and the file-video harness measures a reproducible H.264 boundary. Display animation and physical camera capture remain future work. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
+The QR codec now renders and decodes real binary PNG images, the file-video harness measures a reproducible H.264 boundary, and prerecorded video can enter the policy/quarantine/import workflow. Display animation and live physical camera capture remain future work. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
 
 Useful commands:
 
@@ -124,7 +138,7 @@ cargo run --locked -p glassbridge-cli -- qr-decode \
 
 ## What is not implemented yet
 
-- display animation, camera capture, or measured physical optical transfer
+- display animation, live camera capture, or measured physical optical transfer
 - a production LT/RaptorQ implementation or adaptive transport controller
 - multi-role trust-bundle rotation, threshold authorization, or concurrent policy-state locking
 - malware scanning or content disarm and reconstruction

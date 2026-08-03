@@ -178,6 +178,29 @@ enum Command {
         #[arg(long, default_value = "ffmpeg")]
         ffmpeg: PathBuf,
     },
+    /// Recover and policy-process a signed AGX envelope from prerecorded video.
+    VideoReceive {
+        #[arg(long)]
+        video: PathBuf,
+        #[arg(long)]
+        output_dir: PathBuf,
+        #[arg(long)]
+        sender_public_key: PathBuf,
+        #[arg(long)]
+        receiver_secret_key: PathBuf,
+        #[arg(long)]
+        policy_file: PathBuf,
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long)]
+        boundary: String,
+        #[arg(long)]
+        approve: bool,
+        #[arg(long, default_value_t = MAX_OPTICAL_FRAMES)]
+        max_frames: usize,
+        #[arg(long, default_value = "ffmpeg")]
+        ffmpeg: PathBuf,
+    },
     /// Verify an envelope, quarantine it, and optionally approve atomic import.
     Receive {
         #[arg(long)]
@@ -364,6 +387,29 @@ fn main() -> Result<()> {
             },
             ecc: ecc.into(),
             module_pixels,
+            ffmpeg,
+        }),
+        Command::VideoReceive {
+            video: video_path,
+            output_dir,
+            sender_public_key,
+            receiver_secret_key,
+            policy_file,
+            workspace,
+            boundary,
+            approve,
+            max_frames,
+            ffmpeg,
+        } => video::receive_recording(&video::ReceiveConfig {
+            video: video_path,
+            output_dir,
+            sender_public_key,
+            receiver_secret_key,
+            policy_file,
+            workspace,
+            boundary,
+            approve,
+            max_frames,
             ffmpeg,
         }),
         Command::Receive {
@@ -933,6 +979,31 @@ fn receive(
     boundary: &str,
     approve: bool,
 ) -> Result<()> {
+    receive_with_counts(
+        envelope_path,
+        sender_public_key_path,
+        receiver_secret_key_path,
+        policy_file,
+        workspace,
+        boundary,
+        approve,
+        1,
+        0,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn receive_with_counts(
+    envelope_path: &Path,
+    sender_public_key_path: &Path,
+    receiver_secret_key_path: &Path,
+    policy_file: &Path,
+    workspace: &Path,
+    boundary: &str,
+    approve: bool,
+    accepted_frames: usize,
+    rejected_frames: usize,
+) -> Result<()> {
     let envelope = fs::read(envelope_path)?;
     let sender_key = verifying_key_from_bytes(&fs::read(sender_public_key_path)?)?;
     let receiver_key = signing_key_from_bytes(&fs::read(receiver_secret_key_path)?)?;
@@ -947,8 +1018,8 @@ fn receive(
         approve,
         &receiver_key,
         unix_now()?,
-        1,
-        0,
+        accepted_frames,
+        rejected_frames,
     )?;
     if outcome.imported_path.is_some() {
         policy_state.record_import(&verified.manifest)?;
