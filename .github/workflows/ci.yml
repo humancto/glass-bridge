@@ -28,6 +28,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --all-targets --all-features --locked
       - run: cargo run --locked -p glassbridge-cli -- demo --output-dir work/ci-demo
+      - run: sudo apt-get update && sudo apt-get install --yes ffmpeg
       - run: ffmpeg -version
       - run: >-
           cargo run --locked -p glassbridge-cli -- video-loopback
