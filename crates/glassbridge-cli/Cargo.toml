@@ -15,6 +15,7 @@ path = "src/main.rs"
 agx-core = { path = "../agx-core" }
 agx-visual = { path = "../agx-visual" }
 anyhow.workspace = true
+base64.workspace = true
 clap.workspace = true
 getrandom.workspace = true
 serde.workspace = true

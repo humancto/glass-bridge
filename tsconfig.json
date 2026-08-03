@@ -11,11 +11,12 @@
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "types": ["vite/client"],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["app", "src", "vite.config.ts"],
+  "include": ["app", "src", "vite.config.ts", "vitest.config.ts", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

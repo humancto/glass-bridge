@@ -2,13 +2,13 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 6 / pre-alpha. The repository now contains a signed AGX envelope, local default-deny policy and replay state, bounded one-way repair transport, real binary QR PNG encoding/decoding, an offline fullscreen display player, an H.264 benchmark harness, bounded prerecorded-video reception, quarantine/import workflow, signed receipts, and deterministic golden vectors. It must not be used as a production security control.
+> **Project status:** runnable milestone 7 / pre-alpha. The repository now contains a signed AGX envelope, local default-deny policy and replay state, bounded one-way repair transport, real binary QR PNG encoding/decoding, an offline fullscreen display player, a live browser receiver for ordinary phones, an H.264 benchmark harness and prerecorded-video fallback, quarantine/import workflow, signed receipts, and deterministic cross-language vectors. It must not be used as a production security control.
 
 ## See it work
 
 With Rust 1.91.1 installed:
 
-### Phone + laptop physical demo
+### Live phone + laptop optical demo
 
 Build a complete, offline test bundle with one command:
 
@@ -17,18 +17,30 @@ cargo run --locked -p glassbridge-cli -- screen-demo
 open work/phone-demo/player.html
 ```
 
-Then:
+The player starts on a standard pairing QR. Then:
 
-1. Put the player fullscreen and select **Start with countdown**.
-2. Record the complete QR square with a phone camera for at least 15 seconds.
-3. Move the phone's `.mov` or `.mp4` recording back to the laptop.
-4. Open `work/phone-demo/NEXT-STEPS.txt`, replace the video placeholder, and run the prepared receive command.
+1. Scan the pairing QR with the phone's normal camera. It opens the [hosted GlassBridge receiver](https://humancto.github.io/glass-bridge/receive.html) over HTTPS.
+2. Confirm that the sender fingerprint shown on the phone matches the fingerprint printed by the laptop player, then select **Trust sender & open camera**.
+3. Aim the phone at the whole white QR square and select **2 · Start transfer** on the laptop.
+4. When the phone reports **VERIFIED**, save or share `phone-camera-demo.txt` directly from the phone.
 
-Success produces an imported text file, structured reception evidence, replay state,
-and a receiver-signed receipt. This is a real laptop-display-to-phone-camera test;
-the phone acts as a camera and is not yet a native GlassBridge receiver. The bundle
-contains an ephemeral demo receipt-signing key and belongs only in the ignored
-`work/` directory.
+The receiver reconstructs the fountain-coded stream in memory, rejects malformed
+or mixed-session frames, verifies canonical AGX/CBOR and COSE structure, checks the
+Ed25519 signature, enforces the paired boundary, and verifies the declared length
+and SHA-256 before it exposes the file. No app-store installation is required.
+
+The receiver page itself must be loaded over HTTPS so the phone browser may use the
+camera. The signed payload bytes travel only in the animated optical frames. After
+the first successful load, the production service worker caches the receiver for
+offline reuse. This is a protocol prototype—not a claim that the phone, browser,
+or display is a certified one-way device.
+
+If a phone/browser combination cannot scan the stream live, record at least 15
+seconds of the QR square, move the `.mov` or `.mp4` back to the laptop, and run the
+prepared command in `work/phone-demo/NEXT-STEPS.txt`. That fallback produces the
+full desktop policy decision, quarantine/import result, replay state, reception
+evidence, and receiver-signed receipt. Its generated receipt key is demo-only and
+belongs inside the ignored `work/` directory.
 
 ### Deterministic trust-path demo
 
@@ -85,7 +97,7 @@ cargo run --locked -p glassbridge-cli -- video-receive \
   --approve
 ```
 
-That path extracts bounded video frames, recovers and verifies the signed AGX envelope, enforces local policy/replay state, imports or quarantines it, emits the receiver's signed receipt, and writes `reception.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), [Milestone 4](docs/milestone-4.md), [Milestone 5](docs/milestone-5.md), and [Milestone 6](docs/milestone-6.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), [RECEPTION-0001](spec/RECEPTION-0001.md), and [CDDL](spec/agx1.cddl).
+That path extracts bounded video frames, recovers and verifies the signed AGX envelope, enforces local policy/replay state, imports or quarantines it, emits the receiver's signed receipt, and writes `reception.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), [Milestone 4](docs/milestone-4.md), [Milestone 5](docs/milestone-5.md), [Milestone 6](docs/milestone-6.md), and [Milestone 7](docs/milestone-7.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), [RECEPTION-0001](spec/RECEPTION-0001.md), and [CDDL](spec/agx1.cddl).
 
 ## Why GlassBridge
 
@@ -124,13 +136,16 @@ npm test
 The current Rust prototype demonstrates:
 
 ```text
-file -> canonical AGX envelope -> signature -> one-way repair frames
-     -> QR PNG codec -> fullscreen display -> prerecorded camera video
-     -> reconstruction -> verification
-     -> policy -> quarantine -> import -> replay state -> audit receipt
+file -> canonical AGX envelope -> Ed25519 signature -> one-way repair frames
+     -> QR PNG codec -> fullscreen display -> live phone camera
+     -> browser reconstruction -> signature + boundary + digest verification
+     -> save/share on phone
+
+fallback: recorded camera video -> desktop verification -> local policy
+        -> quarantine/import -> replay state -> signed audit receipt
 ```
 
-The QR codec renders and decodes real binary PNG images, the offline player animates them on a display, the file-video harness measures a reproducible H.264 boundary, and a phone camera recording can enter the policy/quarantine/import workflow. Direct live camera capture and a native phone receiver remain future work. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
+The QR codec renders and decodes real PNG images, the offline player animates them on a display, and the browser receiver scans them from a live phone camera without a native application. The file-video harness still provides a reproducible H.264 boundary and a way for a phone recording to enter the complete policy/quarantine/import workflow. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
 
 Useful commands:
 
@@ -163,7 +178,7 @@ cargo run --locked -p glassbridge-cli -- qr-decode \
 
 ## What is not implemented yet
 
-- direct live camera capture, a native phone receiver, or published physical-goodput results
+- a native phone application, full phone-side policy/quarantine/receipt workflow, or published physical-goodput results
 - a production LT/RaptorQ implementation or adaptive transport controller
 - multi-role trust-bundle rotation, threshold authorization, or concurrent policy-state locking
 - malware scanning or content disarm and reconstruction

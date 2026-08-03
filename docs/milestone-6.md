@@ -1,5 +1,9 @@
 # Milestone 6: immediate phone + laptop screen demo
 
+> Historical milestone: [Milestone 7](milestone-7.md) adds direct live
+> phone-side reconstruction, verification, and download. The recorded-video
+> workflow below remains the diagnostic fallback and full desktop policy path.
+
 Milestone 6 closes the gap between generated QR files and a physical optical
 trial. It packages a signed transfer, QR frames, policy, an ephemeral receipt key,
 and a self-contained fullscreen player so a laptop and ordinary phone camera

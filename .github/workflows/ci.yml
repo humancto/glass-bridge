@@ -33,6 +33,11 @@ jobs:
           --output-dir work/ci-screen-demo
           --fps 4
           --frames 24
+      - run: >-
+          cargo run --locked -p glassbridge-cli -- qr-decode
+          --input-dir work/ci-screen-demo/frames
+          --output work/ci-screen-demo/recovered-ci.agx
+      - run: cmp work/ci-screen-demo/sender-envelope.agx work/ci-screen-demo/recovered-ci.agx
       - run: sudo apt-get update && sudo apt-get install --yes ffmpeg
       - run: ffmpeg -version
       - run: >-
