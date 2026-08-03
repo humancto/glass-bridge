@@ -1,0 +1,28 @@
+{
+  "name": "glassbridge-design-baseline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public product and research definition for GlassBridge / AGX",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "start": "vite preview",
+    "test": "npm run build && node --test tests/design-baseline.test.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "typescript": "5.9.3",
+    "vite": "8.2.0"
+  },
+  "type": "module"
+}
