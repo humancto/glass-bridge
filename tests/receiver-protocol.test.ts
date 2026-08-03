@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import {
@@ -55,6 +56,25 @@ describe("phone receiver AGX verification", () => {
 });
 
 describe("phone receiver optical reconstruction", () => {
+  it("reconstructs a committed Rust-generated browser transport fixture", async () => {
+    const frames = (await readFile(
+      new URL("tests/fixtures/rust-browser-frames.txt", ROOT),
+      "utf8",
+    )).trim().split("\n");
+    const decoder = new OpticalTransferDecoder();
+    let result: IngestResult = decoder.snapshot();
+
+    for (const frame of frames) {
+      result = decoder.ingestText(frame);
+    }
+
+    expect(result.complete).toBe(true);
+    expect(result.sessionId).toBe("474c4153534252494447454d3444454d");
+    expect(result.envelope).toHaveLength(2_349);
+    expect(createHash("sha256").update(result.envelope!).digest("hex"))
+      .toBe("ff19815744190ed9b5936ec142a7916d6771d83a83b6fa75060fd6a82f09722e");
+  });
+
   it("reconstructs out-of-order systematic and XOR-repair frames", () => {
     const payload = new TextEncoder().encode(
       "Photons carry the signed envelope; rank recovery tolerates missed frames.",
@@ -92,6 +112,15 @@ describe("phone receiver optical reconstruction", () => {
 
   it("bounds browser-safe frame text before base64 decoding", () => {
     const result = new OpticalTransferDecoder().ingestText(`AGF1B64:${"A".repeat(4_097)}`);
+    expect(result.rank).toBe(0);
+    expect(result.rejectedFrames).toBe(1);
+  });
+
+  it("rejects zero-length transfer declarations", () => {
+    const frame = makeRawFrame(new Uint8Array(), new Uint8Array(16).fill(8), 8, 0);
+    const result = new OpticalTransferDecoder().ingestText(
+      `AGF1B64:${base64UrlEncode(frame)}`,
+    );
     expect(result.rank).toBe(0);
     expect(result.rejectedFrames).toBe(1);
   });

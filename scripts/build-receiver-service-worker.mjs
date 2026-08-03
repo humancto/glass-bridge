@@ -4,7 +4,7 @@ import { join, relative, resolve, sep } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const dist = join(root, "dist");
-const base = process.env.GITHUB_ACTIONS === "true" ? "/glass-bridge/" : "/";
+const base = process.env.DEPLOY_BASE ?? "/";
 
 async function filesIn(directory) {
   const entries = await readdir(directory, { withFileTypes: true });

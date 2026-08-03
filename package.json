@@ -12,7 +12,8 @@
     "build:research": "node scripts/build-research-document.mjs",
     "build:sw": "node scripts/build-receiver-service-worker.mjs",
     "start": "vite preview",
-    "test": "npm run build && vitest run && node --test tests/design-baseline.test.mjs"
+    "test:unit": "vitest run",
+    "test": "npm run build && npm run test:unit && node --test tests/design-baseline.test.mjs"
   },
   "dependencies": {
     "@noble/ed25519": "3.1.0",

@@ -21,7 +21,9 @@ try {
   const { default: ProductResearchDefinition } = await server.ssrLoadModule(
     "/app/page.tsx",
   );
-  body = renderToStaticMarkup(createElement(ProductResearchDefinition));
+  body = renderToStaticMarkup(createElement(ProductResearchDefinition, {
+    receiverHref: "../receive.html",
+  }));
 } finally {
   await server.close();
 }

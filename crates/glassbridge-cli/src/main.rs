@@ -54,6 +54,9 @@ enum Command {
         fps: u8,
         #[arg(long, default_value_t = 24)]
         frames: usize,
+        /// Fixed 16-byte session ID as 32 hex characters for reproducible fixtures.
+        #[arg(long, value_parser = parse_session_id)]
+        session_id: Option<[u8; 16]>,
         #[arg(long, default_value = DEFAULT_RECEIVER_URL)]
         receiver_url: String,
     },
@@ -283,8 +286,9 @@ fn main() -> Result<()> {
             output_dir,
             fps,
             frames,
+            session_id,
             receiver_url,
-        } => screen_demo(&output_dir, fps, frames, &receiver_url),
+        } => screen_demo(&output_dir, fps, frames, session_id, &receiver_url),
         Command::Keygen { secret, public } => keygen(&secret, &public),
         Command::Pack {
             input,
@@ -601,7 +605,13 @@ fn demo(base: &Path, loss: u8, corruption: u8, duplicates: u8) -> Result<()> {
 }
 
 #[allow(clippy::too_many_lines)] // The bundle keeps one coherent, reviewable demo fixture.
-fn screen_demo(base: &Path, fps: u8, frame_count: usize, receiver_url: &str) -> Result<()> {
+fn screen_demo(
+    base: &Path,
+    fps: u8,
+    frame_count: usize,
+    session_id: Option<[u8; 16]>,
+    receiver_url: &str,
+) -> Result<()> {
     if !(1..=10).contains(&fps) {
         bail!("screen demo fps must be between 1 and 10");
     }
@@ -666,7 +676,7 @@ fn screen_demo(base: &Path, fps: u8, frame_count: usize, receiver_url: &str) -> 
     )?;
     write_new(&base.join("sender-envelope.agx"), &envelope)?;
 
-    let session_id = random_session_id()?;
+    let session_id = session_id.map_or_else(random_session_id, Ok)?;
     let encoded = encode_frames(&envelope, session_id, 512, Some(frame_count))?;
     let frames_dir = base.join("frames");
     fs::create_dir(&frames_dir)?;
@@ -676,6 +686,12 @@ fn screen_demo(base: &Path, fps: u8, frame_count: usize, receiver_url: &str) -> 
         .iter()
         .map(|frame| wrap_web_frame(frame))
         .collect::<Vec<_>>();
+    let mut browser_frames = Vec::new();
+    for frame in &web_frames {
+        browser_frames.extend_from_slice(frame);
+        browser_frames.push(b'\n');
+    }
+    write_new(&frames_dir.join("browser-frames.txt"), &browser_frames)?;
     let render = render_qr_frames(&frames_dir, &web_frames, codec)?;
 
     let pairing_url = pairing_url(receiver_url, &sender.verifying_key().to_bytes());

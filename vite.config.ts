@@ -3,7 +3,7 @@ import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
 export default defineConfig({
-  base: process.env.GITHUB_ACTIONS === "true" ? "/glass-bridge/" : "/",
+  base: process.env.DEPLOY_BASE ?? "/",
   plugins: [react()],
   build: {
     rollupOptions: {

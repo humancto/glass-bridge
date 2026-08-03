@@ -236,6 +236,7 @@ function parseFrame(bytes: Uint8Array): ParsedFrame {
     sourceCount > MAX_SOURCE_SYMBOLS ||
     symbolSize === 0 ||
     symbolSize > MAX_SYMBOL_BYTES ||
+    payloadLength === 0 ||
     payloadLength > MAX_TRANSFER_BYTES ||
     payloadLength > sourceCount * symbolSize ||
     bytes.length !== HEADER_BYTES + symbolSize + CRC_BYTES

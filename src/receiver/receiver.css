@@ -4,7 +4,7 @@
   background: #060a0d;
   color: #f2f7f5;
   font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 * { box-sizing: border-box; }

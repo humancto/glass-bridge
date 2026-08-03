@@ -236,8 +236,8 @@ export default function ReceiverApp() {
     const file = new File([verified.payload.slice().buffer], verified.filename, {
       type: verified.mediaType,
     });
-    try {
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      try {
         await navigator.share({
           files: [file],
           title: "Verified GlassBridge transfer",
@@ -245,7 +245,15 @@ export default function ReceiverApp() {
         });
         setSaveStatus("Share sheet opened for the verified file.");
         return;
+      } catch (shareError) {
+        if (shareError instanceof DOMException && shareError.name === "AbortError") {
+          setSaveStatus("Save cancelled; the verified file remains available.");
+          return;
+        }
       }
+    }
+
+    try {
       const url = URL.createObjectURL(file);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -253,12 +261,8 @@ export default function ReceiverApp() {
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
       setSaveStatus("Download started.");
-    } catch (shareError) {
-      if (shareError instanceof DOMException && shareError.name === "AbortError") {
-        setSaveStatus("Save cancelled; the verified file remains available.");
-      } else {
-        setSaveStatus("The browser could not save the file. Try Share again.");
-      }
+    } catch {
+      setSaveStatus("The browser could not save the file. Try Share again.");
     }
   }
 
