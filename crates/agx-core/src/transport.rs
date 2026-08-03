@@ -4,9 +4,14 @@ use crc32fast::Hasher;
 use serde::Serialize;
 use thiserror::Error;
 
-const FRAME_MAGIC: &[u8; 4] = b"AGF1";
-const HEADER_BYTES: usize = 40;
-const CRC_BYTES: usize = 4;
+/// Four-byte discriminator for the AGX optical transport frame snapshot.
+pub const OPTICAL_FRAME_MAGIC: &[u8; 4] = b"AGF1";
+/// Fixed bytes preceding the variable-size symbol.
+pub const OPTICAL_FRAME_HEADER_BYTES: usize = 40;
+/// CRC-32 bytes appended after the symbol.
+pub const OPTICAL_FRAME_CRC_BYTES: usize = 4;
+/// Maximum number of frames accepted in one decode call.
+pub const MAX_OPTICAL_FRAMES: usize = MAX_SYMBOLS * 8;
 const MAX_SYMBOLS: usize = 1_024;
 const MAX_SYMBOL_BYTES: usize = 64 * 1024;
 const MAX_TRANSFER_BYTES: usize = 64 * 1024 * 1024 + 64 * 1024;
@@ -190,13 +195,13 @@ pub fn simulate_channel(
         }
         let mut candidate = frame.clone();
         if percentage_roll(&mut rng_state) < config.corruption_percent
-            && candidate.len() > HEADER_BYTES + CRC_BYTES
+            && candidate.len() > OPTICAL_FRAME_HEADER_BYTES + OPTICAL_FRAME_CRC_BYTES
         {
-            let body_len = candidate.len() - HEADER_BYTES - CRC_BYTES;
+            let body_len = candidate.len() - OPTICAL_FRAME_HEADER_BYTES - OPTICAL_FRAME_CRC_BYTES;
             let body_len_u64 = u64::try_from(body_len).map_err(|_| TransportError::SizeLimit)?;
             let offset_in_body = usize::try_from(next_u64(&mut rng_state) % body_len_u64)
                 .map_err(|_| TransportError::SizeLimit)?;
-            let offset = HEADER_BYTES + offset_in_body;
+            let offset = OPTICAL_FRAME_HEADER_BYTES + offset_in_body;
             candidate[offset] ^= 0x80;
             stats.corrupted += 1;
         }
@@ -218,7 +223,7 @@ pub fn simulate_channel(
 /// Returns an error for malformed or mixed-session frames, resource-limit
 /// violations, or when the received equations do not have full rank.
 pub fn decode_frames(raw_frames: &[Vec<u8>]) -> Result<DecodeReport, TransportError> {
-    if raw_frames.len() > MAX_SYMBOLS * 8 {
+    if raw_frames.len() > MAX_OPTICAL_FRAMES {
         return Err(TransportError::SizeLimit);
     }
     let mut rejected_frames = 0;
@@ -316,8 +321,10 @@ pub fn decode_frames(raw_frames: &[Vec<u8>]) -> Result<DecodeReport, TransportEr
 
 impl Frame {
     fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(HEADER_BYTES + self.symbol.len() + CRC_BYTES);
-        bytes.extend_from_slice(FRAME_MAGIC);
+        let mut bytes = Vec::with_capacity(
+            OPTICAL_FRAME_HEADER_BYTES + self.symbol.len() + OPTICAL_FRAME_CRC_BYTES,
+        );
+        bytes.extend_from_slice(OPTICAL_FRAME_MAGIC);
         bytes.extend_from_slice(&self.session_id);
         bytes.extend_from_slice(&self.symbol_id.to_be_bytes());
         bytes.extend_from_slice(&self.source_count.to_be_bytes());
@@ -331,13 +338,15 @@ impl Frame {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, TransportError> {
-        if bytes.len() < HEADER_BYTES + CRC_BYTES || &bytes[..4] != FRAME_MAGIC {
+        if bytes.len() < OPTICAL_FRAME_HEADER_BYTES + OPTICAL_FRAME_CRC_BYTES
+            || &bytes[..4] != OPTICAL_FRAME_MAGIC
+        {
             return Err(TransportError::InvalidFrame);
         }
-        if bytes.len() > HEADER_BYTES + MAX_SYMBOL_BYTES + CRC_BYTES {
+        if bytes.len() > OPTICAL_FRAME_HEADER_BYTES + MAX_SYMBOL_BYTES + OPTICAL_FRAME_CRC_BYTES {
             return Err(TransportError::SizeLimit);
         }
-        let crc_offset = bytes.len() - CRC_BYTES;
+        let crc_offset = bytes.len() - OPTICAL_FRAME_CRC_BYTES;
         let expected_crc = u32::from_be_bytes(
             bytes[crc_offset..]
                 .try_into()
@@ -363,7 +372,9 @@ impl Frame {
         {
             return Err(TransportError::SizeLimit);
         }
-        if bytes.len() != HEADER_BYTES + symbol_size as usize + CRC_BYTES {
+        if bytes.len()
+            != OPTICAL_FRAME_HEADER_BYTES + symbol_size as usize + OPTICAL_FRAME_CRC_BYTES
+        {
             return Err(TransportError::InvalidFrame);
         }
         Ok(Self {
@@ -372,7 +383,7 @@ impl Frame {
             source_count,
             symbol_size,
             payload_len,
-            symbol: bytes[HEADER_BYTES..crc_offset].to_vec(),
+            symbol: bytes[OPTICAL_FRAME_HEADER_BYTES..crc_offset].to_vec(),
         })
     }
 }
@@ -514,14 +525,14 @@ mod tests {
     fn rejects_crc_corruption() {
         let encoded = encode_frames(b"payload", [1_u8; 16], 64, Some(1)).unwrap();
         let mut frame = encoded.frames[0].clone();
-        frame[HEADER_BYTES] ^= 1;
+        frame[OPTICAL_FRAME_HEADER_BYTES] ^= 1;
         let error = decode_frames(&[frame]).unwrap_err();
         assert!(matches!(error, TransportError::InsufficientRank { .. }));
     }
 
     #[test]
     fn rejects_unbounded_frame_sets_before_parsing() {
-        let frames = vec![Vec::new(); MAX_SYMBOLS * 8 + 1];
+        let frames = vec![Vec::new(); MAX_OPTICAL_FRAMES + 1];
         let error = decode_frames(&frames).unwrap_err();
         assert!(matches!(error, TransportError::SizeLimit));
     }

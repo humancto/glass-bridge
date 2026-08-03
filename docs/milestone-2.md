@@ -57,4 +57,4 @@ Any byte change is treated as a protocol compatibility event requiring review.
 - State persistence and payload import are not one cross-file transaction.
 - Denials are structured and visible but do not yet emit signed denial receipts.
 - Product/version semantics and multi-role authorization are not implemented.
-- The transport remains a simulator rather than a physical QR channel.
+- Milestone 2 itself used a simulator; milestone 3 now adds real QR PNG rendering and decoding, while camera capture remains future work.

@@ -18,7 +18,8 @@ pub use envelope::{
 };
 pub use policy::{Authorization, DecisionCode, Policy, PolicyDenial, PolicyError, PolicyState};
 pub use transport::{
-    ChannelConfig, ChannelStats, DecodeReport, EncodedTransfer, decode_frames, encode_frames,
-    simulate_channel,
+    ChannelConfig, ChannelStats, DecodeReport, EncodedTransfer, MAX_OPTICAL_FRAMES,
+    OPTICAL_FRAME_CRC_BYTES, OPTICAL_FRAME_HEADER_BYTES, OPTICAL_FRAME_MAGIC, decode_frames,
+    encode_frames, simulate_channel,
 };
 pub use workflow::{ImportReceipt, WorkflowOutcome, import_authorized, verify_receipt};

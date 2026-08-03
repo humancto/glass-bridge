@@ -60,7 +60,7 @@ The Rust suite currently covers:
 
 This milestone is not an optical transfer product yet.
 
-- Frames are byte arrays in a deterministic simulator, not QR images or camera observations.
+- In milestone 1, frames were byte arrays in a deterministic simulator. Milestone 3 now adds real QR PNG images; camera observations remain future work.
 - The repair code is a bounded random linear XOR prototype, not LT, RaptorQ, or a performance claim.
 - Envelope and payload processing are in memory.
 - Raw 32-byte key files are for prototype ergonomics; production key storage and offline trust bundles are not implemented.
@@ -73,4 +73,4 @@ This milestone is not an optical transfer product yet.
 
 ## Next implementation gate
 
-Before physical QR transport, the next gate is to freeze the serialized AGX-OT frame header, add a file/video codec abstraction, and integrate the first real QR encoder/decoder behind it. Golden AGX vectors, persistent policy/replay state, and explicit denial codes are now implemented.
+The serialized AGX-OT frame header, visual-codec abstraction, and first real QR encoder/decoder are now implemented in milestone 3. The next gate is recorded-video and live-camera evaluation with reproducible channel measurements.

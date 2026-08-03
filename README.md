@@ -2,7 +2,7 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 2 / pre-alpha. The repository now contains a signed AGX envelope, local default-deny policy and replay state, lossy frame-loopback prototype, bounded receiver, quarantine/import workflow, signed receipts, and deterministic golden vectors. It does **not** yet use a screen or camera and must not be used as a production security control.
+> **Project status:** runnable milestone 3 / pre-alpha. The repository now contains a signed AGX envelope, local default-deny policy and replay state, bounded one-way repair transport, real binary QR PNG encoding/decoding, quarantine/import workflow, signed receipts, and deterministic golden vectors. It does **not** yet capture a display through a camera and must not be used as a production security control.
 
 ## See it work
 
@@ -26,7 +26,16 @@ GlassBridge milestone demo: PASS
   signed receipt:      ...receipt.cose (imported)
 ```
 
-See [Milestone 1](docs/milestone-1.md) and [Milestone 2](docs/milestone-2.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), and [CDDL](spec/agx1.cddl).
+To see actual QR images carry a signed envelope through loss and corruption:
+
+```bash
+cargo run --locked -p glassbridge-cli -- qr-loopback \
+  --envelope artifact.agx \
+  --output recovered.agx \
+  --frames-dir qr-frames
+```
+
+The resulting directory contains real, individually decodable PNG frames. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), and [Milestone 3](docs/milestone-3.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), and [CDDL](spec/agx1.cddl).
 
 ## Why GlassBridge
 
@@ -65,12 +74,12 @@ npm test
 The current Rust prototype demonstrates:
 
 ```text
-file -> canonical AGX envelope -> signature -> lossy frame transport
-     -> reconstruction -> verification -> policy -> quarantine
-     -> import -> replay state -> audit receipt
+file -> canonical AGX envelope -> signature -> one-way repair frames
+     -> QR PNG codec -> reconstruction -> verification -> policy
+     -> quarantine -> import -> replay state -> audit receipt
 ```
 
-The optical codec and camera stages are currently represented by a deterministic frame-channel simulator. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
+The QR codec now renders and decodes real binary PNG images. Display animation and camera capture are still represented by a deterministic lossy-channel harness. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
 
 Useful commands:
 
@@ -90,13 +99,20 @@ cargo run --locked -p glassbridge-cli -- pack \
 cargo run --locked -p glassbridge-cli -- verify \
   --envelope artifact.agx --public-key sender.public \
   --boundary lab/firmware-in
+
+# Export inspectable QR images, then decode them independently
+cargo run --locked -p glassbridge-cli -- qr-export \
+  --envelope artifact.agx --output-dir qr-frames
+
+cargo run --locked -p glassbridge-cli -- qr-decode \
+  --input-dir qr-frames --output recovered.agx
 ```
 
 `policy.json` is bounded, rejects unknown fields, and must allow the key identifier printed by `keygen`. A complete example is available at [test-vectors/agx1/policy.json](test-vectors/agx1/policy.json).
 
 ## What is not implemented yet
 
-- QR rendering, camera capture, or physical optical transfer
+- display animation, camera/video capture, or measured physical optical transfer
 - a production LT/RaptorQ implementation or adaptive transport controller
 - multi-role trust-bundle rotation, threshold authorization, or concurrent policy-state locking
 - malware scanning or content disarm and reconstruction
