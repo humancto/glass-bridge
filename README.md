@@ -2,7 +2,7 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 3 / pre-alpha. The repository now contains a signed AGX envelope, local default-deny policy and replay state, bounded one-way repair transport, real binary QR PNG encoding/decoding, quarantine/import workflow, signed receipts, and deterministic golden vectors. It does **not** yet capture a display through a camera and must not be used as a production security control.
+> **Project status:** runnable milestone 4 / pre-alpha. The repository now contains a signed AGX envelope, local default-deny policy and replay state, bounded one-way repair transport, real binary QR PNG encoding/decoding, an H.264 file-video harness with raw benchmark records, quarantine/import workflow, signed receipts, and deterministic golden vectors. It does **not** yet capture a display through a physical camera and must not be used as a production security control.
 
 ## See it work
 
@@ -35,7 +35,19 @@ cargo run --locked -p glassbridge-cli -- qr-loopback \
   --frames-dir qr-frames
 ```
 
-The resulting directory contains real, individually decodable PNG frames. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), and [Milestone 3](docs/milestone-3.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), and [CDDL](spec/agx1.cddl).
+The resulting directory contains real, individually decodable PNG frames. With FFmpeg installed, the same frames can cross an actual H.264 encode/decode boundary:
+
+```bash
+cargo run --locked -p glassbridge-cli -- video-loopback \
+  --envelope artifact.agx \
+  --public-key sender.public \
+  --boundary lab/firmware-in \
+  --output-dir video-run \
+  --frames 40 --fps 30 --crf 32 --scale-percent 75 \
+  --session-id 474c4153534252494447454d3444454d
+```
+
+This writes `channel.mp4`, the extracted frames, `recovered.agx`, and a raw `benchmark.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), and [Milestone 4](docs/milestone-4.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), and [CDDL](spec/agx1.cddl).
 
 ## Why GlassBridge
 
@@ -75,11 +87,11 @@ The current Rust prototype demonstrates:
 
 ```text
 file -> canonical AGX envelope -> signature -> one-way repair frames
-     -> QR PNG codec -> reconstruction -> verification -> policy
-     -> quarantine -> import -> replay state -> audit receipt
+     -> QR PNG codec -> H.264 file video -> reconstruction -> verification
+     -> policy -> quarantine -> import -> replay state -> audit receipt
 ```
 
-The QR codec now renders and decodes real binary PNG images. Display animation and camera capture are still represented by a deterministic lossy-channel harness. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
+The QR codec now renders and decodes real binary PNG images, and the file-video harness measures a reproducible H.264 boundary. Display animation and physical camera capture remain future work. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
 
 Useful commands:
 
@@ -112,7 +124,7 @@ cargo run --locked -p glassbridge-cli -- qr-decode \
 
 ## What is not implemented yet
 
-- display animation, camera/video capture, or measured physical optical transfer
+- display animation, camera capture, or measured physical optical transfer
 - a production LT/RaptorQ implementation or adaptive transport controller
 - multi-role trust-bundle rotation, threshold authorization, or concurrent policy-state locking
 - malware scanning or content disarm and reconstruction
