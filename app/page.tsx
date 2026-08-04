@@ -122,7 +122,13 @@ export const metadata = {
   description: "A buildable plan for fast, verifiable optical exchange across air-gapped boundaries.",
 };
 
-export default function Home({ receiverHref = "receive.html" }: { receiverHref?: string }) {
+export default function Home({
+  receiverHref = "receive.html",
+  senderHref = "send.html",
+}: {
+  receiverHref?: string;
+  senderHref?: string;
+}) {
   return (
     <main>
       <header className="hero" id="top">
@@ -132,7 +138,8 @@ export default function Home({ receiverHref = "receive.html" }: { receiverHref?:
             <span>GlassBridge <b>/ AGX</b></span>
           </a>
           <div className="top-links">
-            <a href={receiverHref}>Live demo</a>
+            <a href={senderHref}>Send a file</a>
+            <a href={receiverHref}>Phone receiver</a>
             <a href="#decision">Decision</a>
             <a href="#architecture">Architecture</a>
             <a href="#backlog">Build plan</a>
@@ -148,7 +155,8 @@ export default function Home({ receiverHref = "receive.html" }: { receiverHref?:
               A fast, verifiable optical gateway for controlled data exchange across air-gapped boundaries—without removable media, transient networking, or invisible policy decisions.
             </p>
             <div className="hero-actions">
-              <a className="button button-primary" href={receiverHref}>Open phone receiver</a>
+              <a className="button button-primary" href={senderHref}>Send a file now</a>
+              <a className="button button-secondary" href={receiverHref}>Open phone receiver</a>
               <a className="button button-secondary" href="#decision">Read the decision</a>
             </div>
             <div className="hero-meta">

@@ -6,6 +6,26 @@ GlassBridge is currently a research and design project. The repository does not 
 
 Implemented prototype properties are identified in the milestone documents, but none has been independently evaluated for production use.
 
+## Browser sender warning
+
+The hosted sender processes the selected file in browser memory and does not
+implement a file-upload endpoint. It creates a fresh Ed25519 signing key for
+each prepared transfer, signs a canonical AGX/1 envelope, and erases its local
+secret-key byte array after signing. Browser, extension, operating-system,
+dependency, deployment, and memory-lifetime behavior remain in scope; JavaScript
+erasure is not a hardware-backed destruction guarantee.
+
+The pairing fingerprint establishes trust in that ephemeral session key only.
+It does not establish a person, company, device, release role, or long-lived
+organizational identity. A production deployment needs provisioned trust roots,
+signed role delegation, rotation, revocation, replay state, and local policy.
+
+The current browser sender is limited to one file of at most 256 KiB and does
+not provide optical confidentiality. Anyone with a view of the display may
+capture the file. Use only synthetic, non-sensitive test data. For stronger
+air-gap experiments, preload and pin reviewed static assets on a dedicated
+machine rather than treating a newly fetched web application as trusted code.
+
 ## Browser receiver warning
 
 The hosted receiver is an installable web research prototype. Its pairing QR
