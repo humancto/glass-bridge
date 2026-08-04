@@ -5,6 +5,7 @@ import {
   createBrowserEnvelope,
   MAX_BROWSER_FILE_BYTES,
 } from "../src/sender/agx";
+import { verifyAgxEnvelope } from "../src/receiver/agx";
 import { OpticalTransferDecoder } from "../src/receiver/transport";
 import { OpticalTransferEncoder, pairingUrl } from "../src/sender/transport";
 
@@ -45,6 +46,23 @@ describe("browser sender AGX interoperability", () => {
         boundary: "demo/phone-laptop",
       },
     )).rejects.toThrow("256 KiB");
+  });
+
+  it("creates a default-policy envelope accepted by the phone verifier", async () => {
+    const payload = new TextEncoder().encode("browser default policy path\n");
+    const generated = await createBrowserEnvelope(payload, {
+      filename: "default.txt",
+      mediaType: "text/plain",
+      boundary: "demo/phone-laptop",
+    });
+    const verified = await verifyAgxEnvelope(generated.bytes, {
+      publicKey: generated.publicKey,
+      boundary: generated.boundary,
+    });
+
+    expect(verified.payload).toEqual(payload);
+    expect(verified.signerKeyId).toBe(generated.signerKeyId);
+    expect(verified.policyId).toBe("browser-sender/v1");
   });
 });
 

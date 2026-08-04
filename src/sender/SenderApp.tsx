@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import {
   createBrowserEnvelope,
+  formatBytes,
   MAX_BROWSER_FILE_BYTES,
   type BrowserEnvelope,
 } from "./agx";
@@ -34,12 +35,16 @@ export default function SenderApp() {
   const stageRef = useRef<HTMLElement>(null);
   const frameRef = useRef(0);
   const loopsRef = useRef(0);
+  const fpsRef = useRef(fps);
+  fpsRef.current = fps;
 
   useEffect(() => {
     if (!prepared || phase !== "pair") return;
-    void drawQr(prepared.pairing).catch((renderError: unknown) => {
-      fail(renderError);
+    let active = true;
+    void drawQr(prepared.pairing, () => active).catch((renderError: unknown) => {
+      if (active) fail(renderError);
     });
+    return () => { active = false; };
   }, [prepared, phase]);
 
   useEffect(() => {
@@ -52,7 +57,7 @@ export default function SenderApp() {
       if (!active || !activeTransfer) return;
       const symbolId = frameRef.current;
       try {
-        await drawQr(activeTransfer.encoder.frameText(symbolId));
+        await drawQr(activeTransfer.encoder.frameText(symbolId), () => active);
       } catch (renderError) {
         if (active) fail(renderError);
         return;
@@ -65,7 +70,7 @@ export default function SenderApp() {
         loopsRef.current += 1;
         setLoops(loopsRef.current);
       }
-      timer = window.setTimeout(() => { void tick(); }, 1_000 / fps);
+      timer = window.setTimeout(() => { void tick(); }, 1_000 / fpsRef.current);
     }
 
     void tick();
@@ -73,18 +78,24 @@ export default function SenderApp() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [prepared, phase, fps]);
+  }, [prepared, phase]);
 
-  async function drawQr(value: string): Promise<void> {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  async function drawQr(value: string, shouldCommit = () => true): Promise<void> {
     const displayPixels = Math.max(480, Math.min(820, Math.floor(window.innerHeight * 0.76)));
-    await QRCode.toCanvas(canvas, value, {
+    const rendered = document.createElement("canvas");
+    await QRCode.toCanvas(rendered, value, {
       errorCorrectionLevel: "M",
       margin: 2,
       width: displayPixels,
       color: { dark: "#07110d", light: "#ffffff" },
     });
+    if (!shouldCommit()) return;
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    canvas.width = rendered.width;
+    canvas.height = rendered.height;
+    context.drawImage(rendered, 0, 0);
   }
 
   function fail(value: unknown): void {
@@ -224,6 +235,7 @@ export default function SenderApp() {
             role="button"
             tabIndex={0}
             onKeyDown={(event) => {
+              if (event.key === " ") event.preventDefault();
               if (event.key === "Enter" || event.key === " ") fileInputRef.current?.click();
             }}
           >
@@ -301,7 +313,10 @@ export default function SenderApp() {
             >
               {phase === "playing" ? "Pause transfer" : "2 · Start transfer"}
             </button>
-            <button onClick={() => { void stageRef.current?.requestFullscreen(); }}>Fullscreen</button>
+            <button onClick={() => {
+              const stage = stageRef.current;
+              if (stage) void stage.requestFullscreen().catch((fullscreenError: unknown) => fail(fullscreenError));
+            }}>Fullscreen</button>
             <label className="speed-control">
               <span>Speed</span>
               <input
@@ -335,13 +350,9 @@ export default function SenderApp() {
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KiB`;
-}
-
 function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${Math.ceil(seconds)} sec`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes} min ${Math.ceil(seconds % 60)} sec`;
+  const totalSeconds = Math.ceil(seconds);
+  if (totalSeconds < 60) return `${totalSeconds} sec`;
+  const minutes = Math.floor(totalSeconds / 60);
+  return `${minutes} min ${totalSeconds % 60} sec`;
 }
