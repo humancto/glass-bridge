@@ -85,6 +85,30 @@ describe("fast browser optical profile", () => {
 
     expect(reconstructed).toEqual(payload);
   });
+
+  it("prefers a structural binary frame when its session starts with B64:", () => {
+    const payload = deterministicBytes(1_700);
+    const sessionId = new Uint8Array(16).fill(0x23);
+    sessionId.set(new TextEncoder().encode("B64:"), 0);
+    const encoder = new OpticalTransferEncoder(payload, {
+      sessionId,
+      symbolSize: OPTICAL_PROFILES.fast.symbolSize,
+    });
+    const decoder = new OpticalTransferDecoder();
+    let reconstructed: Uint8Array | undefined;
+
+    for (let symbolId = 0; symbolId < encoder.sourceCount; symbolId += 1) {
+      const frame = encoder.frameBytes(symbolId);
+      reconstructed = ingestDecodedQr({
+        getText: () => "AGF1B64:binary-result-that-is-not-a-text-wrapper",
+        getResultMetadata: () => new Map([
+          [ResultMetadataType.BYTE_SEGMENTS, [frame]],
+        ]),
+      }, decoder).envelope;
+    }
+
+    expect(reconstructed).toEqual(payload);
+  });
 });
 
 describe("deadline-based sender scheduling", () => {

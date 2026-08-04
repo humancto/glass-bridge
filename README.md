@@ -30,11 +30,13 @@ an organizational identity or durable provenance credential.
 
 The current browser profile accepts one file up to 256 KiB. The default Fast
 profile emits 1,536-byte binary frames at 12 FPS: 18 KiB/s nominal and an
-8-second payload-only minimum for 144 KiB, versus 72 seconds for the old
-512-byte/4-FPS text profile. Those are scheduler calculations, not physical
-goodput claims; camera losses, focus, display refresh, and device thermals add
-time. The sender now shows both its target and measured render FPS. This remains
-a deliberate show-and-tell size limit, not the target architecture's capacity.
+8-second ideal source-payload lower bound for 144 KiB, versus 72 seconds for the
+old 512-byte/4-FPS text profile. Those lower bounds cover systematic source
+frames only: they exclude signed-envelope overhead, the full
+`source_count × 3 + 8` repair loop, and camera loss. Camera focus, display
+refresh, and device thermals add time. The sender shows both its exact signed-
+envelope estimate and measured render FPS. This remains a deliberate
+show-and-tell size limit, not the target architecture's capacity.
 
 ### Reproducible CLI-generated phone demo
 

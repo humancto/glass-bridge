@@ -44,14 +44,17 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-function fetchAndCache(request) {
-  return fetch(request).then((response) => {
-    if (response.ok) {
-      const copy = response.clone();
-      void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+async function fetchAndCache(request) {
+  const response = await fetch(request);
+  if (response.ok && response.status !== 206) {
+    try {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(request, response.clone());
+    } catch {
+      // A quota or storage failure must not replace a valid network response.
     }
-    return response;
-  });
+  }
+  return response;
 }
 
 self.addEventListener("fetch", (event) => {

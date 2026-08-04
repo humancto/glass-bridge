@@ -21,15 +21,18 @@ For a 144 KiB transport payload, that profile has 288 source symbols and a
 
 ## Implemented profiles
 
-| Profile | QR payload | Symbol | Default | Nominal | 144 KiB payload-only minimum |
-|---|---|---:|---:|---:|---:|
-| Fast (default) | raw AGF1 byte segment | 1,536 B | 12 FPS | 18 KiB/s | 8.0 s |
-| Balanced | raw AGF1 byte segment | 1,024 B | 10 FPS | 10 KiB/s | 14.4 s |
-| Legacy | `AGF1B64:` text | 512 B | 4 FPS | 2 KiB/s | 72.0 s |
+| Profile | QR payload | Symbol | Default | Nominal | 144 KiB ideal source lower bound | Full scheduled loop, payload-only |
+|---|---|---:|---:|---:|---:|---:|
+| Fast (default) | raw AGF1 byte segment | 1,536 B | 12 FPS | 18 KiB/s | 8.0 s | 24.7 s |
+| Balanced | raw AGF1 byte segment | 1,024 B | 10 FPS | 10 KiB/s | 14.4 s | 44.0 s |
+| Legacy | `AGF1B64:` text | 512 B | 4 FPS | 2 KiB/s | 72.0 s | 218.0 s |
 
-The actual sender estimate uses the signed envelope size, not the original file
-size. A one-way sender cannot know when the phone has completed, so the operator
-must continue aiming until the receiver reports **QUARANTINED**.
+The ideal lower bound assumes every systematic source frame is decoded and
+excludes the signed-envelope overhead. The full-loop column applies the default
+`source_count × 3 + 8` schedule to the same payload-only counts. The actual sender
+estimate uses the signed envelope size, not the original file size. A one-way
+sender cannot know when the phone has completed, so the operator must continue
+aiming until the receiver reports **QUARANTINED**.
 
 ## Binary QR interoperability
 
