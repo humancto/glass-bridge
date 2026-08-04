@@ -82,6 +82,7 @@ export default function ReceiverApp() {
   const controlsRef = useRef<IScannerControls | undefined>(undefined);
   const decoderRef = useRef(new OpticalTransferDecoder());
   const verifyingRef = useRef(false);
+  const releasingRef = useRef(false);
 
   useEffect(() => {
     if (!trust) {
@@ -137,6 +138,7 @@ export default function ReceiverApp() {
     controlsRef.current?.stop();
     decoderRef.current.reset();
     verifyingRef.current = false;
+    releasingRef.current = false;
     setVerified(undefined);
     setPolicyDecision(undefined);
     setReceipt(undefined);
@@ -246,6 +248,7 @@ export default function ReceiverApp() {
     controlsRef.current = undefined;
     decoderRef.current.reset();
     verifyingRef.current = false;
+    releasingRef.current = false;
     setVerified(undefined);
     setPolicyDecision(undefined);
     setReceipt(undefined);
@@ -263,9 +266,10 @@ export default function ReceiverApp() {
   }
 
   async function authorizeRelease(): Promise<void> {
-    if (!verified || !policyDecision?.allowed || stage === "releasing") {
+    if (!verified || !policyDecision?.allowed || releasingRef.current) {
       return;
     }
+    releasingRef.current = true;
     setStage("releasing");
     setSaveStatus("Creating a receiver-signed release receipt…");
     try {
@@ -277,6 +281,8 @@ export default function ReceiverApp() {
     } catch (releaseError) {
       setError(releaseError instanceof Error ? releaseError.message : "The receiver could not authorize release.");
       setStage("error");
+    } finally {
+      releasingRef.current = false;
     }
   }
 

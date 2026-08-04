@@ -21,8 +21,9 @@ Then:
 4. Compare the 16-character sender fingerprint on both devices.
 5. On the phone, select **Trust sender & open camera** and allow camera access.
 6. On the laptop, select **2 · Start transfer**.
-7. Keep the complete QR square visible until the phone reports **VERIFIED**.
-8. Save or share the verified file.
+7. Keep the complete QR square visible until the phone reports **QUARANTINED**.
+8. Review the verified details, approve release, and preserve the signed receipt
+   before saving or sharing the file.
 
 The normal phone Camera is used only for pairing. Animated frames must be read
 by the camera inside the GlassBridge receiver page.
@@ -154,5 +155,6 @@ Measure verified goodput rather than nominal QR payload rate for at least text,
 already-compressed binary, and image samples at 1 KiB, 16 KiB, 64 KiB, and
 256 KiB. Record laptop/display, phone, browser, distance, angle, brightness,
 FPS, source symbols, frames observed, rejected frames, time to full rank,
-signature-verification time, and total time to the **VERIFIED** state. Publish
+signature-verification time, quarantine-ready time, and total time through
+approved release plus signed-receipt creation. Publish
 failed and successful runs.

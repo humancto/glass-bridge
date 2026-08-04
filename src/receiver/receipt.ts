@@ -119,7 +119,15 @@ async function getOrCreateReceiptKey(): Promise<ReceiptSigningMaterial> {
       privateKey: pair.privateKey,
       publicKey: pair.publicKey,
     };
-    await writeStoredKey(database, value);
+    try {
+      await writeStoredKey(database, value);
+    } catch (writeError) {
+      const existing = await readStoredKey(database);
+      if (isStoredReceiptKey(existing)) {
+        return { privateKey: existing.privateKey, publicKey: existing.publicKey };
+      }
+      throw writeError;
+    }
     return pair;
   } finally {
     database.close();
