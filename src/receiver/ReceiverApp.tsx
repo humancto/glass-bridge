@@ -289,6 +289,11 @@ export default function ReceiverApp() {
       const captureFrame = () => {
         if (!active || verifyingRef.current) return;
         cameraFrames += 1;
+        if (pool.busyCount === pool.size) {
+          busyDrops += 1;
+          updateMetrics();
+          return;
+        }
         const sourceSize = Math.min(video.videoWidth, video.videoHeight);
         const sourceX = Math.max(0, (video.videoWidth - sourceSize) / 2);
         const sourceY = Math.max(0, (video.videoHeight - sourceSize) / 2);
