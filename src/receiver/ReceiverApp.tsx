@@ -231,13 +231,12 @@ export default function ReceiverApp() {
       let decodedFrames = 0;
       let busyDrops = 0;
       let lastMetricsPaint = performance.now();
-      const metricsStartedAt = lastMetricsPaint;
       const decodeTimes: number[] = [];
 
       const updateMetrics = (force = false) => {
         const now = performance.now();
         if (!force && now - lastMetricsPaint < 500) return;
-        const seconds = Math.max(0.001, (now - metricsStartedAt) / 1_000);
+        const seconds = Math.max(0.001, (now - lastMetricsPaint) / 1_000);
         const sorted = [...decodeTimes].sort((left, right) => left - right);
         setLiveMetrics({
           cameraFps: cameraFrames / seconds,
@@ -251,6 +250,8 @@ export default function ReceiverApp() {
           negotiatedFps: trackSettings?.frameRate ?? 0,
         });
         lastMetricsPaint = now;
+        cameraFrames = 0;
+        decodedFrames = 0;
       };
 
       let controls: ScannerControls;
