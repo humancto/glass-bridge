@@ -13,6 +13,7 @@
     "build:sw": "node scripts/build-receiver-service-worker.mjs",
     "generate:browser-fast-fixture": "node scripts/generate-browser-fast-frame-fixture.mjs",
     "benchmark:turbo-qr": "node scripts/benchmark-turbo-qr.mjs",
+    "benchmark:turbo-decode": "node scripts/benchmark-turbo-decode.mjs",
     "start": "vite preview",
     "test:unit": "vitest run",
     "test": "npm run build && npm run test:unit && node --test tests/design-baseline.test.mjs"

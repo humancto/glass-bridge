@@ -51,8 +51,11 @@ unique-frame rate, loss, and fountain solve overhead.
   produces another deterministic sparse equation.
 - The page reports selected and measured render FPS separately.
 
-`npm run benchmark:turbo-qr` measures QR matrix generation in isolation. That
-benchmark is a CPU regression signal, not a camera-goodput result.
+`npm run benchmark:turbo-qr` measures QR matrix generation in isolation.
+`npm run benchmark:turbo-decode` independently pushes a 2,944-byte frame as a
+720×720 pixel raster through ZXing-C++ WASM using the phone worker's production
+reader settings and requires an exact byte match. These are CPU regression
+signals, not camera-goodput results.
 
 In a local production-build browser run, the sender reported 60.0 rendered FPS
 for the observed interval. That validates display scheduling only; it says
@@ -96,12 +99,16 @@ bounded transport parser can accept them.
 ```bash
 npm test
 npm run benchmark:turbo-qr
+npm run benchmark:turbo-decode
 cargo test --workspace --all-targets --all-features --locked
 ```
 
 The automated suite covers QR capacity, the raw-rate budget, deterministic sparse
 equations, recovery after systematic-frame erasures, compatibility paths, and
-worker backpressure.
+worker backpressure. It also renders v40-L QR pixels at the receiver's 720×720
+capture size, decodes them with the exact production ZXing-WASM settings, checks
+all 2,944 bytes, repeats the proof after a 90-degree rotation, and reconstructs a
+multi-frame AGF2 transfer using only bytes recovered from those QR pixels.
 
 The physical gate requires raw run records across the device matrix. For each run
 record phone, OS/browser, camera-reported resolution/FPS, laptop/display refresh,
