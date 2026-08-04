@@ -56,7 +56,7 @@ frame overhead, the exact single-symbol maximum is 2,909 useful bytes.
 | Burst: 2× v30-L, 30/lane | 98.9 KiB/s | 1.46 s | implemented, physical test pending |
 | Turbo: v40-L at 60 | 169.9 KiB/s | 0.85 s | implemented, unstable in the reported setup |
 | Exact v40-L maximum at 60 | 170.4 KiB/s | 0.85 s | QR-compatible hard ceiling at 60 symbols/s |
-| 2× v40-L, 60/lane | 340.9 KiB/s | 0.42 s | needs 120 symbols/s and suitable display/camera timing |
+| 2× v40-L, 60/lane | 340.9 KiB/s exact maximum / 339.8 KiB/s implemented | 0.42 s | implemented as the Milestone 13 Ceiling Lab; physical test pending |
 | 4× v30-L, 30/lane | 197.8 KiB/s | 0.73 s | high acquisition cost and smaller camera modules |
 
 The ceiling for a generic screen-camera channel is not the QR ceiling. It cannot
@@ -77,8 +77,9 @@ one-way threat model.
    verified goodput. Failure is evidence, not a reason to relabel nominal rate.
 2. **Mixed-frame recovery.** Add a transition border and recover stable regions
    from rolling-shutter mixtures instead of asking ZXing to reject the exposure.
-3. **120 Hz dual lane.** On capable displays, keep each lane stable for two
-   refreshes while delivering 120 combined symbols/s to a 60 FPS camera.
+3. **Per-refresh dual lane.** Milestone 13 can update both lanes on each 60 Hz
+   refresh for 120 combined symbols/s and reports any missed display work. A
+   120 Hz display remains a future temporal-stability option.
 4. **Custom monochrome codec.** Remove repeated QR finder/ECC overhead, use fixed
    screen registration plus lightweight per-frame checks, and leave erasure
    recovery to the stream fountain code.

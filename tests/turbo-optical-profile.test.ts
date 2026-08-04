@@ -37,6 +37,29 @@ describe("Turbo optical transport", () => {
     expect(nominalGoodputBytes(turbo, turbo.defaultFps) / 1_024).toBeGreaterThan(128);
   });
 
+  it("defines the dual-v40 standards-compatible QR ceiling", () => {
+    const ceiling = OPTICAL_PROFILES.ceiling;
+    expect(ceiling.lanes).toBe(2);
+    expect(ceiling.symbolSize).toBe(2_900);
+    expect(ceiling.qrVersion).toBe(40);
+    expect(ceiling.maxFps).toBe(120);
+    expect(nominalGoodputBytes(ceiling, 120)).toBe(348_000);
+
+    const encoder = new OpticalTransferEncoder(deterministicBytes(144 * 1_024), {
+      sessionId: Uint8Array.from({ length: 16 }, (_, index) => index),
+      symbolSize: ceiling.symbolSize,
+      codec: ceiling.codec,
+    });
+    const frame = encoder.frameBytes(0);
+    const qr = QRCode.create([{ data: frame, mode: "byte" }], {
+      version: ceiling.qrVersion,
+      maskPattern: ceiling.maskPattern,
+      errorCorrectionLevel: ceiling.errorCorrectionLevel,
+    });
+    expect(frame).toHaveLength(2_944);
+    expect(qr.version).toBe(40);
+  });
+
   it("fits an AGF2 frame exactly into a fixed version 40-L QR", () => {
     const turbo = OPTICAL_PROFILES.turbo;
     const encoder = makeEncoder(deterministicBytes(128 * 1_024));

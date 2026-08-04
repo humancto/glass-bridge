@@ -14,6 +14,7 @@ import {
   MAX_BROWSER_FILE_BYTES,
   type BrowserEnvelope,
 } from "./agx";
+import { symbolsForRefresh } from "./scheduler";
 import { OpticalTransferEncoder, pairingUrl } from "./transport";
 import "./sender.css";
 
@@ -29,6 +30,12 @@ type PreparedTransfer = {
 };
 
 const DEFAULT_BOUNDARY = "demo/phone-laptop";
+const CAPACITY_RATES = [
+  { rate: 30, label: "Calibrate", detail: "4 refreshes/code/lane" },
+  { rate: 60, label: "Stable", detail: "2 refreshes/code/lane" },
+  { rate: 90, label: "Sprint", detail: "alternating 1–2 refreshes" },
+  { rate: 120, label: "Peak", detail: "1 refresh/code/lane" },
+] as const;
 
 export default function SenderApp() {
   const [file, setFile] = useState<File>();
@@ -41,6 +48,7 @@ export default function SenderApp() {
   const [frameNumber, setFrameNumber] = useState(0);
   const [loops, setLoops] = useState(0);
   const [measuredFps, setMeasuredFps] = useState(0);
+  const [renderDrops, setRenderDrops] = useState(0);
   const [dragging, setDragging] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const secondCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -50,6 +58,7 @@ export default function SenderApp() {
   const stageRef = useRef<HTMLElement>(null);
   const frameRef = useRef(0);
   const loopsRef = useRef(0);
+  const renderDropsRef = useRef(0);
   const fpsRef = useRef(fps);
   fpsRef.current = fps;
 
@@ -68,90 +77,76 @@ export default function SenderApp() {
     let active = true;
     let animationFrame = 0;
     let rendering = false;
-    let deadlineMs = performance.now();
-    let measurementStartedMs = deadlineMs;
-    let measuredFrames = 0;
-    let lastUiPaintMs = deadlineMs;
+    let lastRefreshMs = performance.now();
+    let symbolCredit = 0;
+    let measurementStartedMs = lastRefreshMs;
+    let measuredSymbols = 0;
+    let lastUiPaintMs = lastRefreshMs;
     setMeasuredFps(0);
 
-    async function renderFrame(nowMs: number): Promise<void> {
-      if (!active || rendering) return;
-      const intervalMs = 1_000 / fpsRef.current;
-      if (nowMs + 0.5 < deadlineMs) return;
-      rendering = true;
-      const symbolId = frameRef.current;
-      const lane: 0 | 1 = activeTransfer.profile.lanes === 2 && symbolId % 2 === 1 ? 1 : 0;
+    async function renderSymbols(count: number): Promise<void> {
+      const symbols = Array.from({ length: count }, (_, offset) => frameRef.current + offset);
       try {
-        await drawQr(
-          opticalQrPayload(activeTransfer, symbolId),
-          activeTransfer.profile.errorCorrectionLevel,
-          () => active,
-          activeTransfer.profile,
-          lane,
-        );
+        await Promise.all(symbols.map((symbolId) => drawQr(
+            opticalQrPayload(activeTransfer, symbolId),
+            activeTransfer.profile.errorCorrectionLevel,
+            () => active,
+            activeTransfer.profile,
+            activeTransfer.profile.lanes === 2 && symbolId % 2 === 1 ? 1 : 0,
+          )));
       } catch (renderError) {
         if (active) fail(renderError);
-        rendering = false;
         return;
       }
-      if (!active) {
-        rendering = false;
-        return;
-      }
+      if (!active) return;
       const renderedAtMs = performance.now();
-      measuredFrames += 1;
+      measuredSymbols += count;
       const measurementElapsedMs = renderedAtMs - measurementStartedMs;
       if (measurementElapsedMs >= 1_000) {
-        setMeasuredFps(measuredFrames * 1_000 / measurementElapsedMs);
+        setMeasuredFps(measuredSymbols * 1_000 / measurementElapsedMs);
         measurementStartedMs = renderedAtMs;
-        measuredFrames = 0;
+        measuredSymbols = 0;
       }
-      frameRef.current += 1;
+      frameRef.current += count;
       if (!activeTransfer.profile.continuousRepair && frameRef.current >= activeTransfer.encoder.frameCount) {
-        frameRef.current = 0;
-        loopsRef.current += 1;
+        loopsRef.current += Math.floor(frameRef.current / activeTransfer.encoder.frameCount);
+        frameRef.current %= activeTransfer.encoder.frameCount;
         setLoops(loopsRef.current);
       }
       if (renderedAtMs - lastUiPaintMs >= 200) {
         setFrameNumber(frameRef.current);
+        setRenderDrops(renderDropsRef.current);
         lastUiPaintMs = renderedAtMs;
       }
-      const nextDeadline = deadlineMs + intervalMs;
-      deadlineMs = nextDeadline < renderedAtMs - intervalMs
-        ? renderedAtMs + intervalMs
-        : nextDeadline;
-      rendering = false;
     }
 
     const pump = (nowMs: number) => {
       if (!active) return;
-      void renderFrame(nowMs);
+      if (!rendering) {
+        const schedule = symbolsForRefresh(
+          symbolCredit,
+          Math.max(0, nowMs - lastRefreshMs),
+          fpsRef.current,
+          activeTransfer.profile.lanes,
+        );
+        symbolCredit = schedule.credit;
+        lastRefreshMs = nowMs;
+        renderDropsRef.current += schedule.dropped;
+        if (schedule.count > 0) {
+          rendering = true;
+          void renderSymbols(schedule.count).finally(() => { rendering = false; });
+        }
+      }
       animationFrame = window.requestAnimationFrame(pump);
     };
     async function start(): Promise<void> {
-      if (activeTransfer.profile.lanes === 2) {
-        const firstSymbol = frameRef.current;
-        await Promise.all([
-          drawQr(
-            opticalQrPayload(activeTransfer, firstSymbol),
-            activeTransfer.profile.errorCorrectionLevel,
-            () => active,
-            activeTransfer.profile,
-            firstSymbol % 2 === 1 ? 1 : 0,
-          ),
-          drawQr(
-            opticalQrPayload(activeTransfer, firstSymbol + 1),
-            activeTransfer.profile.errorCorrectionLevel,
-            () => active,
-            activeTransfer.profile,
-            (firstSymbol + 1) % 2 === 1 ? 1 : 0,
-          ),
-        ]);
-        if (!active) return;
-        frameRef.current += 2;
-        setFrameNumber(frameRef.current);
-        deadlineMs = performance.now() + 1_000 / fpsRef.current;
-      }
+      const seedCount = activeTransfer.profile.lanes;
+      await renderSymbols(seedCount);
+      if (!active) return;
+      setFrameNumber(frameRef.current);
+      lastRefreshMs = performance.now();
+      measurementStartedMs = lastRefreshMs;
+      measuredSymbols = 0;
       animationFrame = window.requestAnimationFrame(pump);
     }
     void start().catch((renderError: unknown) => {
@@ -251,8 +246,10 @@ export default function SenderApp() {
       const pairing = pairingUrl(receiver.toString(), envelope.publicKey, envelope.boundary);
       frameRef.current = 0;
       loopsRef.current = 0;
+      renderDropsRef.current = 0;
       setFrameNumber(0);
       setLoops(0);
+      setRenderDrops(0);
       setPrepared({ envelope, encoder, pairing, originalBytes: candidate.size, profile, qrVersion });
       setPhase("pair");
     } catch (prepareError) {
@@ -274,11 +271,27 @@ export default function SenderApp() {
     await prepareTransfer(sample);
   }
 
+  async function useCapacitySample(): Promise<void> {
+    const bytes = new Uint8Array(144 * 1_024);
+    const heading = new TextEncoder().encode("GlassBridge 144 KiB capacity measurement\n");
+    bytes.set(heading);
+    for (let index = heading.length; index < bytes.length; index += 1) {
+      bytes[index] = (index * 31 + 17) & 0xff;
+    }
+    const sample = new File([bytes], "glassbridge-capacity-144k.bin", {
+      type: "application/octet-stream",
+    });
+    selectFile(sample);
+    await prepareTransfer(sample);
+  }
+
   function showPairing(): void {
     frameRef.current = 0;
     loopsRef.current = 0;
+    renderDropsRef.current = 0;
     setFrameNumber(0);
     setLoops(0);
+    setRenderDrops(0);
     setPhase("pair");
   }
 
@@ -290,6 +303,8 @@ export default function SenderApp() {
     frameRef.current = 0;
     loopsRef.current = 0;
     setMeasuredFps(0);
+    setRenderDrops(0);
+    renderDropsRef.current = 0;
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -317,7 +332,7 @@ export default function SenderApp() {
 
       <section className="sender-intro">
         <div>
-          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 12 BURST</p>
+          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 13 CAPACITY LAB</p>
           <h1>Choose a file.<br /><em>Send it through light.</em></h1>
         </div>
         <p>
@@ -399,9 +414,31 @@ export default function SenderApp() {
             </div>
             <small>
               {formatRate(nominalGoodputBytes(selectedProfile, selectedProfile.defaultFps))} nominal.
-              Burst is the recommended phone path. Turbo preserves the single-code density experiment.
+              Burst is the recommended phone path. Ceiling lab combines two maximum-density QR codes.
             </small>
           </fieldset>
+
+          {selectedProfile.lanes === 2 && (
+            <fieldset className="capacity-field" disabled={phase === "preparing"}>
+              <legend>Capacity step · combined code rate</legend>
+              <div className="capacity-options">
+                {CAPACITY_RATES.map((step) => (
+                  <button
+                    key={step.rate}
+                    type="button"
+                    className={fps === step.rate ? "selected" : ""}
+                    aria-pressed={fps === step.rate}
+                    onClick={() => setFps(step.rate)}
+                  >
+                    <b>{step.rate}/s</b>
+                    <span>{step.label}</span>
+                    <small>{formatRate(nominalGoodputBytes(selectedProfile, step.rate))}</small>
+                  </button>
+                ))}
+              </div>
+              <small>Change one step at a time. Peak requires two new QR codes on every 60 Hz display refresh.</small>
+            </fieldset>
+          )}
 
           <label className="boundary-field">
             <span>Receiving boundary</span>
@@ -426,6 +463,9 @@ export default function SenderApp() {
             </button>
             <button disabled={phase === "preparing"} onClick={() => { void useSample(); }}>
               Try the sample file
+            </button>
+            <button disabled={phase === "preparing"} onClick={() => { void useCapacitySample(); }}>
+              Use 144 KiB capacity test
             </button>
           </div>
           <p className="security-note">
@@ -459,7 +499,7 @@ export default function SenderApp() {
             )}
             {phase === "pair" && <div className="pair-label">NORMAL CAMERA · SCAN ONCE</div>}
             {phase !== "pair" && prepared.profile.lanes === 2 && (
-              <div className="burst-label">BURST · HOLD PHONE LANDSCAPE</div>
+              <div className="burst-label">{prepared.profile.label.toUpperCase()} · HOLD PHONE LANDSCAPE</div>
             )}
           </div>
 
@@ -475,17 +515,33 @@ export default function SenderApp() {
               const stage = stageRef.current;
               if (stage) void stage.requestFullscreen().catch((fullscreenError: unknown) => fail(fullscreenError));
             }}>Fullscreen</button>
-            <label className="speed-control">
-              <span>Speed</span>
-              <input
-                type="range"
-                min={prepared.profile.minFps}
-                max={prepared.profile.maxFps}
-                value={fps}
-                onChange={(event) => setFps(Number(event.currentTarget.value))}
-              />
-              <b>{fps} FPS{measuredFps > 0 ? ` · ${measuredFps.toFixed(1)} actual` : ""}</b>
-            </label>
+            {prepared.profile.lanes === 2 ? (
+              <fieldset className="transfer-capacity" disabled={phase === "playing"}>
+                <legend>Combined code rate</legend>
+                {CAPACITY_RATES.map((step) => (
+                  <button
+                    key={step.rate}
+                    type="button"
+                    className={fps === step.rate ? "selected" : ""}
+                    aria-pressed={fps === step.rate}
+                    title={step.detail}
+                    onClick={() => setFps(step.rate)}
+                  >{step.rate}/s</button>
+                ))}
+              </fieldset>
+            ) : (
+              <label className="speed-control">
+                <span>Code rate</span>
+                <input
+                  type="range"
+                  min={prepared.profile.minFps}
+                  max={prepared.profile.maxFps}
+                  value={fps}
+                  onChange={(event) => setFps(Number(event.currentTarget.value))}
+                />
+                <b>{fps}/s</b>
+              </label>
+            )}
           </div>
 
           <div className="transfer-facts">
@@ -504,6 +560,11 @@ export default function SenderApp() {
                   ? `${formatDuration(cycleSeconds)} expected solve window · endless unique repair`
                   : `${formatDuration(cycleSeconds)} repair loop · ${loops} loops`}
               </small>
+            </div>
+            <div>
+              <span>Measured sender</span>
+              <strong>{measuredFps > 0 ? `${measuredFps.toFixed(1)} / ${fps} codes/s` : `${fps} codes/s target`}</strong>
+              <small>{renderDrops} missed display opportunities · {measuredFps > 0 ? `${formatPercent(measuredFps / fps)} target attainment` : "start transfer to measure"}</small>
             </div>
             <div><span>Security</span><strong>Ed25519 + SHA-256</strong><small>AGX/1 signed envelope</small></div>
           </div>
@@ -572,4 +633,8 @@ function formatRate(bytesPerSecond: number): string {
   if (bytesPerSecond < 1_024) return `${Math.round(bytesPerSecond)} B/s`;
   const kibibytes = bytesPerSecond / 1_024;
   return `${Number.isInteger(kibibytes) ? kibibytes : kibibytes.toFixed(1)} KiB/s`;
+}
+
+function formatPercent(ratio: number): string {
+  return `${Math.max(0, Math.min(999, ratio * 100)).toFixed(0)}%`;
 }

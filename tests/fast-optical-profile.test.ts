@@ -7,7 +7,7 @@ import {
 } from "../src/protocol/optical-profile";
 import { ingestDecodedQr, type DecodedQrResult } from "../src/receiver/qr-result";
 import { OpticalTransferDecoder } from "../src/receiver/transport";
-import { scheduleNextFrame } from "../src/sender/scheduler";
+import { scheduleNextFrame, symbolsForRefresh } from "../src/sender/scheduler";
 import { OpticalTransferEncoder } from "../src/sender/transport";
 
 describe("fast browser optical profile", () => {
@@ -127,6 +127,29 @@ describe("deadline-based sender scheduling", () => {
 
   it("rejects non-finite scheduling input", () => {
     expect(() => scheduleNextFrame(1_000, 1_020, Number.NaN)).toThrow("positive FPS");
+  });
+});
+
+describe("display-refresh capacity scheduling", () => {
+  it("renders one alternating lane symbol per 60 Hz refresh at the stable rate", () => {
+    const first = symbolsForRefresh(0, 1_000 / 60, 60, 2);
+    expect(first.count).toBe(1);
+    expect(first.dropped).toBe(0);
+  });
+
+  it("renders both lanes per 60 Hz refresh at the 120 code/sec peak", () => {
+    const first = symbolsForRefresh(0, 1_000 / 60, 120, 2);
+    expect(first.count).toBe(2);
+    expect(first.dropped).toBe(0);
+  });
+
+  it("reports display opportunities that cannot be recovered after a stall", () => {
+    const stalled = symbolsForRefresh(0, 100, 120, 2);
+    expect(stalled).toEqual({ count: 2, credit: 0, dropped: 10 });
+  });
+
+  it("rejects invalid refresh scheduling inputs", () => {
+    expect(() => symbolsForRefresh(1, 16, 60, 2)).toThrow("valid credit");
   });
 });
 

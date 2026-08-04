@@ -71,6 +71,23 @@ describe("Turbo QR pixels through the production ZXing-WASM reader", () => {
       expect(decoded.some((candidate) => equalBytes(candidate, frame))).toBe(true);
     }
   });
+
+  it("recovers two maximum-density v40 symbols from one ideal landscape frame", async () => {
+    const ceiling = OPTICAL_PROFILES.ceiling;
+    const encoder = new OpticalTransferEncoder(deterministicBytes(144 * 1_024), {
+      sessionId: Uint8Array.from({ length: 16 }, (_, index) => (index * 13 + 7) & 0xff),
+      symbolSize: ceiling.symbolSize,
+      codec: ceiling.codec,
+    });
+    const expected = [encoder.frameBytes(0), encoder.frameBytes(1)];
+    const results = await readBarcodes(renderCeilingFrame(expected[0], expected[1]), TURBO_READER_OPTIONS);
+    const decoded = results.filter((result) => result.isValid).map((result) => result.bytes);
+
+    expect(decoded).toHaveLength(2);
+    for (const frame of expected) {
+      expect(decoded.some((candidate) => equalBytes(candidate, frame))).toBe(true);
+    }
+  });
 });
 
 function makeEncoder(payload: Uint8Array): OpticalTransferEncoder {
@@ -145,6 +162,30 @@ function renderBurstFrame(leftFrame: Uint8Array, rightFrame: Uint8Array): ImageD
       maskPattern: OPTICAL_PROFILES.burst.maskPattern,
     });
     paintQr(data, width, qr, 4, 40 + lane * 620, 70);
+  });
+  return { data, width, height, colorSpace: "srgb" } as ImageData;
+}
+
+function renderCeilingFrame(leftFrame: Uint8Array, rightFrame: Uint8Array): ImageData {
+  const width = 1_280;
+  const height = 720;
+  const scale = 3;
+  const quietModules = 4;
+  const profile = OPTICAL_PROFILES.ceiling;
+  const totalModules = 21 + ((profile.qrVersion ?? 40) - 1) * 4 + quietModules * 2;
+  const qrPixels = totalModules * scale;
+  const gap = 40;
+  const startX = Math.floor((width - qrPixels * 2 - gap) / 2);
+  const startY = Math.floor((height - qrPixels) / 2);
+  const data = new Uint8ClampedArray(width * height * 4);
+  data.fill(255);
+  [leftFrame, rightFrame].forEach((frame, lane) => {
+    const qr = QRCode.create([{ data: frame, mode: "byte" }], {
+      version: profile.qrVersion,
+      errorCorrectionLevel: profile.errorCorrectionLevel,
+      maskPattern: profile.maskPattern,
+    });
+    paintQr(data, width, qr, scale, startX + lane * (qrPixels + gap), startY);
   });
   return { data, width, height, colorSpace: "srgb" } as ImageData;
 }

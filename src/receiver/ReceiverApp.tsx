@@ -11,6 +11,10 @@ import { ingestDecodedQr } from "./qr-result";
 import { DecodeWorkerPool, type DecodeResult } from "./decode-worker-pool";
 import { fitCaptureDimensions } from "./camera-capture";
 import {
+  measureTransport,
+  type TransportMeasurement,
+} from "./capacity-measurement";
+import {
   createBrowserReleaseReceipt,
   type BrowserReleaseReceipt,
 } from "./receipt";
@@ -108,7 +112,8 @@ export default function ReceiverApp() {
   const [saveStatus, setSaveStatus] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("camera");
   const [liveMetrics, setLiveMetrics] = useState<LiveMetrics>(EMPTY_METRICS);
-  const [verifiedGoodput, setVerifiedGoodput] = useState<{ bytesPerSecond: number; seconds: number }>();
+  const [measurement, setMeasurement] = useState<TransportMeasurement>();
+  const [measurementStatus, setMeasurementStatus] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const controlsRef = useRef<ScannerControls | undefined>(undefined);
@@ -140,11 +145,13 @@ export default function ReceiverApp() {
   async function finishEnvelope(
     envelope: Uint8Array,
     callbackControls?: ScannerControls,
+    completion?: TransferProgress,
   ): Promise<void> {
     if (!trust || verifyingRef.current) {
       return;
     }
     verifyingRef.current = true;
+    const completedAtMs = performance.now();
     callbackControls?.stop();
     setStage("verifying");
     try {
@@ -157,9 +164,9 @@ export default function ReceiverApp() {
       setVerified(transfer);
       setPolicyDecision(decision);
       const startedAt = transferStartedAtRef.current;
-      if (startedAt !== undefined) {
-        const seconds = Math.max(0.001, (performance.now() - startedAt) / 1_000);
-        setVerifiedGoodput({ bytesPerSecond: transfer.payload.length / seconds, seconds });
+      if (startedAt !== undefined && completion && completion.acceptedFrames > 0) {
+        const seconds = Math.max(0.001, (completedAtMs - startedAt) / 1_000);
+        setMeasurement(measureTransport(transfer.payload.length, seconds, completion));
       }
       setStage("quarantined");
     } catch (verificationError) {
@@ -194,7 +201,8 @@ export default function ReceiverApp() {
     setError("");
     setSaveStatus("");
     setLiveMetrics(EMPTY_METRICS);
-    setVerifiedGoodput(undefined);
+    setMeasurement(undefined);
+    setMeasurementStatus("");
     transferStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("scanning");
@@ -223,13 +231,12 @@ export default function ReceiverApp() {
       let decodedFrames = 0;
       let busyDrops = 0;
       let lastMetricsPaint = performance.now();
-      const metricsStartedAt = lastMetricsPaint;
       const decodeTimes: number[] = [];
 
       const updateMetrics = (force = false) => {
         const now = performance.now();
         if (!force && now - lastMetricsPaint < 500) return;
-        const seconds = Math.max(0.001, (now - metricsStartedAt) / 1_000);
+        const seconds = Math.max(0.001, (now - lastMetricsPaint) / 1_000);
         const sorted = [...decodeTimes].sort((left, right) => left - right);
         setLiveMetrics({
           cameraFps: cameraFrames / seconds,
@@ -243,6 +250,8 @@ export default function ReceiverApp() {
           negotiatedFps: trackSettings?.frameRate ?? 0,
         });
         lastMetricsPaint = now;
+        cameraFrames = 0;
+        decodedFrames = 0;
       };
 
       let controls: ScannerControls;
@@ -274,7 +283,7 @@ export default function ReceiverApp() {
           }
           publishProgress(next, next.complete);
           if (next.envelope) {
-            void finishEnvelope(next.envelope, controls);
+            void finishEnvelope(next.envelope, controls, next);
             break;
           }
         }
@@ -412,7 +421,8 @@ export default function ReceiverApp() {
     setError("");
     setSaveStatus("");
     setLiveMetrics(EMPTY_METRICS);
-    setVerifiedGoodput(undefined);
+    setMeasurement(undefined);
+    setMeasurementStatus("");
     transferStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("paired");
@@ -422,6 +432,40 @@ export default function ReceiverApp() {
     controlsRef.current?.stop();
     window.sessionStorage.removeItem(SESSION_TRUST_KEY);
     window.location.reload();
+  }
+
+  async function copyCapacityReport(): Promise<void> {
+    if (!verified || !measurement) return;
+    const report = {
+      schema: "glassbridge-capacity/1",
+      measured_at: new Date().toISOString(),
+      file_bytes: verified.payload.length,
+      transfer_seconds: round(measurement.seconds, 3),
+      verified_payload_bytes_per_second: Math.round(measurement.payloadBytesPerSecond),
+      accepted_codes: measurement.acceptedCodes,
+      accepted_codes_per_second: round(measurement.acceptedCodesPerSecond, 2),
+      symbol_bytes: measurement.symbolSize,
+      fountain_overhead_percent: round(measurement.fountainOverhead * 100, 1),
+      payload_efficiency_percent: round(measurement.payloadEfficiency * 100, 1),
+      camera: {
+        observed_fps: round(liveMetrics.cameraFps, 2),
+        negotiated_fps: round(liveMetrics.negotiatedFps, 2),
+        width: liveMetrics.width,
+        height: liveMetrics.height,
+        valid_codes_per_second: round(liveMetrics.decodeFps, 2),
+        busy_drops: liveMetrics.busyDrops,
+        decode_p50_ms: round(liveMetrics.medianDecodeMs, 2),
+        decode_p95_ms: round(liveMetrics.p95DecodeMs, 2),
+        workers: liveMetrics.workers,
+      },
+      device: navigator.userAgent,
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+      setMeasurementStatus("Capacity report copied.");
+    } catch {
+      setMeasurementStatus("Copy was blocked by this browser. Take a screenshot of these measurements.");
+    }
   }
 
   async function authorizeRelease(): Promise<void> {
@@ -605,8 +649,16 @@ export default function ReceiverApp() {
             <div><dt>Purpose</dt><dd>{verified.purpose}</dd></div>
             <div><dt>Policy</dt><dd>{verified.policyId}</dd></div>
             <div><dt>SHA-256</dt><dd>{verified.payloadSha256}</dd></div>
-            {verifiedGoodput && <div><dt>Verified goodput</dt><dd>{formatRate(verifiedGoodput.bytesPerSecond)} in {verifiedGoodput.seconds.toFixed(2)} sec</dd></div>}
+            {measurement && <div><dt>Verified goodput</dt><dd>{formatRate(measurement.payloadBytesPerSecond)} in {measurement.seconds.toFixed(2)} sec</dd></div>}
+            {measurement && <div><dt>Accepted code rate</dt><dd>{measurement.acceptedCodesPerSecond.toFixed(1)} codes/sec · {measurement.acceptedCodes} total</dd></div>}
+            {measurement && <div><dt>Transport efficiency</dt><dd>{(measurement.payloadEfficiency * 100).toFixed(1)}% payload · {(measurement.fountainOverhead * 100).toFixed(1)}% fountain overhead</dd></div>}
           </dl>
+          {measurement && (
+            <button className="receiver-button secondary measurement-button" type="button" onClick={() => void copyCapacityReport()}>
+              Copy capacity measurement JSON
+            </button>
+          )}
+          {measurementStatus && <p className="measurement-status" role="status">{measurementStatus}</p>}
           <button
             className="receiver-button primary save-button"
             type="button"
@@ -732,4 +784,8 @@ function percentile(sorted: number[], value: number): number {
 function formatRate(bytesPerSecond: number): string {
   if (bytesPerSecond < 1_024) return `${Math.round(bytesPerSecond)} B/s`;
   return `${(bytesPerSecond / 1_024).toFixed(1)} KiB/s`;
+}
+
+function round(value: number, digits: number): number {
+  return Number(value.toFixed(digits));
 }
