@@ -1,4 +1,3 @@
-import type { IScannerControls } from "@zxing/browser";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   parseBootstrapHash,
@@ -9,6 +8,7 @@ import {
 } from "./agx";
 import { evaluateBrowserPolicy, type LocalPolicyDecision } from "./policy";
 import { ingestDecodedQr } from "./qr-result";
+import { DecodeWorkerPool, type DecodeResult } from "./decode-worker-pool";
 import {
   createBrowserReleaseReceipt,
   type BrowserReleaseReceipt,
@@ -23,6 +23,19 @@ import {
 
 type Stage = "unpaired" | "paired" | "scanning" | "verifying" | "quarantined" | "releasing" | "released" | "error";
 type SourceMode = "camera" | "files";
+type ScannerControls = { stop(): void };
+
+type LiveMetrics = {
+  cameraFps: number;
+  decodeFps: number;
+  medianDecodeMs: number;
+  p95DecodeMs: number;
+  busyDrops: number;
+  workers: number;
+  width: number;
+  height: number;
+  negotiatedFps: number;
+};
 
 const SESSION_TRUST_KEY = "glassbridge-demo-trust-v1";
 const EMPTY_PROGRESS: TransferProgress = {
@@ -32,6 +45,21 @@ const EMPTY_PROGRESS: TransferProgress = {
   duplicateFrames: 0,
   rejectedFrames: 0,
   complete: false,
+  symbolSize: 0,
+  payloadLength: 0,
+  expectedFrames: 0,
+};
+
+const EMPTY_METRICS: LiveMetrics = {
+  cameraFps: 0,
+  decodeFps: 0,
+  medianDecodeMs: 0,
+  p95DecodeMs: 0,
+  busyDrops: 0,
+  workers: 0,
+  width: 0,
+  height: 0,
+  negotiatedFps: 0,
 };
 
 function readTrust(): { trust?: BootstrapTrust; error?: string } {
@@ -78,13 +106,16 @@ export default function ReceiverApp() {
   const [receipt, setReceipt] = useState<BrowserReleaseReceipt>();
   const [saveStatus, setSaveStatus] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("camera");
+  const [liveMetrics, setLiveMetrics] = useState<LiveMetrics>(EMPTY_METRICS);
+  const [verifiedGoodput, setVerifiedGoodput] = useState<{ bytesPerSecond: number; seconds: number }>();
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const controlsRef = useRef<IScannerControls | undefined>(undefined);
+  const controlsRef = useRef<ScannerControls | undefined>(undefined);
   const decoderRef = useRef(new OpticalTransferDecoder());
   const verifyingRef = useRef(false);
   const releasingRef = useRef(false);
   const lastProgressPaintRef = useRef(0);
+  const transferStartedAtRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     if (!trust) {
@@ -107,7 +138,7 @@ export default function ReceiverApp() {
 
   async function finishEnvelope(
     envelope: Uint8Array,
-    callbackControls?: IScannerControls,
+    callbackControls?: ScannerControls,
   ): Promise<void> {
     if (!trust || verifyingRef.current) {
       return;
@@ -124,6 +155,11 @@ export default function ReceiverApp() {
       assertFreshTransfer(transfer);
       setVerified(transfer);
       setPolicyDecision(decision);
+      const startedAt = transferStartedAtRef.current;
+      if (startedAt !== undefined) {
+        const seconds = Math.max(0.001, (performance.now() - startedAt) / 1_000);
+        setVerifiedGoodput({ bytesPerSecond: transfer.payload.length / seconds, seconds });
+      }
       setStage("quarantined");
     } catch (verificationError) {
       setError(
@@ -156,40 +192,136 @@ export default function ReceiverApp() {
     lastProgressPaintRef.current = 0;
     setError("");
     setSaveStatus("");
+    setLiveMetrics(EMPTY_METRICS);
+    setVerifiedGoodput(undefined);
+    transferStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("scanning");
 
+    let stream: MediaStream | undefined;
     try {
-      const { BrowserQRCodeReader } = await import("@zxing/browser");
-      const reader = new BrowserQRCodeReader(undefined, {
-        delayBetweenScanAttempts: 16,
-        delayBetweenScanSuccess: 0,
-        tryPlayVideoTimeout: 5_000,
+      stream = await openCameraStream();
+      const video = videoRef.current;
+      video.srcObject = stream;
+      await video.play();
+
+      const trackSettings = stream.getVideoTracks()[0]?.getSettings();
+      const sourceWidth = video.videoWidth || trackSettings?.width || 1_280;
+      const sourceHeight = video.videoHeight || trackSettings?.height || 720;
+      const capturePixels = Math.min(720, sourceWidth, sourceHeight);
+      const captureCanvas = document.createElement("canvas");
+      captureCanvas.width = capturePixels;
+      captureCanvas.height = capturePixels;
+      const captureContext = captureCanvas.getContext("2d", { willReadFrequently: true });
+      if (!captureContext) throw new Error("The camera capture surface is unavailable.");
+
+      const workerCount = Math.min(4, Math.max(2, Math.floor((navigator.hardwareConcurrency || 4) / 2)));
+      let active = true;
+      let callbackId = 0;
+      let cameraFrames = 0;
+      let decodedFrames = 0;
+      let busyDrops = 0;
+      let lastMetricsPaint = performance.now();
+      const metricsStartedAt = lastMetricsPaint;
+      const decodeTimes: number[] = [];
+
+      const updateMetrics = (force = false) => {
+        const now = performance.now();
+        if (!force && now - lastMetricsPaint < 500) return;
+        const seconds = Math.max(0.001, (now - metricsStartedAt) / 1_000);
+        const sorted = [...decodeTimes].sort((left, right) => left - right);
+        setLiveMetrics({
+          cameraFps: cameraFrames / seconds,
+          decodeFps: decodedFrames / seconds,
+          medianDecodeMs: percentile(sorted, 0.5),
+          p95DecodeMs: percentile(sorted, 0.95),
+          busyDrops,
+          workers: workerCount,
+          width: sourceWidth,
+          height: sourceHeight,
+          negotiatedFps: trackSettings?.frameRate ?? 0,
+        });
+        lastMetricsPaint = now;
+      };
+
+      let controls: ScannerControls;
+      const pool = new DecodeWorkerPool(workerCount, (result: DecodeResult) => {
+        if (!active || verifyingRef.current) return;
+        decodeTimes.push(result.decodeMs);
+        if (decodeTimes.length > 240) decodeTimes.splice(0, decodeTimes.length - 240);
+        if (result.error) {
+          updateMetrics();
+          return;
+        }
+        if (!result.bytes && !result.text) {
+          updateMetrics();
+          return;
+        }
+        decodedFrames += 1;
+        const decoder = decoderRef.current;
+        const before = decoder.snapshot().acceptedFrames;
+        const next = result.bytes && isOpticalFrame(result.bytes)
+          ? decoder.ingestFrame(result.bytes)
+          : decoder.ingestText(result.text ?? "");
+        if (next.acceptedFrames > before && transferStartedAtRef.current === undefined) {
+          transferStartedAtRef.current = performance.now();
+        }
+        publishProgress(next, next.complete);
+        updateMetrics(next.complete);
+        if (next.envelope) void finishEnvelope(next.envelope, controls);
       });
-      const controls = await reader.decodeFromConstraints(
-        {
-          audio: false,
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1_280 },
-            height: { ideal: 720 },
-          },
-        },
-        videoRef.current,
-        (result, _scanError, callbackControls) => {
-          if (!result || verifyingRef.current) {
-            return;
-          }
-          const next = ingestDecodedQr(result, decoderRef.current);
-          publishProgress(next, next.complete);
-          if (!next.envelope) {
-            return;
-          }
-          void finishEnvelope(next.envelope, callbackControls);
-        },
-      );
+
+      const stop = () => {
+        if (!active) return;
+        active = false;
+        if ("cancelVideoFrameCallback" in video) video.cancelVideoFrameCallback(callbackId);
+        else window.cancelAnimationFrame(callbackId);
+        pool.stop();
+        for (const track of stream?.getTracks() ?? []) track.stop();
+        video.srcObject = null;
+      };
+      controls = { stop };
       controlsRef.current = controls;
+
+      const captureFrame = () => {
+        if (!active || verifyingRef.current) return;
+        cameraFrames += 1;
+        const sourceSize = Math.min(video.videoWidth, video.videoHeight);
+        const sourceX = Math.max(0, (video.videoWidth - sourceSize) / 2);
+        const sourceY = Math.max(0, (video.videoHeight - sourceSize) / 2);
+        captureContext.drawImage(
+          video,
+          sourceX,
+          sourceY,
+          sourceSize,
+          sourceSize,
+          0,
+          0,
+          capturePixels,
+          capturePixels,
+        );
+        const image = captureContext.getImageData(0, 0, capturePixels, capturePixels);
+        if (!pool.submit(image)) busyDrops += 1;
+        updateMetrics();
+      };
+
+      if ("requestVideoFrameCallback" in video) {
+        const onVideoFrame: VideoFrameRequestCallback = () => {
+          captureFrame();
+          if (active) callbackId = video.requestVideoFrameCallback(onVideoFrame);
+        };
+        callbackId = video.requestVideoFrameCallback(onVideoFrame);
+      } else {
+        const onAnimationFrame = () => {
+          captureFrame();
+          if (active) callbackId = window.requestAnimationFrame(onAnimationFrame);
+        };
+        callbackId = window.requestAnimationFrame(onAnimationFrame);
+      }
     } catch (cameraError) {
+      controlsRef.current?.stop();
+      controlsRef.current = undefined;
+      for (const track of stream?.getTracks() ?? []) track.stop();
       setError(
         cameraError instanceof Error
           ? `Camera unavailable: ${cameraError.message}`
@@ -267,6 +399,9 @@ export default function ReceiverApp() {
     setProgress(EMPTY_PROGRESS);
     setError("");
     setSaveStatus("");
+    setLiveMetrics(EMPTY_METRICS);
+    setVerifiedGoodput(undefined);
+    transferStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("paired");
   }
@@ -345,9 +480,11 @@ export default function ReceiverApp() {
     downloadFile(kind === "cose" ? cose : kind === "json" ? json : key);
   }
 
-  const percent = progress.required > 0
-    ? Math.min(100, Math.round((progress.rank / progress.required) * 100))
+  const solvedPercent = progress.required > 0 ? (progress.rank / progress.required) * 99 : 0;
+  const receivedPercent = progress.expectedFrames > 0
+    ? (progress.acceptedFrames / progress.expectedFrames) * 96
     : 0;
+  const percent = progress.complete ? 100 : Math.min(99, Math.round(Math.max(solvedPercent, receivedPercent)));
 
   return (
     <main className="receiver-app">
@@ -393,7 +530,7 @@ export default function ReceiverApp() {
           <div className="progress-card">
             <div className="progress-copy">
               <span>{stage === "scanning" ? "RECONSTRUCTION" : stage === "verifying" ? "TRUST CHECK" : "CONFIRM PAIRING"}</span>
-              <strong>{stage === "scanning" ? `${progress.rank} / ${progress.required || "—"} independent symbols` : stage === "verifying" ? "Envelope reconstructed" : "Key is not trusted until you continue"}</strong>
+              <strong>{stage === "scanning" ? `${progress.acceptedFrames} unique frames · ${progress.rank} / ${progress.required || "—"} blocks recovered` : stage === "verifying" ? "Envelope reconstructed" : "Key is not trusted until you continue"}</strong>
             </div>
             <progress
               className="progress-track"
@@ -403,6 +540,14 @@ export default function ReceiverApp() {
             />
             <div className="frame-stats"><span>{progress.acceptedFrames} accepted</span><span>{progress.duplicateFrames} duplicates</span><span>{progress.rejectedFrames} rejected</span></div>
           </div>
+
+          {stage === "scanning" && sourceMode === "camera" && (
+            <div className="live-metrics" aria-label="Live optical pipeline measurements">
+              <div><span>CAMERA</span><strong>{liveMetrics.cameraFps.toFixed(1)} FPS</strong><small>{liveMetrics.width}×{liveMetrics.height} @ {liveMetrics.negotiatedFps.toFixed(0) || "—"}</small></div>
+              <div><span>DECODER</span><strong>{liveMetrics.decodeFps.toFixed(1)} FPS</strong><small>{liveMetrics.workers} WASM workers · p50 {liveMetrics.medianDecodeMs.toFixed(0)} ms</small></div>
+              <div><span>PRESSURE</span><strong>{liveMetrics.busyDrops} dropped</strong><small>p95 decode {liveMetrics.p95DecodeMs.toFixed(0)} ms</small></div>
+            </div>
+          )}
 
           {stage === "paired" ? (
             <>
@@ -447,6 +592,7 @@ export default function ReceiverApp() {
             <div><dt>Purpose</dt><dd>{verified.purpose}</dd></div>
             <div><dt>Policy</dt><dd>{verified.policyId}</dd></div>
             <div><dt>SHA-256</dt><dd>{verified.payloadSha256}</dd></div>
+            {verifiedGoodput && <div><dt>Verified goodput</dt><dd>{formatRate(verifiedGoodput.bytesPerSecond)} in {verifiedGoodput.seconds.toFixed(2)} sec</dd></div>}
           </dl>
           <button
             className="receiver-button primary save-button"
@@ -534,4 +680,42 @@ function downloadFile(file: File): void {
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+async function openCameraStream(): Promise<MediaStream> {
+  const baseConstraints: MediaTrackConstraints = {
+    facingMode: { ideal: "environment" },
+    width: { ideal: 1_280 },
+    height: { ideal: 720 },
+  };
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { ...baseConstraints, frameRate: { exact: 60 } },
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "NotAllowedError") throw error;
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { ...baseConstraints, frameRate: { ideal: 60 } },
+    });
+  }
+}
+
+function isOpticalFrame(bytes: Uint8Array): boolean {
+  return bytes.length >= 44 &&
+    bytes[0] === 0x41 &&
+    bytes[1] === 0x47 &&
+    bytes[2] === 0x46 &&
+    (bytes[3] === 0x31 || bytes[3] === 0x32);
+}
+
+function percentile(sorted: number[], value: number): number {
+  if (sorted.length === 0) return 0;
+  return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * value))];
+}
+
+function formatRate(bytesPerSecond: number): string {
+  if (bytesPerSecond < 1_024) return `${Math.round(bytesPerSecond)} B/s`;
+  return `${(bytesPerSecond / 1_024).toFixed(1)} KiB/s`;
 }

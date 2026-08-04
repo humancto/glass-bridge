@@ -1,0 +1,98 @@
+export type DecodeWorkerRequest = {
+  id: number;
+  width: number;
+  height: number;
+  pixels: ArrayBuffer;
+};
+
+export type DecodeWorkerResponse = {
+  id: number;
+  bytes?: ArrayBuffer;
+  text?: string;
+  decodeMs: number;
+  error?: string;
+};
+
+export type DecodeResult = Omit<DecodeWorkerResponse, "bytes"> & {
+  bytes?: Uint8Array;
+};
+
+type WorkerSlot = {
+  worker: Worker;
+  busy: boolean;
+};
+
+type WorkerFactory = () => Worker;
+
+export class DecodeWorkerPool {
+  private readonly slots: WorkerSlot[];
+  private nextId = 0;
+  private active = true;
+
+  constructor(
+    size: number,
+    private readonly onResult: (result: DecodeResult) => void,
+    workerFactory: WorkerFactory = createDecodeWorker,
+  ) {
+    if (!Number.isSafeInteger(size) || size < 1 || size > 8) {
+      throw new Error("Decode worker count must be between one and eight.");
+    }
+    this.slots = Array.from({ length: size }, () => {
+      const worker = workerFactory();
+      const slot: WorkerSlot = { worker, busy: false };
+      worker.onmessage = (event: MessageEvent<DecodeWorkerResponse>) => {
+        if (!this.active) return;
+        slot.busy = false;
+        const result = event.data;
+        this.onResult({
+          ...result,
+          bytes: result.bytes ? new Uint8Array(result.bytes) : undefined,
+        });
+      };
+      worker.onerror = (event) => {
+        if (!this.active) return;
+        slot.busy = false;
+        this.onResult({
+          id: -1,
+          decodeMs: 0,
+          error: event.message || "Optical decode worker failed.",
+        });
+      };
+      return slot;
+    });
+  }
+
+  get size(): number {
+    return this.slots.length;
+  }
+
+  get busyCount(): number {
+    return this.slots.reduce((count, slot) => count + Number(slot.busy), 0);
+  }
+
+  submit(imageData: ImageData): boolean {
+    if (!this.active) return false;
+    const slot = this.slots.find((candidate) => !candidate.busy);
+    if (!slot) return false;
+    slot.busy = true;
+    const request: DecodeWorkerRequest = {
+      id: this.nextId,
+      width: imageData.width,
+      height: imageData.height,
+      pixels: imageData.data.buffer,
+    };
+    this.nextId += 1;
+    slot.worker.postMessage(request, [request.pixels]);
+    return true;
+  }
+
+  stop(): void {
+    if (!this.active) return;
+    this.active = false;
+    for (const slot of this.slots) slot.worker.terminate();
+  }
+}
+
+function createDecodeWorker(): Worker {
+  return new Worker(new URL("./decode-worker.ts", import.meta.url), { type: "module" });
+}

@@ -2,7 +2,7 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 10 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, fast binary QR profiles, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, bounded one-way repair transport, real QR encoding/decoding, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. It must not be used as a production security control.
+> **Project status:** runnable milestone 11 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, an experimental 2,900-byte/60-FPS Turbo QR path, parallel WASM phone decoding with live pipeline telemetry, sparse LT repair, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. Turbo's physical goodput target has not yet been validated. This must not be used as a production security control.
 
 ## See it work
 
@@ -14,7 +14,7 @@ Open the hosted [GlassBridge file sender](https://humancto.github.io/glass-bridg
 on the laptop. No installation or command line is required.
 
 1. Choose or drag in one file, or select **Try the sample file**.
-2. Leave **Fast** selected, keep the default demonstration boundary in place, and select **Prepare secure transfer**. Use **Balanced** if the phone has difficulty focusing; **Legacy** preserves the milestone 9 text-frame path.
+2. Leave **Turbo** selected, keep the default demonstration boundary in place, and select **Prepare secure transfer**. Use **Steady** or **Balanced** if the phone has difficulty focusing; **Legacy** preserves the milestone 9 text-frame path.
 3. Scan the stationary pairing QR with the phone's normal Camera app.
 4. Confirm the sender fingerprint on both devices, then select **Trust sender & open camera** on the phone.
 5. Back on the laptop, select **2 · Start transfer**. Keep the complete QR square in the GlassBridge camera view.
@@ -28,15 +28,16 @@ AGF1 frames, and renders the QR stream locally. The file is not uploaded by the
 application. The ephemeral key proves integrity for the paired session; it is not
 an organizational identity or durable provenance credential.
 
-The current browser profile accepts one file up to 256 KiB. The default Fast
-profile emits 1,536-byte binary frames at 12 FPS: 18 KiB/s nominal and an
-8-second ideal source-payload lower bound for 144 KiB, versus 72 seconds for the
-old 512-byte/4-FPS text profile. Those lower bounds cover systematic source
-frames only: they exclude signed-envelope overhead, the full
-`source_count × 3 + 8` repair loop, and camera loss. Camera focus, display
-refresh, and device thermals add time. The sender shows both its exact signed-
-envelope estimate and measured render FPS. This remains a deliberate
-show-and-tell size limit, not the target architecture's capacity.
+The current browser profile accepts one file up to 256 KiB. The default Turbo
+profile emits 2,900-byte AGF2 binary symbols at a target 60 FPS: 174,000 B/s
+(169.9 KiB/s) of raw useful-symbol capacity. A 144 KiB payload needs 51 source
+symbols, giving a 0.85-second loss-free payload-only lower bound before signed-
+envelope bytes and sparse-LT overhead. This is a channel budget, **not measured
+physical goodput**. The phone now reports camera FPS, valid decode FPS, decoder
+latency, worker pressure, and verified payload goodput so the 128 KiB/s reference
+can be tested rather than inferred. Steady retains milestone 10's 1,536-byte,
+12-FPS path. Camera focus/exposure, display refresh, frame loss, browser scheduling,
+and device thermals all affect the result.
 
 ### Reproducible CLI-generated phone demo
 
@@ -139,7 +140,7 @@ cargo run --locked -p glassbridge-cli -- video-receive \
   --approve
 ```
 
-That path extracts bounded video frames, recovers and verifies the signed AGX envelope, enforces local policy/replay state, imports or quarantines it, emits the receiver's signed receipt, and writes `reception.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), [Milestone 4](docs/milestone-4.md), [Milestone 5](docs/milestone-5.md), [Milestone 6](docs/milestone-6.md), [Milestone 7](docs/milestone-7.md), [Milestone 8](docs/milestone-8.md), [Milestone 9](docs/milestone-9.md), and [Milestone 10](docs/milestone-10.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), [RECEPTION-0001](spec/RECEPTION-0001.md), [BROWSER-RECEIPT-0001](spec/BROWSER-RECEIPT-0001.md), and [CDDL](spec/agx1.cddl).
+That path extracts bounded video frames, recovers and verifies the signed AGX envelope, enforces local policy/replay state, imports or quarantines it, emits the receiver's signed receipt, and writes `reception.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), [Milestone 4](docs/milestone-4.md), [Milestone 5](docs/milestone-5.md), [Milestone 6](docs/milestone-6.md), [Milestone 7](docs/milestone-7.md), [Milestone 8](docs/milestone-8.md), [Milestone 9](docs/milestone-9.md), [Milestone 10](docs/milestone-10.md), and [Milestone 11](docs/milestone-11.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), [RECEPTION-0001](spec/RECEPTION-0001.md), [BROWSER-RECEIPT-0001](spec/BROWSER-RECEIPT-0001.md), and [CDDL](spec/agx1.cddl).
 
 ## Why GlassBridge
 
@@ -224,7 +225,7 @@ cargo run --locked -p glassbridge-cli -- qr-decode \
 
 - a native phone application, protected monotonic phone replay state, organizational trust provisioning, or published physical-goodput results
 - practical large-file transfer, compression, feedback-driven adaptation, or live receiver feedback
-- a production LT/RaptorQ implementation or adaptive transport controller
+- production-grade FEC/RaptorQ or an adaptive transport controller (AGF2 sparse LT is experimental)
 - multi-role trust-bundle rotation, threshold authorization, or universally available concurrent policy-state locking
 - malware scanning or content disarm and reconstruction
 - encryption, macOS GUI, hardware direction enforcement, or certification
@@ -241,6 +242,6 @@ cargo run --locked -p glassbridge-cli -- qr-decode \
 
 ## Repository status and licensing
 
-The project is being prepared for open-source implementation. A code and documentation license has not yet been selected; until one is added, normal copyright restrictions apply. The prior-art and IPR discussion in the design is not legal advice or a freedom-to-operate opinion.
+The project is being prepared for open-source implementation. A project-wide code and documentation license has not yet been selected; until one is added, normal copyright restrictions apply. Adapted and bundled components retain their licenses and attributions in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The prior-art and IPR discussion in the design is not legal advice or a freedom-to-operate opinion.
 
 See [SECURITY.md](SECURITY.md) before evaluating or building security-sensitive functionality, and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.

@@ -1,10 +1,13 @@
 import { base64UrlEncode } from "../receiver/transport";
+import { expectedLtFrames, ltFrameIndices } from "../protocol/lt-codec";
+import type { OpticalCodecId } from "../protocol/optical-profile";
 
-const FRAME_MAGIC = new Uint8Array([0x41, 0x47, 0x46, 0x31]);
+const DENSE_FRAME_MAGIC = new Uint8Array([0x41, 0x47, 0x46, 0x31]);
+const LT_FRAME_MAGIC = new Uint8Array([0x41, 0x47, 0x46, 0x32]);
 const HEADER_BYTES = 40;
 const CRC_BYTES = 4;
 const MAX_SOURCE_SYMBOLS = 1_024;
-const MAX_SYMBOL_BYTES = 2_048;
+const MAX_SYMBOL_BYTES = 2_909;
 const MAX_TRANSFER_BYTES = 2 * 1024 * 1024;
 const MAX_FRAMES = MAX_SOURCE_SYMBOLS * 8;
 const MASK_64 = (1n << 64n) - 1n;
@@ -14,6 +17,7 @@ export type OpticalEncoderOptions = {
   sessionId?: Uint8Array;
   symbolSize?: number;
   frameCount?: number;
+  codec?: OpticalCodecId;
 };
 
 export class OpticalTransferEncoder {
@@ -22,11 +26,13 @@ export class OpticalTransferEncoder {
   readonly symbolSize: number;
   readonly frameCount: number;
   readonly payloadLength: number;
+  readonly codec: OpticalCodecId;
 
   private readonly source: Uint8Array[];
 
   constructor(payload: Uint8Array, options: OpticalEncoderOptions = {}) {
     this.symbolSize = options.symbolSize ?? 512;
+    this.codec = options.codec ?? "dense-v1";
     if (this.symbolSize === 0 || this.symbolSize > MAX_SYMBOL_BYTES) {
       throw new Error("Optical symbol size exceeds the browser sender limit.");
     }
@@ -39,7 +45,9 @@ export class OpticalTransferEncoder {
       throw new Error("Optical transfer requires too many source symbols.");
     }
 
-    this.frameCount = options.frameCount ?? (this.sourceCount * 3 + 8);
+    this.frameCount = options.frameCount ?? (
+      this.codec === "lt-v2" ? expectedLtFrames(this.sourceCount) : this.sourceCount * 3 + 8
+    );
     if (
       !Number.isSafeInteger(this.frameCount) ||
       this.frameCount < this.sourceCount ||
@@ -67,16 +75,20 @@ export class OpticalTransferEncoder {
     if (!Number.isSafeInteger(symbolId) || symbolId < 0 || symbolId > 0xffff_ffff) {
       throw new Error("Optical symbol identifier is outside the supported range.");
     }
-    const coefficientWords = coefficients(this.sessionId, symbolId, this.sourceCount);
     const symbol = new Uint8Array(this.symbolSize);
-    this.source.forEach((candidate, index) => {
-      if (bitIsSet(coefficientWords, index)) {
-        xorBytes(symbol, candidate);
+    if (this.codec === "lt-v2") {
+      for (const index of ltFrameIndices(this.sessionId, symbolId, this.sourceCount)) {
+        xorBytes(symbol, this.source[index]);
       }
-    });
+    } else {
+      const coefficientWords = coefficients(this.sessionId, symbolId, this.sourceCount);
+      this.source.forEach((candidate, index) => {
+        if (bitIsSet(coefficientWords, index)) xorBytes(symbol, candidate);
+      });
+    }
 
     const frame = new Uint8Array(HEADER_BYTES + this.symbolSize + CRC_BYTES);
-    frame.set(FRAME_MAGIC, 0);
+    frame.set(this.codec === "lt-v2" ? LT_FRAME_MAGIC : DENSE_FRAME_MAGIC, 0);
     frame.set(this.sessionId, 4);
     const view = new DataView(frame.buffer);
     view.setUint32(20, symbolId, false);
