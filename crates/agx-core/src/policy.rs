@@ -594,6 +594,27 @@ mod tests {
     }
 
     #[test]
+    fn browser_profile_policy_digest_is_stable() {
+        let signer = ed25519_dalek::SigningKey::from_bytes(&[0x11; 32]);
+        let policy = Policy {
+            version: 1,
+            id: "browser-sender/v1".into(),
+            boundary: "demo/phone-laptop".into(),
+            allowed_directions: vec![Direction::Inbound],
+            allowed_purposes: vec!["ad-hoc-file-transfer".into()],
+            allowed_media_types: vec!["text/plain".into()],
+            allowed_signer_key_ids: vec![hex::encode(key_id(&signer.verifying_key()))],
+            max_payload_bytes: 256 * 1024,
+            minimum_sequence: 1,
+            require_approval: true,
+        };
+        assert_eq!(
+            hex::encode(policy.digest().unwrap()),
+            "19d2277fe2724554d6dd9debddc2156d9300060bd8454a35cf4dbafd02540602"
+        );
+    }
+
+    #[test]
     fn persists_replay_and_high_water_state() {
         let signer = generate_signing_key().unwrap();
         let policy = policy_for_signer(&signer);

@@ -2,7 +2,7 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 8 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, a live browser receiver for ordinary phones, canonical signed AGX envelopes, bounded one-way repair transport, real QR encoding/decoding, an offline fullscreen player, an H.264 benchmark harness and prerecorded-video fallback, quarantine/import workflow, signed receipts, and deterministic Rust/browser interoperability vectors. It must not be used as a production security control.
+> **Project status:** runnable milestone 9 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, bounded one-way repair transport, real QR encoding/decoding, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. It must not be used as a production security control.
 
 ## See it work
 
@@ -18,7 +18,9 @@ on the laptop. No installation or command line is required.
 3. Scan the stationary pairing QR with the phone's normal Camera app.
 4. Confirm the sender fingerprint on both devices, then select **Trust sender & open camera** on the phone.
 5. Back on the laptop, select **2 · Start transfer**. Keep the complete QR square in the GlassBridge camera view.
-6. When the phone reports **VERIFIED**, save or share the recovered file.
+6. When the phone reports **QUARANTINED**, review the sender, boundary, policy, and digest.
+7. Select **Approve release & create signed receipt**. Only then can the phone save or share the file.
+8. Preserve the signed COSE receipt, receipt JSON, and receiver public key with the file.
 
 The laptop browser creates a fresh Ed25519 key for that transfer, builds and signs
 a canonical AGX/1 envelope in memory, fountain-encodes it into Rust-compatible
@@ -43,12 +45,15 @@ The player starts on a standard pairing QR. Then:
 1. Scan the pairing QR with the phone's normal camera. It opens the [hosted GlassBridge receiver](https://humancto.github.io/glass-bridge/receive.html) over HTTPS.
 2. Confirm that the sender fingerprint shown on the phone matches the fingerprint printed by the laptop player, then select **Trust sender & open camera**.
 3. Aim the phone at the whole white QR square and select **2 · Start transfer** on the laptop.
-4. When the phone reports **VERIFIED**, save or share `phone-camera-demo.txt` directly from the phone.
+4. When the phone reports **QUARANTINED**, review the verified details, then select **Approve release & create signed receipt** before saving or sharing `phone-camera-demo.txt`.
 
 The receiver reconstructs the fountain-coded stream in memory, rejects malformed
 or mixed-session frames, verifies canonical AGX/CBOR and COSE structure, checks the
 Ed25519 signature, enforces the paired boundary, and verifies the declared length
-and SHA-256 before it exposes the file. No app-store installation is required.
+and SHA-256. It then recomputes and applies a local policy, denies replayed envelope
+identifiers, keeps the payload quarantined in memory until explicit approval, and
+creates receiver-signed release evidence before it exposes the file. No app-store
+installation is required.
 
 The receiver page itself must be loaded over HTTPS so the phone browser may use the
 camera. The signed payload bytes travel only in the animated optical frames. After
@@ -62,6 +67,15 @@ prepared command in `work/phone-demo/NEXT-STEPS.txt`. That fallback produces the
 full desktop policy decision, quarantine/import result, replay state, reception
 evidence, and receiver-signed receipt. Its generated receipt key is demo-only and
 belongs inside the ignored `work/` directory.
+
+Browser release evidence uses the same receipt signature profile as the Rust
+receiver. Verify a downloaded receipt independently with:
+
+```bash
+cargo run --locked -p glassbridge-cli -- receipt-verify \
+  --receipt glassbridge.receipt.cose \
+  --receiver-public-key glassbridge.receiver.public
+```
 
 ### Deterministic trust-path demo
 
@@ -118,7 +132,7 @@ cargo run --locked -p glassbridge-cli -- video-receive \
   --approve
 ```
 
-That path extracts bounded video frames, recovers and verifies the signed AGX envelope, enforces local policy/replay state, imports or quarantines it, emits the receiver's signed receipt, and writes `reception.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), [Milestone 4](docs/milestone-4.md), [Milestone 5](docs/milestone-5.md), [Milestone 6](docs/milestone-6.md), [Milestone 7](docs/milestone-7.md), and [Milestone 8](docs/milestone-8.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), [RECEPTION-0001](spec/RECEPTION-0001.md), and [CDDL](spec/agx1.cddl).
+That path extracts bounded video frames, recovers and verifies the signed AGX envelope, enforces local policy/replay state, imports or quarantines it, emits the receiver's signed receipt, and writes `reception.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), [Milestone 4](docs/milestone-4.md), [Milestone 5](docs/milestone-5.md), [Milestone 6](docs/milestone-6.md), [Milestone 7](docs/milestone-7.md), [Milestone 8](docs/milestone-8.md), and [Milestone 9](docs/milestone-9.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), [RECEPTION-0001](spec/RECEPTION-0001.md), [BROWSER-RECEIPT-0001](spec/BROWSER-RECEIPT-0001.md), and [CDDL](spec/agx1.cddl).
 
 ## Why GlassBridge
 
@@ -161,13 +175,14 @@ chosen browser file -> canonical AGX envelope -> ephemeral Ed25519 signature
      -> one-way repair frames generated in the laptop browser
      -> QR PNG codec -> fullscreen display -> live phone camera
      -> browser reconstruction -> signature + boundary + digest verification
-     -> save/share on phone
+     -> local policy -> memory quarantine -> approval -> replay reservation
+     -> receiver-signed release receipt -> save/share on phone
 
 fallback: recorded camera video -> desktop verification -> local policy
         -> quarantine/import -> replay state -> signed audit receipt
 ```
 
-The browser sender renders QR frames directly into a canvas, the Rust CLI can render the same protocol as inspectable PNGs, and the browser receiver scans either stream from a live phone camera without a native application. The file-video harness still provides a reproducible H.264 boundary and a way for a phone recording to enter the complete policy/quarantine/import workflow. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
+The browser sender renders QR frames directly into a canvas, the Rust CLI can render the same protocol as inspectable PNGs, and the browser receiver scans either stream from a live phone camera without a native application. The phone path now has an explicit policy/quarantine/release boundary and produces a signed `release-authorized` receipt. The file-video harness still provides a reproducible H.264 boundary and a stronger native import workflow. Claims in the research document remain proposals or hypotheses unless specifically identified as implemented and measured.
 
 Useful commands:
 
@@ -200,10 +215,10 @@ cargo run --locked -p glassbridge-cli -- qr-decode \
 
 ## What is not implemented yet
 
-- a native phone application, full phone-side policy/quarantine/receipt workflow, or published physical-goodput results
+- a native phone application, protected monotonic phone replay state, organizational trust provisioning, or published physical-goodput results
 - practical large-file transfer, compression, dynamic density/FPS selection, or live receiver feedback
 - a production LT/RaptorQ implementation or adaptive transport controller
-- multi-role trust-bundle rotation, threshold authorization, or concurrent policy-state locking
+- multi-role trust-bundle rotation, threshold authorization, or universally available concurrent policy-state locking
 - malware scanning or content disarm and reconstruction
 - encryption, macOS GUI, hardware direction enforcement, or certification
 - stable wire-format/API compatibility guarantees

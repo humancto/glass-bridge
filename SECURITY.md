@@ -36,10 +36,33 @@ channel before accepting important data.
 
 The receiver treats camera and uploaded-frame input as hostile, bounds optical
 reconstruction, verifies canonical AGX encoding, Ed25519 provenance, boundary,
-length, and SHA-256 before exposing a download. It does not yet run the full
-desktop policy, quarantine, replay, content inspection, or signed-receipt
-workflow. Browser and camera-library vulnerabilities remain in scope. Use only
-synthetic, non-sensitive test data on ordinary devices.
+length, and SHA-256, and then applies a pinned local browser policy. An allowed
+payload remains quarantined in memory until explicit operator approval. The
+receiver reserves its envelope identifier in a bounded replay ledger and creates
+a COSE-signed `release-authorized` receipt before exposing save/share.
+
+Replay entries in local storage are schema-validated and malformed state fails
+closed, but browser storage is not a trusted monotonic database. Clearing or
+rolling back site data can remove replay history. Web Locks serialize the release
+reservation where supported; other browsers retain a concurrent-tab race.
+
+The persistent receiver receipt key is a non-extractable WebCrypto Ed25519 private
+key stored in IndexedDB. This prevents ordinary raw-key export but is not a
+hardware-backed or organizational identity: same-origin code can ask it to sign,
+and clearing site data destroys it. The receipt proves that receiver policy
+authorized browser exposure. It is not proof that an operating-system share target
+persisted, opened, or accepted the file.
+
+The receiver does not inspect file content, render it inline, scan it for malware,
+or perform content disarm and reconstruction. Browser, same-origin deployment,
+service-worker, camera-library, extension, and operating-system vulnerabilities
+remain in scope. Use only synthetic, non-sensitive test data on ordinary devices.
+
+The static app shells include a restrictive meta-delivered Content Security
+Policy and a no-referrer policy. GitHub Pages does not expose repository-controlled
+response headers, and meta CSP cannot enforce `frame-ancestors`, MIME nosniff, or
+Permissions Policy. A production deployment must set those controls at a managed
+edge or dedicated receiver appliance.
 
 ## Untrusted video warning
 

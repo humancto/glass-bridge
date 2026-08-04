@@ -20,6 +20,7 @@ mod video;
 const DEFAULT_RECEIVER_URL: &str = "https://humancto.github.io/glass-bridge/receive.html";
 const WEB_FRAME_PREFIX: &str = "AGF1B64:";
 const WEB_QR_CODEC_ID: &str = "qr/png+agf-base64url-v1";
+const MAX_RECEIPT_FILE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -96,6 +97,13 @@ enum Command {
         public_key: PathBuf,
         #[arg(long)]
         boundary: Option<String>,
+    },
+    /// Verify a receiver-signed import or browser release receipt.
+    ReceiptVerify {
+        #[arg(long)]
+        receipt: PathBuf,
+        #[arg(long)]
+        receiver_public_key: PathBuf,
     },
     /// Send an AGX file through the deterministic lossy frame simulator.
     Loopback {
@@ -316,6 +324,10 @@ fn main() -> Result<()> {
             public_key,
             boundary,
         } => verify(&envelope, &public_key, boundary.as_deref()),
+        Command::ReceiptVerify {
+            receipt,
+            receiver_public_key,
+        } => receipt_verify(&receipt, &receiver_public_key),
         Command::Loopback {
             envelope,
             output,
@@ -636,13 +648,13 @@ fn screen_demo(
 
     let policy = Policy {
         version: 1,
-        id: "phone-demo/v1".into(),
+        id: "browser-sender/v1".into(),
         boundary: "demo/phone-laptop".into(),
         allowed_directions: vec![Direction::Inbound],
-        allowed_purposes: vec!["physical-optical-demo".into()],
+        allowed_purposes: vec!["ad-hoc-file-transfer".into()],
         allowed_media_types: vec!["text/plain".into()],
         allowed_signer_key_ids: vec![hex_string(&key_id(&sender.verifying_key()))],
-        max_payload_bytes: 64 * 1024,
+        max_payload_bytes: 256 * 1024,
         minimum_sequence: 1,
         require_approval: true,
     };
@@ -664,7 +676,7 @@ fn screen_demo(
             payload: payload.as_bytes(),
             boundary: &policy.boundary,
             direction: Direction::Inbound,
-            purpose: "physical-optical-demo",
+            purpose: "ad-hoc-file-transfer",
             policy_id: &policy.id,
             policy_digest: policy.digest()?,
             display_name: "phone-camera-demo.txt",
@@ -882,7 +894,7 @@ fn screen_demo_html(
   </section>
   <section class="details">
     <h1>Scan. Verify. Download.</h1>
-    <ol><li>Use the phone's normal camera to scan the pairing QR now displayed.</li><li>Confirm that the phone shows sender fingerprint <strong>__SENDER_FINGERPRINT__</strong>, then allow camera access.</li><li>Aim the phone at this screen, then press “2 · Start transfer.”</li><li>Keep the whole white border visible until the phone reports VERIFIED.</li><li>Save or share the recovered file directly from the phone.</li></ol>
+    <ol><li>Use the phone's normal camera to scan the pairing QR now displayed.</li><li>Confirm that the phone shows sender fingerprint <strong>__SENDER_FINGERPRINT__</strong>, then allow camera access.</li><li>Aim the phone at this screen, then press “2 · Start transfer.”</li><li>Keep the whole white border visible until the phone reports QUARANTINED.</li><li>Review the verified details, then approve release to create signed evidence and save or share the file.</li></ol>
     <p>Receiver: <a href="__RECEIVER_URL__">__RECEIVER_URL__</a>. The receiver page is loaded over HTTPS; the payload itself crosses in the animated QR stream.</p>
     <h2>Recorded-video diagnostic fallback</h2>
     <pre id="command">__RECEIVE_COMMAND__</pre>
@@ -992,6 +1004,27 @@ fn verify(envelope_path: &Path, public_key_path: &Path, boundary: Option<&str>) 
     let verified = verify_signed_envelope(&envelope, &public_key, boundary)?;
     println!("{}", serde_json::to_string_pretty(&verified.manifest)?);
     println!("VERIFIED signer_key_id={}", verified.signer_key_id);
+    Ok(())
+}
+
+fn receipt_verify(receipt_path: &Path, receiver_public_key_path: &Path) -> Result<()> {
+    let receipt_bytes = read_bounded(receipt_path, MAX_RECEIPT_FILE_BYTES)?
+        .context("receipt exceeds the 64 KiB CLI limit")?;
+    let public_key_bytes = read_bounded(receiver_public_key_path, 32)?
+        .context("receiver public key exceeds 32 bytes")?;
+    let public_key = verifying_key_from_bytes(&public_key_bytes)?;
+    let receipt = verify_receipt(&receipt_bytes, &public_key)?;
+    println!("RECEIPT VERIFIED");
+    println!("  event:             {}", receipt.event);
+    println!("  envelope:          {}", receipt.envelope_id);
+    println!("  payload SHA-256:   {}", receipt.payload_sha256);
+    println!("  boundary:          {}", receipt.boundary);
+    println!("  policy:            {}", receipt.policy_id);
+    println!("  receiver key ID:   {}", receipt.receiver_key_id);
+    println!(
+        "  accepted/rejected: {}/{}",
+        receipt.accepted_frames, receipt.rejected_frames
+    );
     Ok(())
 }
 
@@ -1312,7 +1345,7 @@ fn read_bounded(path: &Path, limit: usize) -> Result<Option<Vec<u8>>> {
     let mut bytes = Vec::new();
     file.take(byte_limit)
         .read_to_end(&mut bytes)
-        .with_context(|| format!("read bounded image {}", path.display()))?;
+        .with_context(|| format!("read bounded file {}", path.display()))?;
     Ok((bytes.len() <= limit).then_some(bytes))
 }
 

@@ -1,10 +1,16 @@
 import { getPublicKeyAsync, signAsync, utils } from "@noble/ed25519";
 import { encode } from "cborg";
+import {
+  BROWSER_POLICY_ID,
+  BROWSER_PURPOSE,
+  browserPolicyDigest,
+  MAX_BROWSER_FILE_BYTES,
+} from "../protocol/browser-profile";
 
 const MANIFEST_AAD = new TextEncoder().encode("GlassBridge/AGX1/manifest");
 const MAX_TEXT_BYTES = 512;
 
-export const MAX_BROWSER_FILE_BYTES = 256 * 1024;
+export { MAX_BROWSER_FILE_BYTES } from "../protocol/browser-profile";
 
 export type BrowserEnvelopeOptions = {
   filename: string;
@@ -45,8 +51,8 @@ export async function createBrowserEnvelope(
   const filename = safeFilename(options.filename);
   const mediaType = options.mediaType || "application/octet-stream";
   const boundary = options.boundary.trim();
-  const purpose = options.purpose?.trim() || "ad-hoc-file-transfer";
-  const policyId = options.policyId?.trim() || "browser-sender/v1";
+  const purpose = options.purpose?.trim() || BROWSER_PURPOSE;
+  const policyId = options.policyId?.trim() || BROWSER_POLICY_ID;
   for (const [name, value] of [
     ["filename", filename],
     ["media type", mediaType],
@@ -74,10 +80,12 @@ export async function createBrowserEnvelope(
   }
 
   const payloadDigest = await sha256(payload);
-  const policyDigest = options.policyDigest?.slice() ?? await defaultPolicyDigest(
+  const policyDigest = options.policyDigest?.slice() ?? await browserPolicyDigest(
     policyId,
     boundary,
     purpose,
+    mediaType,
+    toHex(signerKeyIdBytes),
   );
   if (policyDigest.length !== 32) {
     throw new Error("The AGX policy digest must be 32 bytes.");
@@ -146,20 +154,6 @@ export async function createBrowserEnvelope(
     sequence,
     createdUnix,
   };
-}
-
-async function defaultPolicyDigest(
-  policyId: string,
-  boundary: string,
-  purpose: string,
-): Promise<Uint8Array> {
-  return sha256(encode(new Map<number, unknown>([
-    [1, 1],
-    [2, policyId],
-    [3, boundary],
-    [4, purpose],
-    [5, MAX_BROWSER_FILE_BYTES],
-  ])));
 }
 
 function safeFilename(value: string): string {

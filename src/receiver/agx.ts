@@ -21,6 +21,7 @@ export type VerifiedTransfer = {
   boundary: string;
   purpose: string;
   policyId: string;
+  policyDigest: string;
   sequence: number;
   createdUnix: number;
 };
@@ -146,7 +147,7 @@ export async function verifyAgxEnvelope(
   }
   const purpose = requireText(manifest.get(5), "purpose");
   const policyId = requireText(manifest.get(6), "policy id");
-  requireFixedBytes(manifest.get(7), 32, "policy digest");
+  const policyDigest = requireFixedBytes(manifest.get(7), 32, "policy digest");
   const sequence = requireSafeInteger(manifest.get(8), "sequence");
   const createdUnix = requireSafeInteger(manifest.get(9), "creation time");
   const object = decodeObject(manifest.get(10));
@@ -169,6 +170,7 @@ export async function verifyAgxEnvelope(
     boundary,
     purpose,
     policyId,
+    policyDigest: toHex(policyDigest),
     sequence,
     createdUnix,
   };

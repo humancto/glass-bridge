@@ -197,7 +197,7 @@ export default function SenderApp() {
 
       <section className="sender-intro">
         <div>
-          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 8</p>
+          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 9</p>
           <h1>Choose a file.<br /><em>Send it through light.</em></h1>
         </div>
         <p>

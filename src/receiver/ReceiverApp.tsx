@@ -7,6 +7,12 @@ import {
   type BootstrapTrust,
   type VerifiedTransfer,
 } from "./agx";
+import { evaluateBrowserPolicy, type LocalPolicyDecision } from "./policy";
+import {
+  createBrowserReleaseReceipt,
+  type BrowserReleaseReceipt,
+} from "./receipt";
+import { assertFreshTransfer, reserveTransferRelease } from "./replay";
 import {
   base64UrlDecode,
   base64UrlEncode,
@@ -14,7 +20,7 @@ import {
   type TransferProgress,
 } from "./transport";
 
-type Stage = "unpaired" | "paired" | "scanning" | "verifying" | "verified" | "error";
+type Stage = "unpaired" | "paired" | "scanning" | "verifying" | "quarantined" | "releasing" | "released" | "error";
 type SourceMode = "camera" | "files";
 
 const SESSION_TRUST_KEY = "glassbridge-demo-trust-v1";
@@ -67,6 +73,8 @@ export default function ReceiverApp() {
   const [fingerprint, setFingerprint] = useState("calculating…");
   const [progress, setProgress] = useState<TransferProgress>(EMPTY_PROGRESS);
   const [verified, setVerified] = useState<VerifiedTransfer>();
+  const [policyDecision, setPolicyDecision] = useState<LocalPolicyDecision>();
+  const [receipt, setReceipt] = useState<BrowserReleaseReceipt>();
   const [saveStatus, setSaveStatus] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("camera");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -98,8 +106,14 @@ export default function ReceiverApp() {
     setStage("verifying");
     try {
       const transfer = await verifyAgxEnvelope(envelope, trust);
+      const decision = await evaluateBrowserPolicy(transfer);
+      if (!decision.allowed) {
+        throw new Error(`${decision.code}: ${decision.reason}`);
+      }
+      assertFreshTransfer(transfer);
       setVerified(transfer);
-      setStage("verified");
+      setPolicyDecision(decision);
+      setStage("quarantined");
     } catch (verificationError) {
       setError(
         verificationError instanceof Error
@@ -124,6 +138,8 @@ export default function ReceiverApp() {
     decoderRef.current.reset();
     verifyingRef.current = false;
     setVerified(undefined);
+    setPolicyDecision(undefined);
+    setReceipt(undefined);
     setProgress(EMPTY_PROGRESS);
     setError("");
     setSaveStatus("");
@@ -183,6 +199,8 @@ export default function ReceiverApp() {
     decoderRef.current.reset();
     verifyingRef.current = false;
     setVerified(undefined);
+    setPolicyDecision(undefined);
+    setReceipt(undefined);
     setProgress(EMPTY_PROGRESS);
     setError("");
     setSourceMode("files");
@@ -223,47 +241,90 @@ export default function ReceiverApp() {
     setStage("paired");
   }
 
+  function resetToPaired(): void {
+    controlsRef.current?.stop();
+    controlsRef.current = undefined;
+    decoderRef.current.reset();
+    verifyingRef.current = false;
+    setVerified(undefined);
+    setPolicyDecision(undefined);
+    setReceipt(undefined);
+    setProgress(EMPTY_PROGRESS);
+    setError("");
+    setSaveStatus("");
+    setSourceMode("camera");
+    setStage("paired");
+  }
+
   function clearPairing(): void {
     controlsRef.current?.stop();
     window.sessionStorage.removeItem(SESSION_TRUST_KEY);
     window.location.reload();
   }
 
-  async function saveFile(): Promise<void> {
-    if (!verified) {
+  async function authorizeRelease(): Promise<void> {
+    if (!verified || !policyDecision?.allowed || stage === "releasing") {
       return;
     }
-    const file = new File([verified.payload.slice().buffer], verified.filename, {
-      type: verified.mediaType,
+    setStage("releasing");
+    setSaveStatus("Creating a receiver-signed release receipt…");
+    try {
+      const nextReceipt = await createBrowserReleaseReceipt(verified, progress);
+      await reserveTransferRelease(verified, nextReceipt.observedUnix);
+      setReceipt(nextReceipt);
+      setStage("released");
+      await deliverReleasedFiles(verified, nextReceipt);
+    } catch (releaseError) {
+      setError(releaseError instanceof Error ? releaseError.message : "The receiver could not authorize release.");
+      setStage("error");
+    }
+  }
+
+  async function deliverReleasedFiles(
+    transfer: VerifiedTransfer,
+    releaseReceipt: BrowserReleaseReceipt,
+  ): Promise<void> {
+    const file = new File([transfer.payload.slice().buffer], transfer.filename, {
+      type: transfer.mediaType,
     });
-    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    const evidenceFiles = releaseEvidenceFiles(transfer, releaseReceipt);
+    const files = [file, ...evidenceFiles];
+    const sharedFiles = navigator.canShare?.({ files })
+      ? files
+      : navigator.canShare?.({ files: [file] })
+        ? [file]
+        : undefined;
+    if (navigator.share && sharedFiles) {
       try {
         await navigator.share({
-          files: [file],
-          title: "Verified GlassBridge transfer",
-          text: `Verified signer ${verified.signerKeyId}`,
+          files: sharedFiles,
+          title: "Authorized GlassBridge transfer",
+          text: `Policy ${policyDecision?.code ?? "GB-ALLOW"} · sender ${transfer.signerKeyId} · receiver ${releaseReceipt.receiverKeyId}`,
         });
-        setSaveStatus("Share sheet opened for the verified file.");
+        setSaveStatus(sharedFiles.length > 1
+          ? "Share completed with the file, signed receipt, receipt JSON, and receiver public key."
+          : "File share completed. Download the signed evidence below to preserve the audit record.");
         return;
       } catch (shareError) {
         if (shareError instanceof DOMException && shareError.name === "AbortError") {
-          setSaveStatus("Save cancelled; the verified file remains available.");
+          setSaveStatus("Share cancelled. Release remains authorized; you can try again or download the evidence.");
           return;
         }
       }
     }
 
     try {
-      const url = URL.createObjectURL(file);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = verified.filename;
-      anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-      setSaveStatus("Download started.");
+      downloadFile(file);
+      setSaveStatus("File download started. Preserve the signed receipt and receiver public key below.");
     } catch {
-      setSaveStatus("The browser could not save the file. Try Share again.");
+      setSaveStatus("The browser could not save the file. Try Save / Share again.");
     }
+  }
+
+  function downloadEvidence(kind: "cose" | "json" | "key"): void {
+    if (!verified || !receipt) return;
+    const [cose, json, key] = releaseEvidenceFiles(verified, receipt);
+    downloadFile(kind === "cose" ? cose : kind === "json" ? json : key);
   }
 
   const percent = progress.required > 0
@@ -316,7 +377,12 @@ export default function ReceiverApp() {
               <span>{stage === "scanning" ? "RECONSTRUCTION" : stage === "verifying" ? "TRUST CHECK" : "CONFIRM PAIRING"}</span>
               <strong>{stage === "scanning" ? `${progress.rank} / ${progress.required || "—"} independent symbols` : stage === "verifying" ? "Envelope reconstructed" : "Key is not trusted until you continue"}</strong>
             </div>
-            <div className="progress-track"><span style={{ width: `${stage === "verifying" ? 100 : percent}%` }}></span></div>
+            <progress
+              className="progress-track"
+              max="100"
+              value={stage === "verifying" ? 100 : percent}
+              aria-label="Optical reconstruction progress"
+            />
             <div className="frame-stats"><span>{progress.acceptedFrames} accepted</span><span>{progress.duplicateFrames} duplicates</span><span>{progress.rejectedFrames} rejected</span></div>
           </div>
 
@@ -344,25 +410,63 @@ export default function ReceiverApp() {
         </section>
       )}
 
-      {stage === "verified" && verified && (
+      {(stage === "quarantined" || stage === "releasing") && verified && policyDecision && (
         <section className="receiver-panel verified-panel">
           <div className="verified-mark">✓</div>
-          <p className="receiver-kicker">CRYPTOGRAPHIC VERIFICATION / PASS</p>
-          <h1>Verified. Ready to save.</h1>
-          <p>The file stayed quarantined in memory until the signature, boundary, length, and SHA-256 digest all passed.</p>
+          <p className="receiver-kicker">VERIFIED QUARANTINE / POLICY {policyDecision.code}</p>
+          <h1>Verified. Held for approval.</h1>
+          <p>The payload remains in memory and is not exposed as a file until you explicitly authorize release.</p>
+          <div className="policy-decision">
+            <span>LOCAL DECISION</span>
+            <strong>{policyDecision.code}</strong>
+            <small>{policyDecision.reason}</small>
+          </div>
           <dl className="verified-details">
             <div><dt>File</dt><dd>{verified.filename}</dd></div>
             <div><dt>Size</dt><dd>{verified.payload.length.toLocaleString()} bytes</dd></div>
             <div><dt>Signer</dt><dd>{verified.signerKeyId}</dd></div>
             <div><dt>Boundary</dt><dd>{verified.boundary}</dd></div>
             <div><dt>Purpose</dt><dd>{verified.purpose}</dd></div>
+            <div><dt>Policy</dt><dd>{verified.policyId}</dd></div>
             <div><dt>SHA-256</dt><dd>{verified.payloadSha256}</dd></div>
           </dl>
-          <button className="receiver-button primary save-button" type="button" onClick={() => void saveFile()}>
-            Save / Share verified file
+          <button
+            className="receiver-button primary save-button"
+            type="button"
+            disabled={stage === "releasing"}
+            onClick={() => void authorizeRelease()}
+          >
+            {stage === "releasing" ? "Signing receipt and reserving replay state…" : "Approve release & create signed receipt"}
           </button>
           {saveStatus && <p className="save-status" role="status">{saveStatus}</p>}
-          <button className="receiver-button secondary" type="button" onClick={() => void startCamera()}>Receive again</button>
+          <button className="text-button" type="button" onClick={clearPairing}>Reject and forget this pairing</button>
+        </section>
+      )}
+
+      {stage === "released" && verified && receipt && policyDecision && (
+        <section className="receiver-panel verified-panel released-panel">
+          <div className="verified-mark">✓</div>
+          <p className="receiver-kicker">RELEASE AUTHORIZED / SIGNED EVIDENCE READY</p>
+          <h1>Released with a receipt.</h1>
+          <p>The envelope is now in the bounded replay ledger. The receipt proves this receiver authorized browser exposure—not that another application opened the file.</p>
+          <dl className="verified-details">
+            <div><dt>File</dt><dd>{verified.filename}</dd></div>
+            <div><dt>Envelope</dt><dd>{verified.envelopeId}</dd></div>
+            <div><dt>Sender</dt><dd>{verified.signerKeyId}</dd></div>
+            <div><dt>Receiver</dt><dd>{receipt.receiverKeyId}</dd></div>
+            <div><dt>Decision</dt><dd>{policyDecision.code}</dd></div>
+            <div><dt>Event</dt><dd>release-authorized</dd></div>
+          </dl>
+          <button className="receiver-button primary save-button" type="button" onClick={() => void deliverReleasedFiles(verified, receipt)}>
+            Save / Share authorized file again
+          </button>
+          {saveStatus && <p className="save-status" role="status">{saveStatus}</p>}
+          <div className="evidence-actions" aria-label="Download signed release evidence">
+            <button type="button" onClick={() => downloadEvidence("cose")}>Signed receipt</button>
+            <button type="button" onClick={() => downloadEvidence("json")}>Receipt JSON</button>
+            <button type="button" onClick={() => downloadEvidence("key")}>Receiver public key</button>
+          </div>
+          <button className="receiver-button secondary" type="button" onClick={resetToPaired}>Prepare another fresh envelope</button>
           <button className="text-button" type="button" onClick={clearPairing}>Forget this pairing</button>
         </section>
       )}
@@ -371,10 +475,10 @@ export default function ReceiverApp() {
         <section className="receiver-panel error-panel" role="alert">
           <div className="error-mark">!</div>
           <p className="receiver-kicker">FAIL CLOSED</p>
-          <h1>Nothing was imported.</h1>
+          <h1>Nothing was released.</h1>
           <p>{error}</p>
           {trust ? (
-            <button className="receiver-button primary" type="button" onClick={() => void startCamera()}>Try camera again</button>
+            <button className="receiver-button primary" type="button" onClick={resetToPaired}>Return to paired receiver</button>
           ) : (
             <button className="receiver-button secondary" type="button" onClick={clearPairing}>Scan a new pairing QR</button>
           )}
@@ -384,9 +488,32 @@ export default function ReceiverApp() {
 
       <footer className="receiver-footer">
         <span>Payload path: screen → camera</span>
-        <span>Receiver page: HTTPS + offline cache</span>
-        <span>Research prototype · not a certified data diode</span>
+        <span>Local policy · replay ledger · signed release receipt</span>
+        <span>Pre-alpha research · not a certified data diode</span>
       </footer>
     </main>
   );
+}
+
+function releaseEvidenceFiles(
+  transfer: VerifiedTransfer,
+  receipt: BrowserReleaseReceipt,
+): [File, File, File] {
+  return [
+    new File([receipt.cose.slice().buffer], `${transfer.envelopeId}.release.receipt.cose`, { type: "application/cbor" }),
+    new File([receipt.json], `${transfer.envelopeId}.release.receipt.json`, { type: "application/json" }),
+    new File([receipt.publicKey.slice().buffer], `${receipt.receiverKeyId}.receiver-public.ed25519`, { type: "application/octet-stream" }),
+  ];
+}
+
+function downloadFile(file: File): void {
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = file.name;
+  anchor.hidden = true;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

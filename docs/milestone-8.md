@@ -139,7 +139,7 @@ does not license GlassBridge source code.
 ## Deferred work
 
 - persistent organizational trust roots and signed role delegation;
-- full phone-side policy, replay, quarantine, approval, and signed receipts;
+- durable native phone policy, protected replay state, crash-safe quarantine, and organizational receipt identity (the browser profile is implemented in [Milestone 9](milestone-9.md));
 - compression and content-type-specific preprocessing;
 - adaptive symbol size, QR density, error correction, FPS, and camera feedback;
 - larger-file UX, resume, chunk commitments, and bounded persistence;
