@@ -8,6 +8,7 @@ const researchDocumentUrl = new URL(
   "../research/GlassBridge_AGX_PRD.html",
   import.meta.url,
 );
+const serviceWorkerUrl = new URL("../dist/receiver-sw.js", import.meta.url);
 
 test("contains the complete public design baseline", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -60,4 +61,15 @@ test("exports a self-contained, sanitized research document", async () => {
   assert.match(html, /id="backlog"/);
   assert.match(html, /id="sources"/);
   assert.doesNotMatch(html, /<script|\/@vite\/client|\/Users\//i);
+});
+
+test("uses network-first navigations to avoid mixed service-worker releases", async () => {
+  const serviceWorker = await readFile(serviceWorkerUrl, "utf8");
+
+  assert.match(serviceWorker, /event\.request\.mode === "navigate"/);
+  assert.match(serviceWorker, /fetchAndCache\(event\.request\)\.catch/);
+  assert.match(
+    serviceWorker,
+    /caches\.match\(event\.request\)\.then\(\(cached\) => cached \|\| fetchAndCache\(event\.request\)\)/,
+  );
 });

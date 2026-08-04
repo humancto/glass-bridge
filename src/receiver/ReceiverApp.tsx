@@ -8,6 +8,7 @@ import {
   type VerifiedTransfer,
 } from "./agx";
 import { evaluateBrowserPolicy, type LocalPolicyDecision } from "./policy";
+import { ingestDecodedQr } from "./qr-result";
 import {
   createBrowserReleaseReceipt,
   type BrowserReleaseReceipt,
@@ -83,6 +84,7 @@ export default function ReceiverApp() {
   const decoderRef = useRef(new OpticalTransferDecoder());
   const verifyingRef = useRef(false);
   const releasingRef = useRef(false);
+  const lastProgressPaintRef = useRef(0);
 
   useEffect(() => {
     if (!trust) {
@@ -94,6 +96,14 @@ export default function ReceiverApp() {
   }, [trust]);
 
   useEffect(() => () => controlsRef.current?.stop(), []);
+
+  function publishProgress(next: TransferProgress, force = false): void {
+    const now = performance.now();
+    if (force || now - lastProgressPaintRef.current >= 80) {
+      lastProgressPaintRef.current = now;
+      setProgress(next);
+    }
+  }
 
   async function finishEnvelope(
     envelope: Uint8Array,
@@ -143,6 +153,7 @@ export default function ReceiverApp() {
     setPolicyDecision(undefined);
     setReceipt(undefined);
     setProgress(EMPTY_PROGRESS);
+    lastProgressPaintRef.current = 0;
     setError("");
     setSaveStatus("");
     setSourceMode("camera");
@@ -151,8 +162,8 @@ export default function ReceiverApp() {
     try {
       const { BrowserQRCodeReader } = await import("@zxing/browser");
       const reader = new BrowserQRCodeReader(undefined, {
-        delayBetweenScanAttempts: 45,
-        delayBetweenScanSuccess: 20,
+        delayBetweenScanAttempts: 16,
+        delayBetweenScanSuccess: 0,
         tryPlayVideoTimeout: 5_000,
       });
       const controls = await reader.decodeFromConstraints(
@@ -169,8 +180,8 @@ export default function ReceiverApp() {
           if (!result || verifyingRef.current) {
             return;
           }
-          const next = decoderRef.current.ingestText(result.getText());
-          setProgress(next);
+          const next = ingestDecodedQr(result, decoderRef.current);
+          publishProgress(next, next.complete);
           if (!next.envelope) {
             return;
           }
@@ -204,6 +215,7 @@ export default function ReceiverApp() {
     setPolicyDecision(undefined);
     setReceipt(undefined);
     setProgress(EMPTY_PROGRESS);
+    lastProgressPaintRef.current = 0;
     setError("");
     setSourceMode("files");
     setStage("scanning");
@@ -215,14 +227,14 @@ export default function ReceiverApp() {
         const url = URL.createObjectURL(file);
         try {
           const result = await reader.decodeFromImageUrl(url);
-          const next = decoderRef.current.ingestText(result.getText());
-          setProgress(next);
+          const next = ingestDecodedQr(result, decoderRef.current);
+          publishProgress(next, next.complete);
           if (next.envelope) {
             await finishEnvelope(next.envelope);
             return;
           }
         } catch {
-          setProgress(decoderRef.current.ingestText("invalid-frame"));
+          publishProgress(decoderRef.current.ingestText("invalid-frame"));
         } finally {
           URL.revokeObjectURL(url);
         }

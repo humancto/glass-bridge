@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
+import QRCode, { type QRCodeSegment } from "qrcode";
+import {
+  DEFAULT_OPTICAL_PROFILE_ID,
+  nominalGoodputBytes,
+  OPTICAL_PROFILE_ORDER,
+  OPTICAL_PROFILES,
+  type OpticalProfile,
+  type OpticalProfileId,
+} from "../protocol/optical-profile";
 import {
   createBrowserEnvelope,
   formatBytes,
@@ -7,6 +15,7 @@ import {
   type BrowserEnvelope,
 } from "./agx";
 import { OpticalTransferEncoder, pairingUrl } from "./transport";
+import { scheduleNextFrame } from "./scheduler";
 import "./sender.css";
 
 type Phase = "choose" | "preparing" | "pair" | "playing" | "paused" | "error";
@@ -16,6 +25,8 @@ type PreparedTransfer = {
   encoder: OpticalTransferEncoder;
   pairing: string;
   originalBytes: number;
+  profile: OpticalProfile;
+  qrVersion: number;
 };
 
 const DEFAULT_BOUNDARY = "demo/phone-laptop";
@@ -26,11 +37,14 @@ export default function SenderApp() {
   const [prepared, setPrepared] = useState<PreparedTransfer>();
   const [phase, setPhase] = useState<Phase>("choose");
   const [error, setError] = useState("");
-  const [fps, setFps] = useState(4);
+  const [profileId, setProfileId] = useState<OpticalProfileId>(DEFAULT_OPTICAL_PROFILE_ID);
+  const [fps, setFps] = useState(OPTICAL_PROFILES[DEFAULT_OPTICAL_PROFILE_ID].defaultFps);
   const [frameNumber, setFrameNumber] = useState(0);
   const [loops, setLoops] = useState(0);
+  const [measuredFps, setMeasuredFps] = useState(0);
   const [dragging, setDragging] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const renderCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const frameRef = useRef(0);
@@ -41,7 +55,7 @@ export default function SenderApp() {
   useEffect(() => {
     if (!prepared || phase !== "pair") return;
     let active = true;
-    void drawQr(prepared.pairing, () => active).catch((renderError: unknown) => {
+    void drawQr(prepared.pairing, "M", () => active).catch((renderError: unknown) => {
       if (active) fail(renderError);
     });
     return () => { active = false; };
@@ -51,18 +65,34 @@ export default function SenderApp() {
     if (!prepared || phase !== "playing") return;
     let active = true;
     let timer = 0;
+    let deadlineMs = performance.now();
+    let measurementStartedMs = deadlineMs;
+    let measuredFrames = 0;
+    setMeasuredFps(0);
 
     async function tick(): Promise<void> {
       const activeTransfer = prepared;
       if (!active || !activeTransfer) return;
       const symbolId = frameRef.current;
       try {
-        await drawQr(activeTransfer.encoder.frameText(symbolId), () => active);
+        await drawQr(
+          opticalQrPayload(activeTransfer, symbolId),
+          activeTransfer.profile.errorCorrectionLevel,
+          () => active,
+        );
       } catch (renderError) {
         if (active) fail(renderError);
         return;
       }
       if (!active) return;
+      const renderedAtMs = performance.now();
+      measuredFrames += 1;
+      const measurementElapsedMs = renderedAtMs - measurementStartedMs;
+      if (measurementElapsedMs >= 1_000) {
+        setMeasuredFps(measuredFrames * 1_000 / measurementElapsedMs);
+        measurementStartedMs = renderedAtMs;
+        measuredFrames = 0;
+      }
       setFrameNumber(symbolId + 1);
       frameRef.current += 1;
       if (frameRef.current >= activeTransfer.encoder.frameCount) {
@@ -70,7 +100,9 @@ export default function SenderApp() {
         loopsRef.current += 1;
         setLoops(loopsRef.current);
       }
-      timer = window.setTimeout(() => { void tick(); }, 1_000 / fpsRef.current);
+      const schedule = scheduleNextFrame(deadlineMs, renderedAtMs, fpsRef.current);
+      deadlineMs = schedule.deadlineMs;
+      timer = window.setTimeout(() => { void tick(); }, schedule.delayMs);
     }
 
     void tick();
@@ -80,14 +112,20 @@ export default function SenderApp() {
     };
   }, [prepared, phase]);
 
-  async function drawQr(value: string, shouldCommit = () => true): Promise<void> {
-    const displayPixels = Math.max(480, Math.min(820, Math.floor(window.innerHeight * 0.76)));
-    const rendered = document.createElement("canvas");
-    await QRCode.toCanvas(rendered, value, {
-      errorCorrectionLevel: "M",
-      margin: 2,
-      width: displayPixels,
-      color: { dark: "#07110d", light: "#ffffff" },
+  async function drawQr(
+    value: string | QRCodeSegment[],
+    errorCorrectionLevel: "M",
+    shouldCommit = () => true,
+  ): Promise<void> {
+    const displayPixels = Math.max(
+      320,
+      Math.min(820, Math.floor(window.innerHeight * 0.76), Math.floor(window.innerWidth * 0.76)),
+    );
+    const rendered = renderCanvasRef.current ?? document.createElement("canvas");
+    renderCanvasRef.current = rendered;
+    await renderQrCanvas(rendered, value, errorCorrectionLevel, displayPixels, {
+      dark: "#07110d",
+      light: "#ffffff",
     });
     if (!shouldCommit()) return;
     const canvas = canvasRef.current;
@@ -129,14 +167,20 @@ export default function SenderApp() {
         mediaType: candidate.type || "application/octet-stream",
         boundary,
       });
-      const encoder = new OpticalTransferEncoder(envelope.bytes);
+      const profile = OPTICAL_PROFILES[profileId];
+      const encoder = new OpticalTransferEncoder(envelope.bytes, {
+        symbolSize: profile.symbolSize,
+      });
+      const qrVersion = QRCode.create(opticalQrPayload({ encoder, profile }, 0), {
+        errorCorrectionLevel: profile.errorCorrectionLevel,
+      }).version;
       const receiver = new URL(`${import.meta.env.BASE_URL}receive.html`, window.location.origin);
       const pairing = pairingUrl(receiver.toString(), envelope.publicKey, envelope.boundary);
       frameRef.current = 0;
       loopsRef.current = 0;
       setFrameNumber(0);
       setLoops(0);
-      setPrepared({ envelope, encoder, pairing, originalBytes: candidate.size });
+      setPrepared({ envelope, encoder, pairing, originalBytes: candidate.size, profile, qrVersion });
       setPhase("pair");
     } catch (prepareError) {
       fail(prepareError);
@@ -172,6 +216,7 @@ export default function SenderApp() {
     setPhase("choose");
     frameRef.current = 0;
     loopsRef.current = 0;
+    setMeasuredFps(0);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -181,6 +226,8 @@ export default function SenderApp() {
       ? 2
       : 3;
   const cycleSeconds = prepared ? prepared.encoder.frameCount / fps : 0;
+  const idealSeconds = prepared ? prepared.encoder.sourceCount / fps : 0;
+  const selectedProfile = OPTICAL_PROFILES[profileId];
 
   return (
     <main className="sender-app">
@@ -197,7 +244,7 @@ export default function SenderApp() {
 
       <section className="sender-intro">
         <div>
-          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 9</p>
+          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 10</p>
           <h1>Choose a file.<br /><em>Send it through light.</em></h1>
         </div>
         <p>
@@ -255,6 +302,34 @@ export default function SenderApp() {
             )}
           </div>
 
+          <fieldset className="profile-field" disabled={phase === "preparing"}>
+            <legend>Optical profile</legend>
+            <div className="profile-options">
+              {OPTICAL_PROFILE_ORDER.map((candidateId) => {
+                const candidate = OPTICAL_PROFILES[candidateId];
+                return (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    className={candidate.id === profileId ? "selected" : ""}
+                    aria-pressed={candidate.id === profileId}
+                    onClick={() => {
+                      setProfileId(candidate.id);
+                      setFps(candidate.defaultFps);
+                    }}
+                  >
+                    <b>{candidate.label}</b>
+                    <small>{candidate.summary}</small>
+                  </button>
+                );
+              })}
+            </div>
+            <small>
+              {formatRate(nominalGoodputBytes(selectedProfile, selectedProfile.defaultFps))} nominal.
+              Start with Fast; use Balanced if the camera struggles to focus.
+            </small>
+          </fieldset>
+
           <label className="boundary-field">
             <span>Receiving boundary</span>
             <input
@@ -296,7 +371,11 @@ export default function SenderApp() {
             </div>
             <div className="live-status">
               <span className={phase === "playing" ? "pulse" : ""}></span>
-              {phase === "playing" ? `FRAME ${frameNumber}/${prepared.encoder.frameCount}` : phase.toUpperCase()}
+              {phase === "playing"
+                ? frameNumber <= prepared.encoder.sourceCount
+                  ? `SOURCE ${frameNumber}/${prepared.encoder.sourceCount}`
+                  : `REPAIR ${frameNumber - prepared.encoder.sourceCount}`
+                : phase.toUpperCase()}
             </div>
           </div>
 
@@ -321,19 +400,28 @@ export default function SenderApp() {
               <span>Speed</span>
               <input
                 type="range"
-                min="1"
-                max="10"
+                min={prepared.profile.minFps}
+                max={prepared.profile.maxFps}
                 value={fps}
                 onChange={(event) => setFps(Number(event.currentTarget.value))}
               />
-              <b>{fps} FPS</b>
+              <b>{fps} FPS{measuredFps > 0 ? ` · ${measuredFps.toFixed(1)} actual` : ""}</b>
             </label>
           </div>
 
           <div className="transfer-facts">
             <div><span>File</span><strong>{prepared.envelope.filename}</strong><small>{formatBytes(prepared.originalBytes)}</small></div>
             <div><span>Sender fingerprint</span><strong>{prepared.envelope.signerKeyId}</strong><small>Match this on the phone</small></div>
-            <div><span>Optical cycle</span><strong>{prepared.encoder.frameCount} frames</strong><small>~{formatDuration(cycleSeconds)} at {fps} FPS · {loops} completed</small></div>
+            <div>
+              <span>Fast path</span>
+              <strong>~{formatDuration(idealSeconds)} ideal</strong>
+              <small>{prepared.encoder.sourceCount} source frames · keep aiming until phone completes</small>
+            </div>
+            <div>
+              <span>Optical profile</span>
+              <strong>{prepared.profile.label} · {formatRate(nominalGoodputBytes(prepared.profile, fps))}</strong>
+              <small>{prepared.profile.symbolSize.toLocaleString()} B/frame · QR v{prepared.qrVersion}-{prepared.profile.errorCorrectionLevel} · {formatDuration(cycleSeconds)} repair loop · {loops} loops</small>
+            </div>
             <div><span>Security</span><strong>Ed25519 + SHA-256</strong><small>AGX/1 signed envelope</small></div>
           </div>
 
@@ -350,9 +438,47 @@ export default function SenderApp() {
   );
 }
 
+function opticalQrPayload(
+  transfer: Pick<PreparedTransfer, "encoder" | "profile">,
+  symbolId: number,
+): string | QRCodeSegment[] {
+  if (transfer.profile.payloadMode === "binary") {
+    return [{ data: transfer.encoder.frameBytes(symbolId), mode: "byte" }];
+  }
+  return transfer.encoder.frameText(symbolId);
+}
+
+async function renderQrCanvas(
+  canvas: HTMLCanvasElement,
+  value: string | QRCodeSegment[],
+  errorCorrectionLevel: "M",
+  targetPixels: number,
+  color?: { dark: string; light: string },
+): Promise<number> {
+  // Preserve the QR specification's four-module quiet zone at every density.
+  const margin = 4;
+  const qr = QRCode.create(value, { errorCorrectionLevel });
+  const totalModules = qr.modules.size + margin * 2;
+  const scale = Math.max(2, Math.floor(targetPixels / totalModules));
+  await QRCode.toCanvas(canvas, value, {
+    errorCorrectionLevel,
+    margin,
+    scale,
+    color,
+  });
+  return qr.version;
+}
+
 function formatDuration(seconds: number): string {
+  if (seconds < 10) return `${(Math.ceil(seconds * 10) / 10).toFixed(1)} sec`;
   const totalSeconds = Math.ceil(seconds);
   if (totalSeconds < 60) return `${totalSeconds} sec`;
   const minutes = Math.floor(totalSeconds / 60);
   return `${minutes} min ${totalSeconds % 60} sec`;
+}
+
+function formatRate(bytesPerSecond: number): string {
+  if (bytesPerSecond < 1_024) return `${Math.round(bytesPerSecond)} B/s`;
+  const kibibytes = bytesPerSecond / 1_024;
+  return `${Number.isInteger(kibibytes) ? kibibytes : kibibytes.toFixed(1)} KiB/s`;
 }

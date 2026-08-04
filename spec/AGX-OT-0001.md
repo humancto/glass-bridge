@@ -79,9 +79,13 @@ Codec identifier: `qr/png-v1`.
 - maximum image dimensions of 2,048 by 2,048 pixels; and
 - decoder allocation ceiling of 64 MiB.
 
-The milestone profile uses 512-byte symbols, producing 556-byte AGX-OT frames.
+The native baseline uses 512-byte symbols, producing 556-byte AGX-OT frames.
 With medium QR error correction these currently select QR version 18 and render
-to 388 by 388 pixels at four pixels per module.
+to 388 by 388 pixels at four pixels per module. The Milestone 10 Fast browser
+profile uses 1,536-byte symbols, producing 1,580-byte frames that select QR
+version 33-M in byte mode. Balanced uses 1,024-byte symbols. Both preserve this
+exact frame contract; Legacy carries the same bytes in the historical
+`AGF1B64:` text wrapper.
 
 `index.json` in an exported frame directory is operator/benchmark metadata. It
 is not trusted reconstruction input. The receiver discovers PNG files, decodes
