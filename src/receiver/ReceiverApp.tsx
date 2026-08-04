@@ -250,7 +250,10 @@ export default function ReceiverApp() {
         decodeTimes.push(result.decodeMs);
         if (decodeTimes.length > 240) decodeTimes.splice(0, decodeTimes.length - 240);
         if (result.error) {
-          updateMetrics();
+          controls.stop();
+          controlsRef.current = undefined;
+          setError(`Optical decoder unavailable: ${result.error}`);
+          setStage("error");
           return;
         }
         if (!result.bytes && !result.text) {
