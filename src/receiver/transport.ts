@@ -1,9 +1,13 @@
+import { expectedLtFrames, ltFrameIndices } from "../protocol/lt-codec";
+import type { OpticalCodecId } from "../protocol/optical-profile";
+
 const FRAME_PREFIX = "AGF1B64:";
-const FRAME_MAGIC = new Uint8Array([0x41, 0x47, 0x46, 0x31]);
+const DENSE_FRAME_MAGIC = new Uint8Array([0x41, 0x47, 0x46, 0x31]);
+const LT_FRAME_MAGIC = new Uint8Array([0x41, 0x47, 0x46, 0x32]);
 const HEADER_BYTES = 40;
 const CRC_BYTES = 4;
 const MAX_SOURCE_SYMBOLS = 1_024;
-const MAX_SYMBOL_BYTES = 2_048;
+const MAX_SYMBOL_BYTES = 2_909;
 const MAX_TRANSFER_BYTES = 2 * 1024 * 1024;
 const MAX_UNIQUE_FRAMES = MAX_SOURCE_SYMBOLS * 8;
 const MAX_BASE64URL_CHARS = 4_096;
@@ -11,6 +15,7 @@ const MASK_64 = (1n << 64n) - 1n;
 const SPLITMIX_INCREMENT = 0x9e37_79b9_7f4a_7c15n;
 
 type ParsedFrame = {
+  codec: OpticalCodecId;
   sessionId: Uint8Array;
   sessionHex: string;
   symbolId: number;
@@ -33,6 +38,10 @@ export type TransferProgress = {
   duplicateFrames: number;
   rejectedFrames: number;
   complete: boolean;
+  codec?: OpticalCodecId;
+  symbolSize: number;
+  payloadLength: number;
+  expectedFrames: number;
 };
 
 export type IngestResult = TransferProgress & {
@@ -45,7 +54,9 @@ export class OpticalTransferDecoder {
   private sourceCount = 0;
   private symbolSize = 0;
   private payloadLength = 0;
+  private codec?: OpticalCodecId;
   private basis: Array<Row | undefined> = [];
+  private ltDecoder?: SparseLtDecoder;
   private seenSymbols = new Set<number>();
   private rank = 0;
   private acceptedFrames = 0;
@@ -87,28 +98,29 @@ export class OpticalTransferDecoder {
     this.seenSymbols.add(frame.symbolId);
     this.acceptedFrames += 1;
 
-    const row: Row = {
-      coefficients: coefficients(frame.sessionId, frame.symbolId, frame.sourceCount),
-      data: frame.symbol.slice(),
-    };
-    while (true) {
-      const pivot = firstSet(row.coefficients, frame.sourceCount);
-      if (pivot === undefined) {
-        break;
+    if (frame.codec === "lt-v2") {
+      this.ltDecoder?.addFrame(frame.symbolId, frame.symbol);
+      this.rank = this.ltDecoder?.solvedCount ?? 0;
+      if (this.ltDecoder?.complete) this.envelope = this.ltDecoder.assemble();
+    } else {
+      const row: Row = {
+        coefficients: coefficients(frame.sessionId, frame.symbolId, frame.sourceCount),
+        data: frame.symbol.slice(),
+      };
+      while (true) {
+        const pivot = firstSet(row.coefficients, frame.sourceCount);
+        if (pivot === undefined) break;
+        const existing = this.basis[pivot];
+        if (existing) {
+          xorWords(row.coefficients, existing.coefficients);
+          xorBytes(row.data, existing.data);
+        } else {
+          this.basis[pivot] = row;
+          this.rank += 1;
+          break;
+        }
       }
-      const existing = this.basis[pivot];
-      if (existing) {
-        xorWords(row.coefficients, existing.coefficients);
-        xorBytes(row.data, existing.data);
-      } else {
-        this.basis[pivot] = row;
-        this.rank += 1;
-        break;
-      }
-    }
-
-    if (this.rank === this.sourceCount) {
-      this.envelope = this.solve();
+      if (this.rank === this.sourceCount) this.envelope = this.solve();
     }
     return this.progress();
   }
@@ -119,7 +131,9 @@ export class OpticalTransferDecoder {
     this.sourceCount = 0;
     this.symbolSize = 0;
     this.payloadLength = 0;
+    this.codec = undefined;
     this.basis = [];
+    this.ltDecoder = undefined;
     this.seenSymbols.clear();
     this.rank = 0;
     this.acceptedFrames = 0;
@@ -139,7 +153,16 @@ export class OpticalTransferDecoder {
       this.sourceCount = frame.sourceCount;
       this.symbolSize = frame.symbolSize;
       this.payloadLength = frame.payloadLength;
+      this.codec = frame.codec;
       this.basis = Array.from({ length: frame.sourceCount });
+      if (frame.codec === "lt-v2") {
+        this.ltDecoder = new SparseLtDecoder(
+          frame.sessionId,
+          frame.sourceCount,
+          frame.symbolSize,
+          frame.payloadLength,
+        );
+      }
       return;
     }
     if (
@@ -147,6 +170,7 @@ export class OpticalTransferDecoder {
       frame.sourceCount !== this.sourceCount ||
       frame.symbolSize !== this.symbolSize ||
       frame.payloadLength !== this.payloadLength
+      || frame.codec !== this.codec
     ) {
       throw new Error("mixed optical sessions are not accepted");
     }
@@ -185,7 +209,94 @@ export class OpticalTransferDecoder {
       rejectedFrames: this.rejectedFrames,
       complete: this.envelope !== undefined,
       envelope: this.envelope?.slice(),
+      codec: this.codec,
+      symbolSize: this.symbolSize,
+      payloadLength: this.payloadLength,
+      expectedFrames: this.sourceCount > 0
+        ? this.codec === "lt-v2"
+          ? expectedLtFrames(this.sourceCount)
+          : this.sourceCount
+        : 0,
     };
+  }
+}
+
+type PendingLtFrame = {
+  indices: Set<number>;
+  data: Uint8Array;
+};
+
+class SparseLtDecoder {
+  private readonly solved: Array<Uint8Array | undefined>;
+  private readonly waitingBySource = new Map<number, Set<PendingLtFrame>>();
+  solvedCount = 0;
+
+  constructor(
+    private readonly sessionId: Uint8Array,
+    private readonly sourceCount: number,
+    private readonly symbolSize: number,
+    private readonly payloadLength: number,
+  ) {
+    this.solved = Array.from({ length: sourceCount });
+  }
+
+  get complete(): boolean {
+    return this.solvedCount === this.sourceCount;
+  }
+
+  addFrame(symbolId: number, symbol: Uint8Array): void {
+    if (this.complete) return;
+    const indices = new Set(ltFrameIndices(this.sessionId, symbolId, this.sourceCount));
+    const data = symbol.slice();
+    for (const index of [...indices]) {
+      const solved = this.solved[index];
+      if (solved) {
+        xorBytes(data, solved);
+        indices.delete(index);
+      }
+    }
+    if (indices.size === 0) return;
+    if (indices.size === 1) {
+      this.resolve(indices.values().next().value as number, data);
+      return;
+    }
+    const pending = { indices, data };
+    for (const index of indices) {
+      const waiting = this.waitingBySource.get(index) ?? new Set<PendingLtFrame>();
+      waiting.add(pending);
+      this.waitingBySource.set(index, waiting);
+    }
+  }
+
+  assemble(): Uint8Array {
+    if (!this.complete) throw new Error("LT decoder is incomplete.");
+    const combined = new Uint8Array(this.sourceCount * this.symbolSize);
+    for (let index = 0; index < this.sourceCount; index += 1) {
+      combined.set(this.solved[index] as Uint8Array, index * this.symbolSize);
+    }
+    return combined.slice(0, this.payloadLength);
+  }
+
+  private resolve(firstIndex: number, firstData: Uint8Array): void {
+    const queue: Array<[number, Uint8Array]> = [[firstIndex, firstData]];
+    while (queue.length > 0) {
+      const [index, data] = queue.pop() as [number, Uint8Array];
+      if (this.solved[index]) continue;
+      this.solved[index] = data;
+      this.solvedCount += 1;
+      const waiting = this.waitingBySource.get(index);
+      if (!waiting) continue;
+      this.waitingBySource.delete(index);
+      for (const pending of waiting) {
+        xorBytes(pending.data, data);
+        pending.indices.delete(index);
+        if (pending.indices.size === 1) {
+          const remaining = pending.indices.values().next().value as number;
+          this.waitingBySource.get(remaining)?.delete(pending);
+          if (!this.solved[remaining]) queue.push([remaining, pending.data]);
+        }
+      }
+    }
   }
 }
 
@@ -218,7 +329,13 @@ export function base64UrlEncode(value: Uint8Array): string {
 }
 
 function parseFrame(bytes: Uint8Array): ParsedFrame {
-  if (bytes.length < HEADER_BYTES + CRC_BYTES || !equalBytes(bytes.slice(0, 4), FRAME_MAGIC)) {
+  const magic = bytes.slice(0, 4);
+  const codec: OpticalCodecId | undefined = equalBytes(magic, DENSE_FRAME_MAGIC)
+    ? "dense-v1"
+    : equalBytes(magic, LT_FRAME_MAGIC)
+      ? "lt-v2"
+      : undefined;
+  if (bytes.length < HEADER_BYTES + CRC_BYTES || !codec) {
     throw new Error("invalid optical frame");
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -245,6 +362,7 @@ function parseFrame(bytes: Uint8Array): ParsedFrame {
   }
   const sessionId = bytes.slice(4, 20);
   return {
+    codec,
     sessionId,
     sessionHex: toHex(sessionId),
     symbolId: view.getUint32(20, false),

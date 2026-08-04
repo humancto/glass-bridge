@@ -3,7 +3,7 @@ import { OpticalTransferDecoder, type IngestResult } from "./transport";
 
 const TEXT_FRAME_PREFIX = "AGF1B64:";
 const FRAME_OVERHEAD_BYTES = 44;
-const MAX_SYMBOL_BYTES = 2_048;
+const MAX_SYMBOL_BYTES = 2_909;
 
 export type DecodedQrResult = {
   getText(): string;
@@ -40,7 +40,7 @@ function isStructuralBinaryFrame(bytes: Uint8Array): boolean {
     bytes[0] !== 0x41 ||
     bytes[1] !== 0x47 ||
     bytes[2] !== 0x46 ||
-    bytes[3] !== 0x31
+    (bytes[3] !== 0x31 && bytes[3] !== 0x32)
   ) {
     return false;
   }

@@ -90,6 +90,9 @@ describe("phone-side signed release receipt", () => {
       duplicateFrames: 1,
       rejectedFrames: 2,
       complete: true,
+      symbolSize: 512,
+      payloadLength: 3_584,
+      expectedFrames: 9,
     }, keys, NOW);
 
     const cose = decode(receipt.cose, { strict: true, useMaps: true });

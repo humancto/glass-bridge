@@ -15,7 +15,6 @@ import {
   type BrowserEnvelope,
 } from "./agx";
 import { OpticalTransferEncoder, pairingUrl } from "./transport";
-import { scheduleNextFrame } from "./scheduler";
 import "./sender.css";
 
 type Phase = "choose" | "preparing" | "pair" | "playing" | "paused" | "error";
@@ -64,27 +63,37 @@ export default function SenderApp() {
   useEffect(() => {
     if (!prepared || phase !== "playing") return;
     let active = true;
-    let timer = 0;
+    let animationFrame = 0;
+    let rendering = false;
     let deadlineMs = performance.now();
     let measurementStartedMs = deadlineMs;
     let measuredFrames = 0;
+    let lastUiPaintMs = deadlineMs;
     setMeasuredFps(0);
 
-    async function tick(): Promise<void> {
+    async function renderFrame(nowMs: number): Promise<void> {
       const activeTransfer = prepared;
-      if (!active || !activeTransfer) return;
+      if (!active || !activeTransfer || rendering) return;
+      const intervalMs = 1_000 / fpsRef.current;
+      if (nowMs + 0.5 < deadlineMs) return;
+      rendering = true;
       const symbolId = frameRef.current;
       try {
         await drawQr(
           opticalQrPayload(activeTransfer, symbolId),
           activeTransfer.profile.errorCorrectionLevel,
           () => active,
+          activeTransfer.profile,
         );
       } catch (renderError) {
         if (active) fail(renderError);
+        rendering = false;
         return;
       }
-      if (!active) return;
+      if (!active) {
+        rendering = false;
+        return;
+      }
       const renderedAtMs = performance.now();
       measuredFrames += 1;
       const measurementElapsedMs = renderedAtMs - measurementStartedMs;
@@ -93,29 +102,40 @@ export default function SenderApp() {
         measurementStartedMs = renderedAtMs;
         measuredFrames = 0;
       }
-      setFrameNumber(symbolId + 1);
       frameRef.current += 1;
-      if (frameRef.current >= activeTransfer.encoder.frameCount) {
+      if (!activeTransfer.profile.continuousRepair && frameRef.current >= activeTransfer.encoder.frameCount) {
         frameRef.current = 0;
         loopsRef.current += 1;
         setLoops(loopsRef.current);
       }
-      const schedule = scheduleNextFrame(deadlineMs, renderedAtMs, fpsRef.current);
-      deadlineMs = schedule.deadlineMs;
-      timer = window.setTimeout(() => { void tick(); }, schedule.delayMs);
+      if (renderedAtMs - lastUiPaintMs >= 200) {
+        setFrameNumber(frameRef.current);
+        lastUiPaintMs = renderedAtMs;
+      }
+      const nextDeadline = deadlineMs + intervalMs;
+      deadlineMs = nextDeadline < renderedAtMs - intervalMs
+        ? renderedAtMs + intervalMs
+        : nextDeadline;
+      rendering = false;
     }
 
-    void tick();
+    const pump = (nowMs: number) => {
+      if (!active) return;
+      void renderFrame(nowMs);
+      animationFrame = window.requestAnimationFrame(pump);
+    };
+    animationFrame = window.requestAnimationFrame(pump);
     return () => {
       active = false;
-      window.clearTimeout(timer);
+      window.cancelAnimationFrame(animationFrame);
     };
   }, [prepared, phase]);
 
   async function drawQr(
     value: string | QRCodeSegment[],
-    errorCorrectionLevel: "M",
+    errorCorrectionLevel: "L" | "M",
     shouldCommit = () => true,
+    profile?: OpticalProfile,
   ): Promise<void> {
     const displayPixels = Math.max(
       320,
@@ -123,10 +143,15 @@ export default function SenderApp() {
     );
     const rendered = renderCanvasRef.current ?? document.createElement("canvas");
     renderCanvasRef.current = rendered;
-    await renderQrCanvas(rendered, value, errorCorrectionLevel, displayPixels, {
-      dark: "#07110d",
-      light: "#ffffff",
-    });
+    await renderQrCanvas(
+      rendered,
+      value,
+      errorCorrectionLevel,
+      displayPixels,
+      { dark: "#07110d", light: "#ffffff" },
+      profile?.qrVersion,
+      profile?.maskPattern,
+    );
     if (!shouldCommit()) return;
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
@@ -170,9 +195,12 @@ export default function SenderApp() {
       const profile = OPTICAL_PROFILES[profileId];
       const encoder = new OpticalTransferEncoder(envelope.bytes, {
         symbolSize: profile.symbolSize,
+        codec: profile.codec,
       });
       const qrVersion = QRCode.create(opticalQrPayload({ encoder, profile }, 0), {
         errorCorrectionLevel: profile.errorCorrectionLevel,
+        version: profile.qrVersion,
+        maskPattern: profile.maskPattern,
       }).version;
       const receiver = new URL(`${import.meta.env.BASE_URL}receive.html`, window.location.origin);
       const pairing = pairingUrl(receiver.toString(), envelope.publicKey, envelope.boundary);
@@ -244,7 +272,7 @@ export default function SenderApp() {
 
       <section className="sender-intro">
         <div>
-          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 10</p>
+          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 11 TURBO</p>
           <h1>Choose a file.<br /><em>Send it through light.</em></h1>
         </div>
         <p>
@@ -326,7 +354,7 @@ export default function SenderApp() {
             </div>
             <small>
               {formatRate(nominalGoodputBytes(selectedProfile, selectedProfile.defaultFps))} nominal.
-              Start with Fast; use Balanced if the camera struggles to focus.
+              Turbo is the experimental high-throughput path. Use Steady if the camera struggles to focus.
             </small>
           </fieldset>
 
@@ -413,14 +441,18 @@ export default function SenderApp() {
             <div><span>File</span><strong>{prepared.envelope.filename}</strong><small>{formatBytes(prepared.originalBytes)}</small></div>
             <div><span>Sender fingerprint</span><strong>{prepared.envelope.signerKeyId}</strong><small>Match this on the phone</small></div>
             <div>
-              <span>Fast path</span>
-              <strong>~{formatDuration(idealSeconds)} ideal</strong>
-              <small>{prepared.encoder.sourceCount} source frames · keep aiming until phone completes</small>
+              <span>Source lower bound</span>
+              <strong>~{formatDuration(idealSeconds)} at selected FPS</strong>
+              <small>{prepared.encoder.sourceCount} source frames · excludes camera loss and fountain overhead</small>
             </div>
             <div>
               <span>Optical profile</span>
               <strong>{prepared.profile.label} · {formatRate(nominalGoodputBytes(prepared.profile, fps))}</strong>
-              <small>{prepared.profile.symbolSize.toLocaleString()} B/frame · QR v{prepared.qrVersion}-{prepared.profile.errorCorrectionLevel} · {formatDuration(cycleSeconds)} repair loop · {loops} loops</small>
+              <small>
+                {prepared.profile.symbolSize.toLocaleString()} B/frame · QR v{prepared.qrVersion}-{prepared.profile.errorCorrectionLevel} · {prepared.profile.continuousRepair
+                  ? `${formatDuration(cycleSeconds)} expected solve window · endless unique repair`
+                  : `${formatDuration(cycleSeconds)} repair loop · ${loops} loops`}
+              </small>
             </div>
             <div><span>Security</span><strong>Ed25519 + SHA-256</strong><small>AGX/1 signed envelope</small></div>
           </div>
@@ -451,22 +483,28 @@ function opticalQrPayload(
 async function renderQrCanvas(
   canvas: HTMLCanvasElement,
   value: string | QRCodeSegment[],
-  errorCorrectionLevel: "M",
+  errorCorrectionLevel: "L" | "M",
   targetPixels: number,
   color?: { dark: string; light: string },
+  version?: number,
+  maskPattern?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7,
 ): Promise<number> {
   // Preserve the QR specification's four-module quiet zone at every density.
   const margin = 4;
-  const qr = QRCode.create(value, { errorCorrectionLevel });
-  const totalModules = qr.modules.size + margin * 2;
+  // Fixed version/mask options avoid a second full QR analysis on every Turbo frame.
+  const qrVersion = version ?? QRCode.create(value, { errorCorrectionLevel, maskPattern }).version;
+  const moduleCount = 21 + (qrVersion - 1) * 4;
+  const totalModules = moduleCount + margin * 2;
   const scale = Math.max(2, Math.floor(targetPixels / totalModules));
   await QRCode.toCanvas(canvas, value, {
     errorCorrectionLevel,
+    version: qrVersion,
+    maskPattern,
     margin,
     scale,
     color,
   });
-  return qr.version;
+  return qrVersion;
 }
 
 function formatDuration(seconds: number): string {

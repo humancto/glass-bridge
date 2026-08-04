@@ -1,5 +1,7 @@
-export type OpticalProfileId = "fast" | "balanced" | "legacy";
+export type OpticalProfileId = "turbo" | "fast" | "balanced" | "legacy";
 export type OpticalPayloadMode = "binary" | "text";
+export type OpticalCodecId = "dense-v1" | "lt-v2";
+export type QrMaskPattern = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export type OpticalProfile = {
   id: OpticalProfileId;
@@ -10,19 +12,40 @@ export type OpticalProfile = {
   minFps: number;
   maxFps: number;
   payloadMode: OpticalPayloadMode;
-  errorCorrectionLevel: "M";
+  codec: OpticalCodecId;
+  continuousRepair: boolean;
+  qrVersion?: number;
+  maskPattern?: QrMaskPattern;
+  errorCorrectionLevel: "L" | "M";
 };
 
 export const OPTICAL_PROFILES: Record<OpticalProfileId, OpticalProfile> = {
+  turbo: {
+    id: "turbo",
+    label: "Turbo",
+    summary: "2,900-byte binary frames · 60 FPS experimental high-throughput path",
+    symbolSize: 2_900,
+    defaultFps: 60,
+    minFps: 24,
+    maxFps: 60,
+    payloadMode: "binary",
+    codec: "lt-v2",
+    continuousRepair: true,
+    qrVersion: 40,
+    maskPattern: 4,
+    errorCorrectionLevel: "L",
+  },
   fast: {
     id: "fast",
-    label: "Fast",
-    summary: "1,536-byte binary frames · best for a steady phone and laptop",
+    label: "Steady",
+    summary: "1,536-byte binary frames · conservative single-thread compatibility path",
     symbolSize: 1_536,
     defaultFps: 12,
     minFps: 6,
     maxFps: 15,
     payloadMode: "binary",
+    codec: "dense-v1",
+    continuousRepair: false,
     errorCorrectionLevel: "M",
   },
   balanced: {
@@ -34,6 +57,8 @@ export const OPTICAL_PROFILES: Record<OpticalProfileId, OpticalProfile> = {
     minFps: 4,
     maxFps: 12,
     payloadMode: "binary",
+    codec: "dense-v1",
+    continuousRepair: false,
     errorCorrectionLevel: "M",
   },
   legacy: {
@@ -45,14 +70,15 @@ export const OPTICAL_PROFILES: Record<OpticalProfileId, OpticalProfile> = {
     minFps: 1,
     maxFps: 10,
     payloadMode: "text",
+    codec: "dense-v1",
+    continuousRepair: false,
     errorCorrectionLevel: "M",
   },
 };
 
-export const OPTICAL_PROFILE_ORDER: OpticalProfileId[] = ["fast", "balanced", "legacy"];
-export const DEFAULT_OPTICAL_PROFILE_ID: OpticalProfileId = "fast";
+export const OPTICAL_PROFILE_ORDER: OpticalProfileId[] = ["turbo", "fast", "balanced", "legacy"];
+export const DEFAULT_OPTICAL_PROFILE_ID: OpticalProfileId = "turbo";
 
 export function nominalGoodputBytes(profile: OpticalProfile, fps: number): number {
   return profile.symbolSize * fps;
 }
-

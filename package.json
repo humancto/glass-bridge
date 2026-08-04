@@ -12,6 +12,7 @@
     "build:research": "node scripts/build-research-document.mjs",
     "build:sw": "node scripts/build-receiver-service-worker.mjs",
     "generate:browser-fast-fixture": "node scripts/generate-browser-fast-frame-fixture.mjs",
+    "benchmark:turbo-qr": "node scripts/benchmark-turbo-qr.mjs",
     "start": "vite preview",
     "test:unit": "vitest run",
     "test": "npm run build && npm run test:unit && node --test tests/design-baseline.test.mjs"
@@ -23,7 +24,8 @@
     "cborg": "6.1.1",
     "qrcode": "1.5.4",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zxing-wasm": "^2.0.0"
   },
   "devDependencies": {
     "@types/node": "22.19.19",
