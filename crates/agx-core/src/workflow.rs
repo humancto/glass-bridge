@@ -181,6 +181,11 @@ pub fn verify_receipt(
     }
     let bytes = verify_cose_payload(signed_receipt, receiver_verifying_key, RECEIPT_AAD)?;
     let receipt = decode_receipt(&bytes)?;
+    if receipt.version != 1 {
+        return Err(WorkflowError::InvalidReceipt(
+            "unsupported receipt version".into(),
+        ));
+    }
     if encode_receipt(&receipt)? != bytes {
         return Err(WorkflowError::InvalidReceipt(
             "receipt CBOR is not deterministic".into(),
@@ -468,5 +473,27 @@ mod tests {
         assert_eq!(receipt.policy_id, "browser-sender/v1");
         assert_eq!(receipt.accepted_frames, 9);
         assert_eq!(receipt.rejected_frames, 2);
+    }
+
+    #[test]
+    fn rejects_a_signed_receipt_with_an_unsupported_version() {
+        let receiver = SigningKey::from_bytes(&[0x44; 32]);
+        let receipt = ImportReceipt {
+            version: 2,
+            event: "release-authorized".into(),
+            envelope_id: "55".repeat(16),
+            payload_sha256: "66".repeat(32),
+            boundary: "demo/version-check".into(),
+            policy_id: "browser-sender/v1".into(),
+            imported_name: "version-check.bin".into(),
+            observed_unix: 1_800_000_000,
+            receiver_key_id: hex::encode(key_id(&receiver.verifying_key())),
+            accepted_frames: 5,
+            rejected_frames: 0,
+        };
+        let payload = encode_receipt(&receipt).unwrap();
+        let signed = sign_cose_payload(&payload, &receiver, RECEIPT_AAD).unwrap();
+        let error = verify_receipt(&signed, &receiver.verifying_key()).unwrap_err();
+        assert!(error.to_string().contains("unsupported receipt version"));
     }
 }

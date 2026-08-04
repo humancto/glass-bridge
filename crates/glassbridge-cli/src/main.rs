@@ -1015,6 +1015,7 @@ fn receipt_verify(receipt_path: &Path, receiver_public_key_path: &Path) -> Resul
     let public_key = verifying_key_from_bytes(&public_key_bytes)?;
     let receipt = verify_receipt(&receipt_bytes, &public_key)?;
     println!("RECEIPT VERIFIED");
+    println!("  version:           {}", receipt.version);
     println!("  event:             {}", receipt.event);
     println!("  envelope:          {}", receipt.envelope_id);
     println!("  payload SHA-256:   {}", receipt.payload_sha256);
