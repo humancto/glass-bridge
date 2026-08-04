@@ -610,7 +610,7 @@ export default function ReceiverApp() {
               <button className="receiver-button primary" type="button" onClick={() => void startCamera()}>
                 Trust sender &amp; open camera
               </button>
-              <p className="security-note">For Burst, turn the phone landscape and keep both QR codes inside the camera guide.</p>
+              <p className="security-note">For dual-lane capacity modes, turn the phone landscape and keep both QR codes inside the camera guide.</p>
               <button className="receiver-button secondary" type="button" onClick={() => fileInputRef.current?.click()}>
                 Diagnostic: decode saved QR frames
               </button>
