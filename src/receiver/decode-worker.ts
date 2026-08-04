@@ -2,6 +2,7 @@
 
 import { prepareZXingModule, readBarcodes } from "zxing-wasm/reader";
 import wasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
+import { TURBO_READER_OPTIONS } from "./decode-options";
 import type { DecodeWorkerRequest, DecodeWorkerResponse } from "./decode-worker-pool";
 
 const ready = prepareZXingModule({
@@ -22,17 +23,7 @@ async function decode(request: DecodeWorkerRequest): Promise<void> {
     const pixels = new Uint8ClampedArray(request.pixels);
     const results = await readBarcodes(
       new ImageData(pixels, request.width, request.height),
-      {
-        formats: ["QRCode"],
-        maxNumberOfSymbols: 1,
-        tryHarder: false,
-        // Fast upright/normal decoding remains first; these enable fallback for
-        // phone orientation and unusual display polarity without tryHarder.
-        tryRotate: true,
-        tryInvert: true,
-        tryDownscale: false,
-        returnErrors: false,
-      },
+      TURBO_READER_OPTIONS,
     );
     const decoded = results.find((result) => result.isValid);
     const bytes = decoded?.bytes.slice();

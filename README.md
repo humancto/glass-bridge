@@ -39,6 +39,13 @@ can be tested rather than inferred. Steady retains milestone 10's 1,536-byte,
 12-FPS path. Camera focus/exposure, display refresh, frame loss, browser scheduling,
 and device thermals all affect the result.
 
+The test suite now exercises the dense Turbo path end to end below the physical
+camera boundary: it renders 2,944-byte AGF2 frames as v40-L pixels, decodes them
+with the same ZXing-C++ WASM settings used by the phone worker (including a
+rotated capture), checks exact bytes, and reconstructs a multi-frame payload.
+Run `npm run benchmark:turbo-decode` for the repeatable ideal-raster decoder
+measurement. It deliberately does not claim phone-camera goodput.
+
 ### Reproducible CLI-generated phone demo
 
 Build a complete, offline test bundle with one command:
