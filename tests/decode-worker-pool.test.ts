@@ -40,7 +40,7 @@ describe("parallel QR decode worker pool", () => {
     expect(pool.submit(makeImageData())).toBe(false);
     expect(pool.busyCount).toBe(2);
 
-    workers[0].reply({ id: 0, text: "AGF1B64:x", decodeMs: 4 });
+    workers[0].reply({ id: 0, codes: [{ text: "AGF1B64:x" }], decodeMs: 4 });
     expect(results).toEqual([0]);
     expect(pool.busyCount).toBe(1);
     expect(pool.submit(makeImageData())).toBe(true);
@@ -57,6 +57,26 @@ describe("parallel QR decode worker pool", () => {
     pool.stop();
     expect(workers.every((worker) => worker.terminated)).toBe(true);
     expect(pool.submit(makeImageData())).toBe(false);
+  });
+
+  it("returns every code recovered from one camera exposure", () => {
+    const worker = new FakeWorker();
+    const results: number[][] = [];
+    const pool = new DecodeWorkerPool(
+      1,
+      (result) => results.push(result.codes?.map((code) => code.bytes?.[0] ?? -1) ?? []),
+      () => worker as unknown as Worker,
+    );
+    pool.submit(makeImageData());
+    worker.reply({
+      id: 0,
+      codes: [
+        { bytes: Uint8Array.of(11).buffer },
+        { bytes: Uint8Array.of(22).buffer },
+      ],
+      decodeMs: 7,
+    });
+    expect(results).toEqual([[11, 22]]);
   });
 });
 

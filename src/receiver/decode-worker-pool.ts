@@ -5,16 +5,20 @@ export type DecodeWorkerRequest = {
   pixels: ArrayBuffer;
 };
 
-export type DecodeWorkerResponse = {
-  id: number;
+export type DecodeWorkerCode = {
   bytes?: ArrayBuffer;
   text?: string;
+};
+
+export type DecodeWorkerResponse = {
+  id: number;
+  codes?: DecodeWorkerCode[];
   decodeMs: number;
   error?: string;
 };
 
-export type DecodeResult = Omit<DecodeWorkerResponse, "bytes"> & {
-  bytes?: Uint8Array;
+export type DecodeResult = Omit<DecodeWorkerResponse, "codes"> & {
+  codes?: Array<{ bytes?: Uint8Array; text?: string }>;
 };
 
 type WorkerSlot = {
@@ -46,7 +50,10 @@ export class DecodeWorkerPool {
         const result = event.data;
         this.onResult({
           ...result,
-          bytes: result.bytes ? new Uint8Array(result.bytes) : undefined,
+          codes: result.codes?.map((code) => ({
+            ...code,
+            bytes: code.bytes ? new Uint8Array(code.bytes) : undefined,
+          })),
         });
       };
       worker.onerror = (event) => {

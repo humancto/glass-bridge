@@ -37,3 +37,11 @@ a copy is included at [third_party/LICENSE-zxing-cpp.txt](third_party/LICENSE-zx
 Transitive package notices remain available in their respective source packages
 and lockfile metadata. This file is not legal advice or a freedom-to-operate
 opinion.
+
+The dual-lane Burst investigation considers the alternating-lane architecture
+publicly documented by [QRFerry](https://github.com/deedy/qr-data-transfer) as
+prior art. As of the milestone 12 review, that repository did not declare a
+license through GitHub. GlassBridge therefore copied no QRFerry source code or
+assets; its implementation was written against GlassBridge's existing AGF2,
+LT, QR, and worker abstractions. The relevant architecture is cited for research
+and novelty accounting, not treated as a GlassBridge invention.

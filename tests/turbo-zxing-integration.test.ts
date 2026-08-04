@@ -53,6 +53,24 @@ describe("Turbo QR pixels through the production ZXing-WASM reader", () => {
     expect(reconstructed).toEqual(payload);
     expect(decoder.snapshot().codec).toBe("lt-v2");
   });
+
+  it("recovers two Burst symbols from one landscape camera frame", async () => {
+    const burst = OPTICAL_PROFILES.burst;
+    const encoder = new OpticalTransferEncoder(deterministicBytes(144 * 1_024), {
+      sessionId: Uint8Array.from({ length: 16 }, (_, index) => (index * 13 + 7) & 0xff),
+      symbolSize: burst.symbolSize,
+      codec: burst.codec,
+    });
+    const expected = [encoder.frameBytes(0), encoder.frameBytes(1)];
+    const results = await readBarcodes(renderBurstFrame(expected[0], expected[1]), TURBO_READER_OPTIONS);
+    const decoded = results.filter((result) => result.isValid).map((result) => result.bytes);
+
+    expect(TURBO_READER_OPTIONS.maxNumberOfSymbols).toBe(2);
+    expect(decoded).toHaveLength(2);
+    for (const frame of expected) {
+      expect(decoded.some((candidate) => equalBytes(candidate, frame))).toBe(true);
+    }
+  });
 });
 
 function makeEncoder(payload: Uint8Array): OpticalTransferEncoder {
@@ -112,6 +130,55 @@ function rotateClockwise(image: ImageData): ImageData {
     }
   }
   return { data: rotated, width: image.height, height: image.width, colorSpace: "srgb" } as ImageData;
+}
+
+function renderBurstFrame(leftFrame: Uint8Array, rightFrame: Uint8Array): ImageData {
+  const width = 1_280;
+  const height = 720;
+  const data = new Uint8ClampedArray(width * height * 4);
+  data.fill(255);
+  const frames = [leftFrame, rightFrame];
+  frames.forEach((frame, lane) => {
+    const qr = QRCode.create([{ data: frame, mode: "byte" }], {
+      version: OPTICAL_PROFILES.burst.qrVersion,
+      errorCorrectionLevel: OPTICAL_PROFILES.burst.errorCorrectionLevel,
+      maskPattern: OPTICAL_PROFILES.burst.maskPattern,
+    });
+    paintQr(data, width, qr, 4, 40 + lane * 620, 70);
+  });
+  return { data, width, height, colorSpace: "srgb" } as ImageData;
+}
+
+function paintQr(
+  data: Uint8ClampedArray,
+  imageWidth: number,
+  qr: ReturnType<typeof QRCode.create>,
+  scale: number,
+  offsetX: number,
+  offsetY: number,
+): void {
+  for (let moduleY = -QUIET_ZONE_MODULES; moduleY < qr.modules.size + QUIET_ZONE_MODULES; moduleY += 1) {
+    for (let moduleX = -QUIET_ZONE_MODULES; moduleX < qr.modules.size + QUIET_ZONE_MODULES; moduleX += 1) {
+      const dark = moduleX >= 0 && moduleY >= 0
+        && moduleX < qr.modules.size && moduleY < qr.modules.size
+        && qr.modules.get(moduleY, moduleX);
+      if (!dark) continue;
+      const startX = offsetX + (moduleX + QUIET_ZONE_MODULES) * scale;
+      const startY = offsetY + (moduleY + QUIET_ZONE_MODULES) * scale;
+      for (let y = startY; y < startY + scale; y += 1) {
+        for (let x = startX; x < startX + scale; x += 1) {
+          const pixel = (y * imageWidth + x) * 4;
+          data[pixel] = 0;
+          data[pixel + 1] = 0;
+          data[pixel + 2] = 0;
+        }
+      }
+    }
+  }
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
 function deterministicBytes(length: number): Uint8Array {

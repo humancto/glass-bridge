@@ -6,6 +6,28 @@ import { OpticalTransferDecoder } from "../src/receiver/transport";
 import { OpticalTransferEncoder } from "../src/sender/transport";
 
 describe("Turbo optical transport", () => {
+  it("defaults to a dual-lane Burst budget that holds each QR for two refreshes", () => {
+    const burst = OPTICAL_PROFILES.burst;
+    expect(burst.lanes).toBe(2);
+    expect(burst.symbolSize).toBe(1_688);
+    expect(burst.defaultFps).toBe(60);
+    expect(nominalGoodputBytes(burst, burst.defaultFps)).toBe(101_280);
+
+    const encoder = new OpticalTransferEncoder(deterministicBytes(144 * 1_024), {
+      sessionId: Uint8Array.from({ length: 16 }, (_, index) => index),
+      symbolSize: burst.symbolSize,
+      codec: burst.codec,
+    });
+    const frame = encoder.frameBytes(0);
+    const qr = QRCode.create([{ data: frame, mode: "byte" }], {
+      version: burst.qrVersion,
+      maskPattern: burst.maskPattern,
+      errorCorrectionLevel: burst.errorCorrectionLevel,
+    });
+    expect(frame).toHaveLength(1_732);
+    expect(qr.version).toBe(30);
+  });
+
   it("has enough raw channel capacity to challenge the 128 KiB/s reference", () => {
     const turbo = OPTICAL_PROFILES.turbo;
     expect(turbo.symbolSize).toBe(2_900);

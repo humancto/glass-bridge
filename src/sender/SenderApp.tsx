@@ -43,7 +43,9 @@ export default function SenderApp() {
   const [measuredFps, setMeasuredFps] = useState(0);
   const [dragging, setDragging] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const secondCanvasRef = useRef<HTMLCanvasElement>(null);
   const renderCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const secondRenderCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const frameRef = useRef(0);
@@ -62,6 +64,7 @@ export default function SenderApp() {
 
   useEffect(() => {
     if (!prepared || phase !== "playing") return;
+    const activeTransfer = prepared;
     let active = true;
     let animationFrame = 0;
     let rendering = false;
@@ -72,18 +75,19 @@ export default function SenderApp() {
     setMeasuredFps(0);
 
     async function renderFrame(nowMs: number): Promise<void> {
-      const activeTransfer = prepared;
-      if (!active || !activeTransfer || rendering) return;
+      if (!active || rendering) return;
       const intervalMs = 1_000 / fpsRef.current;
       if (nowMs + 0.5 < deadlineMs) return;
       rendering = true;
       const symbolId = frameRef.current;
+      const lane: 0 | 1 = activeTransfer.profile.lanes === 2 && symbolId % 2 === 1 ? 1 : 0;
       try {
         await drawQr(
           opticalQrPayload(activeTransfer, symbolId),
           activeTransfer.profile.errorCorrectionLevel,
           () => active,
           activeTransfer.profile,
+          lane,
         );
       } catch (renderError) {
         if (active) fail(renderError);
@@ -124,7 +128,35 @@ export default function SenderApp() {
       void renderFrame(nowMs);
       animationFrame = window.requestAnimationFrame(pump);
     };
-    animationFrame = window.requestAnimationFrame(pump);
+    async function start(): Promise<void> {
+      if (activeTransfer.profile.lanes === 2) {
+        const firstSymbol = frameRef.current;
+        await Promise.all([
+          drawQr(
+            opticalQrPayload(activeTransfer, firstSymbol),
+            activeTransfer.profile.errorCorrectionLevel,
+            () => active,
+            activeTransfer.profile,
+            firstSymbol % 2 === 1 ? 1 : 0,
+          ),
+          drawQr(
+            opticalQrPayload(activeTransfer, firstSymbol + 1),
+            activeTransfer.profile.errorCorrectionLevel,
+            () => active,
+            activeTransfer.profile,
+            (firstSymbol + 1) % 2 === 1 ? 1 : 0,
+          ),
+        ]);
+        if (!active) return;
+        frameRef.current += 2;
+        setFrameNumber(frameRef.current);
+        deadlineMs = performance.now() + 1_000 / fpsRef.current;
+      }
+      animationFrame = window.requestAnimationFrame(pump);
+    }
+    void start().catch((renderError: unknown) => {
+      if (active) fail(renderError);
+    });
     return () => {
       active = false;
       window.cancelAnimationFrame(animationFrame);
@@ -136,13 +168,26 @@ export default function SenderApp() {
     errorCorrectionLevel: "L" | "M",
     shouldCommit = () => true,
     profile?: OpticalProfile,
+    lane: 0 | 1 = 0,
   ): Promise<void> {
-    const displayPixels = Math.max(
-      320,
-      Math.min(820, Math.floor(window.innerHeight * 0.76), Math.floor(window.innerWidth * 0.76)),
-    );
-    const rendered = renderCanvasRef.current ?? document.createElement("canvas");
-    renderCanvasRef.current = rendered;
+    const displayPixels = profile?.lanes === 2
+      ? Math.max(
+          320,
+          Math.min(
+            560,
+            Math.floor(window.innerHeight * 0.68),
+            Math.floor((Math.min(window.innerWidth, 1_180) - 120) / 2),
+          ),
+        )
+      : Math.max(
+          320,
+          Math.min(820, Math.floor(window.innerHeight * 0.76), Math.floor(window.innerWidth * 0.76)),
+        );
+    const rendered = lane === 0
+      ? renderCanvasRef.current ?? document.createElement("canvas")
+      : secondRenderCanvasRef.current ?? document.createElement("canvas");
+    if (lane === 0) renderCanvasRef.current = rendered;
+    else secondRenderCanvasRef.current = rendered;
     await renderQrCanvas(
       rendered,
       value,
@@ -153,7 +198,7 @@ export default function SenderApp() {
       profile?.maskPattern,
     );
     if (!shouldCommit()) return;
-    const canvas = canvasRef.current;
+    const canvas = lane === 0 ? canvasRef.current : secondCanvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
     canvas.width = rendered.width;
@@ -272,7 +317,7 @@ export default function SenderApp() {
 
       <section className="sender-intro">
         <div>
-          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 11 TURBO</p>
+          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 12 BURST</p>
           <h1>Choose a file.<br /><em>Send it through light.</em></h1>
         </div>
         <p>
@@ -354,7 +399,7 @@ export default function SenderApp() {
             </div>
             <small>
               {formatRate(nominalGoodputBytes(selectedProfile, selectedProfile.defaultFps))} nominal.
-              Turbo is the experimental high-throughput path. Use Steady if the camera struggles to focus.
+              Burst is the recommended phone path. Turbo preserves the single-code density experiment.
             </small>
           </fieldset>
 
@@ -395,7 +440,7 @@ export default function SenderApp() {
           <div className="transfer-heading">
             <div>
               <p className="sender-kicker">{phase === "pair" ? "STEP 2 / PAIR PHONE" : "STEP 3 / OPTICAL TRANSFER"}</p>
-              <h2>{phase === "pair" ? "Scan this once with the phone Camera." : "Aim the GlassBridge camera at this code."}</h2>
+              <h2>{phase === "pair" ? "Scan this once with the phone Camera." : prepared.profile.lanes === 2 ? "Aim the GlassBridge camera at both codes." : "Aim the GlassBridge camera at this code."}</h2>
             </div>
             <div className="live-status">
               <span className={phase === "playing" ? "pulse" : ""}></span>
@@ -407,9 +452,15 @@ export default function SenderApp() {
             </div>
           </div>
 
-          <div className="sender-qr-shell">
-            <canvas ref={canvasRef} aria-label={phase === "pair" ? "Phone pairing QR" : "Animated optical transfer QR"}></canvas>
+          <div className={`sender-qr-shell ${phase !== "pair" && prepared.profile.lanes === 2 ? "dual-lane" : ""}`}>
+            <canvas ref={canvasRef} aria-label={phase === "pair" ? "Phone pairing QR" : "Animated optical transfer QR lane 1"}></canvas>
+            {phase !== "pair" && prepared.profile.lanes === 2 && (
+              <canvas ref={secondCanvasRef} aria-label="Animated optical transfer QR lane 2"></canvas>
+            )}
             {phase === "pair" && <div className="pair-label">NORMAL CAMERA · SCAN ONCE</div>}
+            {phase !== "pair" && prepared.profile.lanes === 2 && (
+              <div className="burst-label">BURST · HOLD PHONE LANDSCAPE</div>
+            )}
           </div>
 
           <div className="transfer-controls">
@@ -449,7 +500,7 @@ export default function SenderApp() {
               <span>Optical profile</span>
               <strong>{prepared.profile.label} · {formatRate(nominalGoodputBytes(prepared.profile, fps))}</strong>
               <small>
-                {prepared.profile.symbolSize.toLocaleString()} B/frame · QR v{prepared.qrVersion}-{prepared.profile.errorCorrectionLevel} · {prepared.profile.continuousRepair
+                {prepared.profile.lanes === 2 ? "2 lanes · " : ""}{prepared.profile.symbolSize.toLocaleString()} B/symbol · QR v{prepared.qrVersion}-{prepared.profile.errorCorrectionLevel} · {prepared.profile.continuousRepair
                   ? `${formatDuration(cycleSeconds)} expected solve window · endless unique repair`
                   : `${formatDuration(cycleSeconds)} repair loop · ${loops} loops`}
               </small>
@@ -460,7 +511,9 @@ export default function SenderApp() {
           <div className="transfer-footer">
             <p>
               Pair with the normal Camera. After the receiver says <b>PAIRED</b>, tap
-              <b> Trust sender &amp; open camera</b> there. Only then start these animated frames.
+              <b> Trust sender &amp; open camera</b> there. {prepared.profile.lanes === 2
+                ? "Turn the phone landscape and fill its guide with both codes. "
+                : ""}Only then start these animated frames.
             </p>
             <button onClick={reset}>Choose another file</button>
           </div>

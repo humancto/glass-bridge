@@ -9,6 +9,7 @@ import {
 import { evaluateBrowserPolicy, type LocalPolicyDecision } from "./policy";
 import { ingestDecodedQr } from "./qr-result";
 import { DecodeWorkerPool, type DecodeResult } from "./decode-worker-pool";
+import { fitCaptureDimensions } from "./camera-capture";
 import {
   createBrowserReleaseReceipt,
   type BrowserReleaseReceipt,
@@ -208,10 +209,10 @@ export default function ReceiverApp() {
       const trackSettings = stream.getVideoTracks()[0]?.getSettings();
       const sourceWidth = video.videoWidth || trackSettings?.width || 1_280;
       const sourceHeight = video.videoHeight || trackSettings?.height || 720;
-      const capturePixels = Math.min(720, sourceWidth, sourceHeight);
+      const { width: captureWidth, height: captureHeight } = fitCaptureDimensions(sourceWidth, sourceHeight);
       const captureCanvas = document.createElement("canvas");
-      captureCanvas.width = capturePixels;
-      captureCanvas.height = capturePixels;
+      captureCanvas.width = captureWidth;
+      captureCanvas.height = captureHeight;
       const captureContext = captureCanvas.getContext("2d", { willReadFrequently: true });
       if (!captureContext) throw new Error("The camera capture surface is unavailable.");
 
@@ -256,22 +257,28 @@ export default function ReceiverApp() {
           setStage("error");
           return;
         }
-        if (!result.bytes && !result.text) {
+        const codes = result.codes ?? [];
+        if (codes.length === 0) {
           updateMetrics();
           return;
         }
-        decodedFrames += 1;
-        const decoder = decoderRef.current;
-        const before = decoder.snapshot().acceptedFrames;
-        const next = result.bytes && isOpticalFrame(result.bytes)
-          ? decoder.ingestFrame(result.bytes)
-          : decoder.ingestText(result.text ?? "");
-        if (next.acceptedFrames > before && transferStartedAtRef.current === undefined) {
-          transferStartedAtRef.current = performance.now();
+        decodedFrames += codes.length;
+        for (const code of codes) {
+          const decoder = decoderRef.current;
+          const before = decoder.snapshot().acceptedFrames;
+          const next = code.bytes && isOpticalFrame(code.bytes)
+            ? decoder.ingestFrame(code.bytes)
+            : decoder.ingestText(code.text ?? "");
+          if (next.acceptedFrames > before && transferStartedAtRef.current === undefined) {
+            transferStartedAtRef.current = performance.now();
+          }
+          publishProgress(next, next.complete);
+          if (next.envelope) {
+            void finishEnvelope(next.envelope, controls);
+            break;
+          }
         }
-        publishProgress(next, next.complete);
-        updateMetrics(next.complete);
-        if (next.envelope) void finishEnvelope(next.envelope, controls);
+        updateMetrics(verifyingRef.current);
       });
 
       const stop = () => {
@@ -294,21 +301,18 @@ export default function ReceiverApp() {
           updateMetrics();
           return;
         }
-        const sourceSize = Math.min(video.videoWidth, video.videoHeight);
-        const sourceX = Math.max(0, (video.videoWidth - sourceSize) / 2);
-        const sourceY = Math.max(0, (video.videoHeight - sourceSize) / 2);
         captureContext.drawImage(
           video,
-          sourceX,
-          sourceY,
-          sourceSize,
-          sourceSize,
           0,
           0,
-          capturePixels,
-          capturePixels,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          captureWidth,
+          captureHeight,
         );
-        const image = captureContext.getImageData(0, 0, capturePixels, capturePixels);
+        const image = captureContext.getImageData(0, 0, captureWidth, captureHeight);
         if (!pool.submit(image)) busyDrops += 1;
         updateMetrics();
       };
@@ -552,7 +556,7 @@ export default function ReceiverApp() {
           {stage === "scanning" && sourceMode === "camera" && (
             <div className="live-metrics" aria-label="Live optical pipeline measurements">
               <div><span>CAMERA</span><strong>{liveMetrics.cameraFps.toFixed(1)} FPS</strong><small>{liveMetrics.width}×{liveMetrics.height} @ {liveMetrics.negotiatedFps.toFixed(0) || "—"}</small></div>
-              <div><span>DECODER</span><strong>{liveMetrics.decodeFps.toFixed(1)} FPS</strong><small>{liveMetrics.workers} WASM workers · p50 {liveMetrics.medianDecodeMs.toFixed(0)} ms</small></div>
+              <div><span>VALID CODES</span><strong>{liveMetrics.decodeFps.toFixed(1)} / SEC</strong><small>{liveMetrics.workers} WASM workers · p50 {liveMetrics.medianDecodeMs.toFixed(0)} ms</small></div>
               <div><span>PRESSURE</span><strong>{liveMetrics.busyDrops} dropped</strong><small>p95 decode {liveMetrics.p95DecodeMs.toFixed(0)} ms</small></div>
             </div>
           )}
@@ -562,6 +566,7 @@ export default function ReceiverApp() {
               <button className="receiver-button primary" type="button" onClick={() => void startCamera()}>
                 Trust sender &amp; open camera
               </button>
+              <p className="security-note">For Burst, turn the phone landscape and keep both QR codes inside the camera guide.</p>
               <button className="receiver-button secondary" type="button" onClick={() => fileInputRef.current?.click()}>
                 Diagnostic: decode saved QR frames
               </button>
@@ -695,6 +700,7 @@ async function openCameraStream(): Promise<MediaStream> {
     facingMode: { ideal: "environment" },
     width: { ideal: 1_280 },
     height: { ideal: 720 },
+    aspectRatio: { ideal: 16 / 9 },
   };
   try {
     return await navigator.mediaDevices.getUserMedia({

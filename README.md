@@ -2,7 +2,7 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 11 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, an experimental 2,900-byte/60-FPS Turbo QR path, parallel WASM phone decoding with live pipeline telemetry, sparse LT repair, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. Turbo's physical goodput target has not yet been validated. This must not be used as a production security control.
+> **Project status:** runnable milestone 12 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, a dual-lane Burst path designed around screen/camera frame mixing, the experimental dense Turbo path, parallel multi-code WASM phone decoding with live pipeline telemetry, sparse LT repair, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. Physical Burst goodput has not yet been validated across the device matrix. This must not be used as a production security control.
 
 ## See it work
 
@@ -14,30 +14,29 @@ Open the hosted [GlassBridge file sender](https://humancto.github.io/glass-bridg
 on the laptop. No installation or command line is required.
 
 1. Choose or drag in one file, or select **Try the sample file**.
-2. Leave **Turbo** selected, keep the default demonstration boundary in place, and select **Prepare secure transfer**. Use **Steady** or **Balanced** if the phone has difficulty focusing; **Legacy** preserves the milestone 9 text-frame path.
+2. Leave **Burst** selected, keep the default demonstration boundary in place, and select **Prepare secure transfer**. Turbo preserves the dense single-code experiment; use **Steady** or **Balanced** for compatibility.
 3. Scan the stationary pairing QR with the phone's normal Camera app.
 4. Confirm the sender fingerprint on both devices, then select **Trust sender & open camera** on the phone.
-5. Back on the laptop, select **2 · Start transfer**. Keep the complete QR square in the GlassBridge camera view.
+5. Turn the phone landscape. Back on the laptop, select **2 · Start transfer** and keep both QR codes in the GlassBridge camera guide.
 6. When the phone reports **QUARANTINED**, review the sender, boundary, policy, and digest.
 7. Select **Approve release & create signed receipt**. Only then can the phone save or share the file.
 8. Preserve the signed COSE receipt, receipt JSON, and receiver public key with the file.
 
 The laptop browser creates a fresh Ed25519 key for that transfer, builds and signs
 a canonical AGX/1 envelope in memory, fountain-encodes it into Rust-compatible
-AGF1 frames, and renders the QR stream locally. The file is not uploaded by the
+AGF1 or AGF2 frames, and renders the QR stream locally. The file is not uploaded by the
 application. The ephemeral key proves integrity for the paired session; it is not
 an organizational identity or durable provenance credential.
 
-The current browser profile accepts one file up to 256 KiB. The default Turbo
-profile emits 2,900-byte AGF2 binary symbols at a target 60 FPS: 174,000 B/s
-(169.9 KiB/s) of raw useful-symbol capacity. A 144 KiB payload needs 51 source
-symbols, giving a 0.85-second loss-free payload-only lower bound before signed-
-envelope bytes and sparse-LT overhead. This is a channel budget, **not measured
-physical goodput**. The phone now reports camera FPS, valid decode FPS, decoder
-latency, worker pressure, and verified payload goodput so the 128 KiB/s reference
-can be tested rather than inferred. Steady retains milestone 10's 1,536-byte,
-12-FPS path. Camera focus/exposure, display refresh, frame loss, browser scheduling,
-and device thermals all affect the result.
+The current browser profile accepts one file up to 256 KiB. Default Burst emits
+1,688-byte AGF2 symbols across two v30-L lanes at 60 combined symbols/s. Each
+lane updates at 30/s and stays stable across two refreshes of a 60 Hz display.
+Its raw useful-symbol capacity is 101,280 B/s (98.9 KiB/s), giving a 1.46-second
+loss-free payload-only lower bound for 144 KiB before the signed envelope and
+fountain overhead. Dense Turbo remains available at a nominal 169.9 KiB/s, but
+changes its single v40-L code every refresh and is therefore more vulnerable to
+rolling-shutter and mixed-frame loss. Both figures are channel budgets, **not
+measured physical goodput**.
 
 The test suite now exercises the dense Turbo path end to end below the physical
 camera boundary: it renders 2,944-byte AGF2 frames as v40-L pixels, decodes them
@@ -45,6 +44,13 @@ with the same ZXing-C++ WASM settings used by the phone worker (including a
 rotated capture), checks exact bytes, and reconstructs a multi-frame payload.
 Run `npm run benchmark:turbo-decode` for the repeatable ideal-raster decoder
 measurement. It deliberately does not claim phone-camera goodput.
+
+Burst has an additional end-to-end pixel gate: two 1,732-byte wire frames are
+rendered side-by-side in one 1280×720 exposure and both must decode byte-for-byte.
+Run `npm run benchmark:burst-decode` for its ideal two-code decoder measurement.
+See [Milestone 12](docs/milestone-12.md) for the capacity analysis, the reason a
+three-minute 144 KiB run indicates greater than 99% optical loss, and the path
+beyond standard QR.
 
 ### Reproducible CLI-generated phone demo
 
@@ -147,7 +153,7 @@ cargo run --locked -p glassbridge-cli -- video-receive \
   --approve
 ```
 
-That path extracts bounded video frames, recovers and verifies the signed AGX envelope, enforces local policy/replay state, imports or quarantines it, emits the receiver's signed receipt, and writes `reception.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), [Milestone 4](docs/milestone-4.md), [Milestone 5](docs/milestone-5.md), [Milestone 6](docs/milestone-6.md), [Milestone 7](docs/milestone-7.md), [Milestone 8](docs/milestone-8.md), [Milestone 9](docs/milestone-9.md), [Milestone 10](docs/milestone-10.md), and [Milestone 11](docs/milestone-11.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), [RECEPTION-0001](spec/RECEPTION-0001.md), [BROWSER-RECEIPT-0001](spec/BROWSER-RECEIPT-0001.md), and [CDDL](spec/agx1.cddl).
+That path extracts bounded video frames, recovers and verifies the signed AGX envelope, enforces local policy/replay state, imports or quarantines it, emits the receiver's signed receipt, and writes `reception.json`. See [Milestone 1](docs/milestone-1.md), [Milestone 2](docs/milestone-2.md), [Milestone 3](docs/milestone-3.md), [Milestone 4](docs/milestone-4.md), [Milestone 5](docs/milestone-5.md), [Milestone 6](docs/milestone-6.md), [Milestone 7](docs/milestone-7.md), [Milestone 8](docs/milestone-8.md), [Milestone 9](docs/milestone-9.md), [Milestone 10](docs/milestone-10.md), [Milestone 11](docs/milestone-11.md), and [Milestone 12](docs/milestone-12.md) for implemented properties and explicit limitations. Protocol snapshots are documented in [AGX-0001](spec/AGX-0001.md), [POLICY-0001](spec/POLICY-0001.md), [AGX-OT-0001](spec/AGX-OT-0001.md), [BENCH-0001](spec/BENCH-0001.md), [RECEPTION-0001](spec/RECEPTION-0001.md), [BROWSER-RECEIPT-0001](spec/BROWSER-RECEIPT-0001.md), and [CDDL](spec/agx1.cddl).
 
 ## Why GlassBridge
 

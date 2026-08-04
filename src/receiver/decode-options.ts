@@ -7,7 +7,7 @@ import type { ReaderOptions } from "zxing-wasm/reader";
  */
 export const TURBO_READER_OPTIONS = {
   formats: ["QRCode"],
-  maxNumberOfSymbols: 1,
+  maxNumberOfSymbols: 2,
   tryHarder: false,
   // Fast upright/normal decoding remains first; these enable fallback for
   // phone orientation and unusual display polarity without tryHarder.
