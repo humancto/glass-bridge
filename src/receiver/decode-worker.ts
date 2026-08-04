@@ -25,15 +25,17 @@ async function decode(request: DecodeWorkerRequest): Promise<void> {
       new ImageData(pixels, request.width, request.height),
       TURBO_READER_OPTIONS,
     );
-    const decoded = results.find((result) => result.isValid);
-    const bytes = decoded?.bytes.slice();
+    const decoded = results.filter((result) => result.isValid);
+    const copiedBytes = decoded.map((result) => result.bytes.slice());
     const response: DecodeWorkerResponse = {
       id: request.id,
-      bytes: bytes?.buffer,
-      text: decoded?.text,
+      codes: decoded.map((result, index) => ({
+        bytes: copiedBytes[index].buffer,
+        text: result.text,
+      })),
       decodeMs: performance.now() - startedAt,
     };
-    self.postMessage(response, bytes ? [bytes.buffer] : []);
+    self.postMessage(response, copiedBytes.map((bytes) => bytes.buffer));
   } catch (error) {
     const response: DecodeWorkerResponse = {
       id: request.id,
