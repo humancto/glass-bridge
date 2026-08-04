@@ -10,6 +10,7 @@ describe("Turbo optical transport", () => {
     const turbo = OPTICAL_PROFILES.turbo;
     expect(turbo.symbolSize).toBe(2_900);
     expect(turbo.defaultFps).toBe(60);
+    expect(turbo.maskPattern).toBe(4);
     expect(nominalGoodputBytes(turbo, turbo.defaultFps)).toBe(174_000);
     expect(nominalGoodputBytes(turbo, turbo.defaultFps) / 1_024).toBeGreaterThan(128);
   });

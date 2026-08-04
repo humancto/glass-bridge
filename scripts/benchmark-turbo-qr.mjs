@@ -9,7 +9,7 @@ const MEASURED_FRAMES = 240;
 
 const frame = new Uint8Array(FRAME_BYTES);
 const payload = [{ data: frame, mode: "byte" }];
-const options = { version: 40, errorCorrectionLevel: "L", maskPattern: 0 };
+const options = { version: 40, errorCorrectionLevel: "L", maskPattern: 4 };
 
 for (let index = 0; index < WARMUP_FRAMES; index += 1) {
   frame[20] = index;

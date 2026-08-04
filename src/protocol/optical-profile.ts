@@ -32,7 +32,7 @@ export const OPTICAL_PROFILES: Record<OpticalProfileId, OpticalProfile> = {
     codec: "lt-v2",
     continuousRepair: true,
     qrVersion: 40,
-    maskPattern: 0,
+    maskPattern: 4,
     errorCorrectionLevel: "L",
   },
   fast: {

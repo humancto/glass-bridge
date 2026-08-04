@@ -26,7 +26,7 @@ release architecture. See [third-party notices](../THIRD_PARTY_NOTICES.md).
 | Wire format | AGF2 |
 | Useful symbol | 2,900 bytes |
 | Frame size | 2,944 bytes |
-| QR | fixed v40-L, mask 0, binary byte segment |
+| QR | fixed v40-L, mask 4, binary byte segment |
 | Target display cadence | 60 FPS |
 | Raw useful-symbol rate | 174,000 B/s / 169.9 KiB/s |
 | FEC | systematic sparse LT followed by endless unique repair |
