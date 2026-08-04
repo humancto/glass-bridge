@@ -181,6 +181,11 @@ pub fn verify_receipt(
     }
     let bytes = verify_cose_payload(signed_receipt, receiver_verifying_key, RECEIPT_AAD)?;
     let receipt = decode_receipt(&bytes)?;
+    if receipt.version != 1 {
+        return Err(WorkflowError::InvalidReceipt(
+            "unsupported receipt version".into(),
+        ));
+    }
     if encode_receipt(&receipt)? != bytes {
         return Err(WorkflowError::InvalidReceipt(
             "receipt CBOR is not deterministic".into(),
@@ -449,5 +454,46 @@ mod tests {
             import_authorized(&authorization, workspace.path(), false, &receiver, 2, 1, 0).unwrap();
         assert!(outcome.imported_path.is_none());
         assert!(outcome.quarantine_dir.join("object-0001.part").exists());
+    }
+
+    #[test]
+    fn verifies_the_browser_release_receipt_golden_vector() {
+        let receiver = SigningKey::from_bytes(&[0x22; 32]);
+        assert_eq!(
+            hex::encode(receiver.verifying_key().to_bytes()),
+            "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0"
+        );
+        let signed_receipt = hex::decode(
+            "844da2012704481325b850c2871916a05894ab0101027272656c656173652d617574686f72697a65640350333333333333333333333333333333330458203f478231750d0eb1cc0fd9185338b23f003ca49c125f876d8d250d3fa4b067fe057164656d6f2f70686f6e652d6c6170746f70067162726f777365722d73656e6465722f7631076c626f756e646172792e747874081a6b49d20009481325b850c28719160a090b0258405f94b5ea03d8f944f2cfb58b38242fc488fadc6dafe35fc6b06672926d823ae4482bb42d6529ef8fcf1891e007d50116f611d2d2eb5629cb0583713e16737106",
+        )
+        .unwrap();
+        let receipt = verify_receipt(&signed_receipt, &receiver.verifying_key()).unwrap();
+        assert_eq!(receipt.event, "release-authorized");
+        assert_eq!(receipt.envelope_id, "33".repeat(16));
+        assert_eq!(receipt.policy_id, "browser-sender/v1");
+        assert_eq!(receipt.accepted_frames, 9);
+        assert_eq!(receipt.rejected_frames, 2);
+    }
+
+    #[test]
+    fn rejects_a_signed_receipt_with_an_unsupported_version() {
+        let receiver = SigningKey::from_bytes(&[0x44; 32]);
+        let receipt = ImportReceipt {
+            version: 2,
+            event: "release-authorized".into(),
+            envelope_id: "55".repeat(16),
+            payload_sha256: "66".repeat(32),
+            boundary: "demo/version-check".into(),
+            policy_id: "browser-sender/v1".into(),
+            imported_name: "version-check.bin".into(),
+            observed_unix: 1_800_000_000,
+            receiver_key_id: hex::encode(key_id(&receiver.verifying_key())),
+            accepted_frames: 5,
+            rejected_frames: 0,
+        };
+        let payload = encode_receipt(&receipt).unwrap();
+        let signed = sign_cose_payload(&payload, &receiver, RECEIPT_AAD).unwrap();
+        let error = verify_receipt(&signed, &receiver.verifying_key()).unwrap_err();
+        assert!(error.to_string().contains("unsupported receipt version"));
     }
 }

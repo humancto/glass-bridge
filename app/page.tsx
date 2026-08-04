@@ -149,7 +149,7 @@ export default function Home({
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <div className="status-line"><span></span> Product & research definition · v0.9</div>
+            <div className="status-line"><span></span> Product & research definition · v0.10</div>
             <h1>Move trusted data<br />through <em>light.</em></h1>
             <p className="dek">
               A fast, verifiable optical gateway for controlled data exchange across air-gapped boundaries—without removable media, transient networking, or invisible policy decisions.
@@ -239,6 +239,9 @@ export default function Home({
             </div>
             <Callout label="Product thesis">
               <p>GlassBridge is a high-speed, verifiable optical gateway for controlled data exchange across air-gapped boundaries, designed to reduce dependence on removable media while making every crossing explicit, authenticated, policy-constrained, observable, and auditable.</p>
+            </Callout>
+            <Callout label="Runnable milestone 9" tone="blue">
+              <p>The public laptop-to-phone demo now carries an arbitrary bounded file through one-way optical reconstruction, cryptographic verification, a phone-local policy decision, memory quarantine, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. It remains pre-alpha: session pairing is not organizational provenance, browser replay state is not tamper-resistant, and no content inspection or certification is claimed.</p>
             </Callout>
             <h3>Success looks like</h3>
             <div className="check-grid">
@@ -776,7 +779,7 @@ for await event in session.events {
 
       <footer>
         <div className="brand"><span className="brand-mark">GB</span><span>GlassBridge <b>/ AGX</b></span></div>
-        <p>Product & Research Definition · v0.9 · Research cut {researchDate}</p>
+        <p>Product & Research Definition · v0.10 · Research cut {researchDate}</p>
         <a href="#top">Back to top ↑</a>
       </footer>
     </main>
