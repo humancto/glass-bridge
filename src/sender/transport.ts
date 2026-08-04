@@ -60,6 +60,10 @@ export class OpticalTransferEncoder {
   }
 
   frameText(symbolId: number): string {
+    return `AGF1B64:${base64UrlEncode(this.frameBytes(symbolId))}`;
+  }
+
+  frameBytes(symbolId: number): Uint8Array {
     if (!Number.isSafeInteger(symbolId) || symbolId < 0 || symbolId > 0xffff_ffff) {
       throw new Error("Optical symbol identifier is outside the supported range.");
     }
@@ -81,7 +85,7 @@ export class OpticalTransferEncoder {
     view.setBigUint64(32, BigInt(this.payloadLength), false);
     frame.set(symbol, HEADER_BYTES);
     view.setUint32(frame.length - CRC_BYTES, crc32(frame.subarray(0, -CRC_BYTES)), false);
-    return `AGF1B64:${base64UrlEncode(frame)}`;
+    return frame;
   }
 }
 
