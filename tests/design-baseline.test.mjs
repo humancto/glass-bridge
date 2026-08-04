@@ -10,6 +10,8 @@ const researchDocumentUrl = new URL(
   import.meta.url,
 );
 const serviceWorkerUrl = new URL("../dist/receiver-sw.js", import.meta.url);
+const senderAppUrl = new URL("../src/sender/SenderApp.tsx", import.meta.url);
+const senderCssUrl = new URL("../src/sender/sender.css", import.meta.url);
 
 test("contains the complete public design baseline", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -105,6 +107,19 @@ test("uses network-first navigations to avoid mixed service-worker releases", as
   });
   assert.equal(await (await partial.dispatchNavigation()).text(), "partial");
   assert.deepEqual(partial.events, ["fetch"]);
+});
+
+test("keeps status labels outside QR quiet zones", async () => {
+  const [sender, css] = await Promise.all([
+    readFile(senderAppUrl, "utf8"),
+    readFile(senderCssUrl, "utf8"),
+  ]);
+
+  assert.match(sender, /className="sender-code-stage"/);
+  assert.match(sender, /<\/div>\s*\{phase === "pair" && <div className="pair-label"/);
+  assert.match(css, /\.sender-code-stage \{[^}]*display: grid/);
+  assert.doesNotMatch(css, /\.pair-label \{[^}]*position: absolute/);
+  assert.doesNotMatch(css, /\.burst-label \{[^}]*position: absolute/);
 });
 
 function serviceWorkerHarness(

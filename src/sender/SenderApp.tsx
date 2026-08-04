@@ -492,11 +492,13 @@ export default function SenderApp() {
             </div>
           </div>
 
-          <div className={`sender-qr-shell ${phase !== "pair" && prepared.profile.lanes === 2 ? "dual-lane" : ""}`}>
-            <canvas ref={canvasRef} aria-label={phase === "pair" ? "Phone pairing QR" : "Animated optical transfer QR lane 1"}></canvas>
-            {phase !== "pair" && prepared.profile.lanes === 2 && (
-              <canvas ref={secondCanvasRef} aria-label="Animated optical transfer QR lane 2"></canvas>
-            )}
+          <div className="sender-code-stage">
+            <div className={`sender-qr-shell ${phase !== "pair" && prepared.profile.lanes === 2 ? "dual-lane" : ""}`}>
+              <canvas ref={canvasRef} aria-label={phase === "pair" ? "Phone pairing QR" : "Animated optical transfer QR lane 1"}></canvas>
+              {phase !== "pair" && prepared.profile.lanes === 2 && (
+                <canvas ref={secondCanvasRef} aria-label="Animated optical transfer QR lane 2"></canvas>
+              )}
+            </div>
             {phase === "pair" && <div className="pair-label">NORMAL CAMERA · SCAN ONCE</div>}
             {phase !== "pair" && prepared.profile.lanes === 2 && (
               <div className="burst-label">{prepared.profile.label.toUpperCase()} · HOLD PHONE LANDSCAPE</div>
