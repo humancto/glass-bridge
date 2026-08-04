@@ -26,8 +26,10 @@ async function decode(request: DecodeWorkerRequest): Promise<void> {
         formats: ["QRCode"],
         maxNumberOfSymbols: 1,
         tryHarder: false,
-        tryRotate: false,
-        tryInvert: false,
+        // Fast upright/normal decoding remains first; these enable fallback for
+        // phone orientation and unusual display polarity without tryHarder.
+        tryRotate: true,
+        tryInvert: true,
         tryDownscale: false,
         returnErrors: false,
       },
