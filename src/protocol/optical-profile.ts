@@ -1,4 +1,4 @@
-export type OpticalProfileId = "burst" | "turbo" | "fast" | "balanced" | "legacy";
+export type OpticalProfileId = "burst" | "ceiling" | "turbo" | "fast" | "balanced" | "legacy";
 export type OpticalPayloadMode = "binary" | "text";
 export type OpticalCodecId = "dense-v1" | "lt-v2";
 export type QrMaskPattern = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -24,11 +24,11 @@ export const OPTICAL_PROFILES: Record<OpticalProfileId, OpticalProfile> = {
   burst: {
     id: "burst",
     label: "Burst",
-    summary: "2× v30-L lanes · each code remains stable across two display refreshes",
+    summary: "2× v30-L lanes · measurable 30–120 combined code/s ladder",
     symbolSize: 1_688,
     defaultFps: 60,
     minFps: 30,
-    maxFps: 60,
+    maxFps: 120,
     payloadMode: "binary",
     codec: "lt-v2",
     continuousRepair: true,
@@ -37,10 +37,26 @@ export const OPTICAL_PROFILES: Record<OpticalProfileId, OpticalProfile> = {
     maskPattern: 4,
     errorCorrectionLevel: "L",
   },
+  ceiling: {
+    id: "ceiling",
+    label: "Ceiling lab",
+    summary: "2× v40-L lanes · maximum standard-QR density · experimental",
+    symbolSize: 2_900,
+    defaultFps: 60,
+    minFps: 30,
+    maxFps: 120,
+    payloadMode: "binary",
+    codec: "lt-v2",
+    continuousRepair: true,
+    lanes: 2,
+    qrVersion: 40,
+    maskPattern: 4,
+    errorCorrectionLevel: "L",
+  },
   turbo: {
     id: "turbo",
     label: "Turbo",
-    summary: "2,900-byte binary frames · 60 FPS experimental high-throughput path",
+    summary: "2,900-byte binary frames · 60 code/s experimental high-throughput path",
     symbolSize: 2_900,
     defaultFps: 60,
     minFps: 24,
@@ -97,7 +113,7 @@ export const OPTICAL_PROFILES: Record<OpticalProfileId, OpticalProfile> = {
   },
 };
 
-export const OPTICAL_PROFILE_ORDER: OpticalProfileId[] = ["burst", "turbo", "fast", "balanced", "legacy"];
+export const OPTICAL_PROFILE_ORDER: OpticalProfileId[] = ["burst", "ceiling", "turbo", "fast", "balanced", "legacy"];
 export const DEFAULT_OPTICAL_PROFILE_ID: OpticalProfileId = "burst";
 
 export function nominalGoodputBytes(profile: OpticalProfile, fps: number): number {

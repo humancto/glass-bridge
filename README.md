@@ -2,7 +2,7 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 12 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, a dual-lane Burst path designed around screen/camera frame mixing, the experimental dense Turbo path, parallel multi-code WASM phone decoding with live pipeline telemetry, sparse LT repair, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. Physical Burst goodput has not yet been validated across the device matrix. This must not be used as a production security control.
+> **Project status:** runnable milestone 13 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, a measurable 30/60/90/120-code capacity ladder, dual-v30 Burst and dual-v40 Ceiling Lab paths, parallel multi-code WASM phone decoding with exportable pipeline telemetry, sparse LT repair, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. Physical goodput still requires device-matrix validation. This must not be used as a production security control.
 
 ## See it work
 
@@ -13,14 +13,21 @@ With Rust 1.91.1 installed:
 Open the hosted [GlassBridge file sender](https://humancto.github.io/glass-bridge/send.html)
 on the laptop. No installation or command line is required.
 
-1. Choose or drag in one file, or select **Try the sample file**.
-2. Leave **Burst** selected, keep the default demonstration boundary in place, and select **Prepare secure transfer**. Turbo preserves the dense single-code experiment; use **Steady** or **Balanced** for compatibility.
+1. Choose or drag in one file, select **Try the sample file**, or select **Use 144 KiB capacity test**.
+2. Leave **Burst** and **60/s Stable** selected for the first run, keep the default demonstration boundary in place, and select **Prepare secure transfer**. Increase only one capacity step per run.
 3. Scan the stationary pairing QR with the phone's normal Camera app.
 4. Confirm the sender fingerprint on both devices, then select **Trust sender & open camera** on the phone.
 5. Turn the phone landscape. Back on the laptop, select **2 · Start transfer** and keep both QR codes in the GlassBridge camera guide.
 6. When the phone reports **QUARANTINED**, review the sender, boundary, policy, and digest.
 7. Select **Approve release & create signed receipt**. Only then can the phone save or share the file.
 8. Preserve the signed COSE receipt, receipt JSON, and receiver public key with the file.
+
+For a capacity run, record the verified goodput and select **Copy capacity
+measurement JSON** before release. Repeat each step three times. Compare Burst
+30/60/90/120 to isolate timing, then compare Burst and Ceiling Lab at the same
+rate to isolate QR density. The highest setting is not automatically the fastest:
+the device's stable capacity is the last step that verifies reliably and still
+improves median goodput.
 
 The laptop browser creates a fresh Ed25519 key for that transfer, builds and signs
 a canonical AGX/1 envelope in memory, fountain-encodes it into Rust-compatible
@@ -37,6 +44,14 @@ fountain overhead. Dense Turbo remains available at a nominal 169.9 KiB/s, but
 changes its single v40-L code every refresh and is therefore more vulnerable to
 rolling-shutter and mixed-frame loss. Both figures are channel budgets, **not
 measured physical goodput**.
+
+Milestone 13 extends Burst to a controlled 30/60/90/120 combined-code ladder and
+adds **Ceiling Lab**: two v40-L lanes carrying 2,900 useful bytes per code. Its
+implemented standards-compatible upper setting is 348,000 B/s (339.8 KiB/s),
+with a 0.42-second loss-free payload-only floor for 144 KiB. That is a channel
+budget, not a promise. Run `npm run benchmark:capacity` for the ideal-raster
+decoder matrix and see [Milestone 13](docs/milestone-13.md) for the experimental
+method and stop rules.
 
 The test suite now exercises the dense Turbo path end to end below the physical
 camera boundary: it renders 2,944-byte AGF2 frames as v40-L pixels, decodes them

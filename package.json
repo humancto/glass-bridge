@@ -15,6 +15,7 @@
     "benchmark:turbo-qr": "node scripts/benchmark-turbo-qr.mjs",
     "benchmark:turbo-decode": "node scripts/benchmark-turbo-decode.mjs",
     "benchmark:burst-decode": "node scripts/benchmark-burst-decode.mjs",
+    "benchmark:capacity": "node scripts/benchmark-capacity-ladder.mjs",
     "start": "vite preview",
     "test:unit": "vitest run",
     "test": "npm run build && npm run test:unit && node --test tests/design-baseline.test.mjs"
