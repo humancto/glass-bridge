@@ -1,5 +1,8 @@
 # Milestone 7: live browser receiver
 
+> Historical milestone. The receiver is now paired with the arbitrary-file
+> browser sender described in [Milestone 8](milestone-8.md).
+
 Milestone 7 turns the phone from a passive recorder into the endpoint. An
 ordinary phone camera now receives the animated QR stream, reconstructs the
 signed AGX envelope, verifies it, and saves or shares the recovered file. The

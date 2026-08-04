@@ -285,8 +285,8 @@ export default function ReceiverApp() {
           <p className="receiver-kicker">PHONE RECEIVER / STEP 1</p>
           <h1>Scan the pairing QR on the laptop.</h1>
           <p>
-            That standard QR opens this page with a one-session sender key and boundary.
-            No file payload has crossed yet.
+            On the laptop, open GlassBridge Send, choose a file, and prepare the transfer.
+            Scan its stationary QR with the phone's normal Camera. No file payload has crossed yet.
           </p>
           <div className="empty-camera" aria-hidden="true"><span>⌁</span></div>
           <p className="security-note">The animated data stream is accepted only after you confirm the sender fingerprint.</p>

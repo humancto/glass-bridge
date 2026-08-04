@@ -23,6 +23,7 @@ try {
   );
   body = renderToStaticMarkup(createElement(ProductResearchDefinition, {
     receiverHref: "../receive.html",
+    senderHref: "../send.html",
   }));
 } finally {
   await server.close();

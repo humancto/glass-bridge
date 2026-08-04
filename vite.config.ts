@@ -10,6 +10,7 @@ export default defineConfig({
       input: {
         main: resolve(import.meta.dirname, "index.html"),
         receive: resolve(import.meta.dirname, "receive.html"),
+        send: resolve(import.meta.dirname, "send.html"),
       },
     },
   },
