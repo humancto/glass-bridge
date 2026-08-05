@@ -8,6 +8,7 @@ import {
 import { verifyAgxEnvelope } from "../src/receiver/agx";
 import { base64UrlEncode, OpticalTransferDecoder } from "../src/receiver/transport";
 import { OpticalTransferEncoder, pairingUrl } from "../src/sender/transport";
+import { packOpticalPayload, unpackOpticalPayload } from "../src/protocol/optical-payload";
 
 const ROOT = new URL("../", import.meta.url);
 
@@ -67,6 +68,34 @@ describe("browser sender AGX interoperability", () => {
 });
 
 describe("browser sender optical interoperability", () => {
+  it("round-trips a compressed signed envelope through AGF2 before verification", async () => {
+    const payload = new TextEncoder().encode("attribute,value,source\n".repeat(2_000));
+    const generated = await createBrowserEnvelope(payload, {
+      filename: "attributes.csv",
+      mediaType: "text/csv",
+      boundary: "demo/phone-laptop",
+    });
+    const packed = await packOpticalPayload(generated.bytes);
+    expect(packed.encoding).toBe("gzip");
+    const encoder = new OpticalTransferEncoder(packed.bytes, {
+      sessionId: new Uint8Array(16).fill(4),
+      symbolSize: 1_688,
+      codec: "lt-v2",
+    });
+    const decoder = new OpticalTransferDecoder(encoder.sessionId);
+    let reconstructed: Uint8Array | undefined;
+    for (let symbolId = 0; symbolId < encoder.frameCount && !reconstructed; symbolId += 1) {
+      reconstructed = decoder.ingestFrame(encoder.frameBytes(symbolId)).envelope;
+    }
+    expect(reconstructed).toBeDefined();
+    const unpacked = await unpackOpticalPayload(reconstructed!);
+    const verified = await verifyAgxEnvelope(unpacked.bytes, {
+      publicKey: generated.publicKey,
+      boundary: generated.boundary,
+    });
+    expect(verified.payload).toEqual(payload);
+  });
+
   it("reproduces committed Rust-generated AGF1 frames byte-for-byte", async () => {
     const rustFrames = (await readFile(
       new URL("tests/fixtures/rust-browser-frames.txt", ROOT),
@@ -96,16 +125,18 @@ describe("browser sender optical interoperability", () => {
       "demo/phone-laptop",
       sessionId,
       "burst",
+      "gzip",
     ));
     expect(url.origin + url.pathname).toBe(
       "https://humancto.github.io/glass-bridge/receive.html",
     );
     expect(new URLSearchParams(url.hash.slice(1)).get("boundary"))
       .toBe("demo/phone-laptop");
-    expect(new URLSearchParams(url.hash.slice(1)).get("v")).toBe("2");
+    expect(new URLSearchParams(url.hash.slice(1)).get("v")).toBe("3");
     expect(new URLSearchParams(url.hash.slice(1)).get("session"))
       .toBe(base64UrlEncode(sessionId));
     expect(new URLSearchParams(url.hash.slice(1)).get("profile")).toBe("burst");
+    expect(new URLSearchParams(url.hash.slice(1)).get("packing")).toBe("gzip");
   });
 });
 

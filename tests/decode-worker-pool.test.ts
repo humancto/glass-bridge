@@ -39,11 +39,19 @@ describe("parallel QR decode worker pool", () => {
     expect(pool.submit(makeImageData())).toBe(true);
     expect(pool.submit(makeImageData())).toBe(false);
     expect(pool.busyCount).toBe(2);
+    expect(workers[0].messages[0]).toMatchObject({ maxSymbols: 2 });
 
     workers[0].reply({ id: 0, codes: [{ text: "AGF1B64:x" }], decodeMs: 4 });
     expect(results).toEqual([0]);
     expect(pool.busyCount).toBe(1);
     expect(pool.submit(makeImageData())).toBe(true);
+  });
+
+  it("marks cropped lane jobs as single-symbol acquisitions", () => {
+    const worker = new FakeWorker();
+    const pool = new DecodeWorkerPool(1, () => undefined, () => worker as unknown as Worker);
+    expect(pool.submit(makeImageData(), 1)).toBe(true);
+    expect(worker.messages[0]).toMatchObject({ maxSymbols: 1 });
   });
 
   it("terminates every worker and rejects later submissions", () => {

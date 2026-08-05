@@ -40,7 +40,13 @@ function report(goodput?: number): CapacityReport {
     profileId: "burst",
     transferSession: "09090909",
     fileBytes: 144 * 1_024,
+    payloadSha256: "ab".repeat(32),
     measurement,
+    opticalPayload: {
+      encoding: "gzip",
+      originalBytes: 148_000,
+      transmittedBytes: 32_000,
+    },
     camera,
     device: "test-phone",
   });
@@ -53,13 +59,20 @@ function report(goodput?: number): CapacityReport {
 describe("post-receive capacity reports", () => {
   it("records comparable transfer, optical, and camera metrics", () => {
     const value = report();
-    expect(value.schema).toBe("glassbridge-capacity/2");
+    expect(value.schema).toBe("glassbridge-capacity/3");
     expect(value.profile).toMatchObject({ id: "burst", label: "Burst", lanes: 2, qr_version: 30 });
     expect(value.transfer_seconds).toBe(2.4);
+    expect(value.payload_sha256).toBe("ab".repeat(32));
     expect(value.verified_payload_bytes_per_second).toBe(61_440);
     expect(value.accepted_symbol_bytes_per_second).toBe(67_520);
     expect(value.decoded_acceptance_percent).toBe(90.6);
     expect(value.camera).toMatchObject({ observed_fps: 59.94, decode_p95_ms: 8.5, busy_drops: 2 });
+    expect(value.transport).toEqual({
+      encoding: "gzip",
+      signed_envelope_bytes: 148_000,
+      optical_object_bytes: 32_000,
+      optical_reduction_percent: 78.4,
+    });
   });
 
   it("compares only like-for-like optical profiles and payload sizes", () => {
@@ -68,7 +81,8 @@ describe("post-receive capacity reports", () => {
       profile: { id: "balanced" as const, label: "Balanced", lanes: 1 },
     };
     const differentSize = { ...report(80_000), file_bytes: 159 };
-    const comparison = compareCapacityReport(report(66_000), [report(60_000), balanced, differentSize, report(62_000)]);
+    const differentPayload = { ...report(90_000), payload_sha256: "cd".repeat(32) };
+    const comparison = compareCapacityReport(report(66_000), [report(60_000), balanced, differentSize, differentPayload, report(62_000)]);
     expect(comparison.runNumber).toBe(3);
     expect(comparison.previousGoodput).toBe(62_000);
     expect(comparison.previousAcceptedCodesPerSecond).toBe(40);

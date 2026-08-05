@@ -1,4 +1,5 @@
 import { OPTICAL_PROFILES, type OpticalProfileId } from "../protocol/optical-profile";
+import type { OpticalPayloadEncoding } from "../protocol/optical-payload";
 import type { TransportMeasurement } from "./capacity-measurement";
 
 export const CAPACITY_HISTORY_KEY = "glassbridge-capacity-history-v2";
@@ -17,7 +18,7 @@ export type CapacityCameraMetrics = {
 };
 
 export type CapacityReport = {
-  schema: "glassbridge-capacity/2";
+  schema: "glassbridge-capacity/2" | "glassbridge-capacity/3";
   measured_at: string;
   profile: {
     id: OpticalProfileId | "unbound";
@@ -27,6 +28,7 @@ export type CapacityReport = {
   };
   transfer_session?: string;
   file_bytes: number;
+  payload_sha256?: string;
   transfer_seconds: number;
   verified_payload_bytes_per_second: number;
   accepted_codes: number;
@@ -40,6 +42,12 @@ export type CapacityReport = {
   decoded_acceptance_percent: number;
   fountain_overhead_percent: number;
   payload_efficiency_percent: number;
+  transport?: {
+    encoding: OpticalPayloadEncoding;
+    signed_envelope_bytes: number;
+    optical_object_bytes: number;
+    optical_reduction_percent: number;
+  };
   camera: {
     observed_fps: number;
     negotiated_fps: number;
@@ -73,14 +81,20 @@ export function createCapacityReport(input: {
   profileId?: OpticalProfileId;
   transferSession?: string;
   fileBytes: number;
+  payloadSha256: string;
   measurement: TransportMeasurement;
+  opticalPayload: {
+    encoding: OpticalPayloadEncoding;
+    originalBytes: number;
+    transmittedBytes: number;
+  };
   camera: CapacityCameraMetrics;
   device: string;
 }): CapacityReport {
   const profile = input.profileId ? OPTICAL_PROFILES[input.profileId] : undefined;
   const measurement = input.measurement;
   return {
-    schema: "glassbridge-capacity/2",
+    schema: "glassbridge-capacity/3",
     measured_at: (input.measuredAt ?? new Date()).toISOString(),
     profile: {
       id: profile?.id ?? "unbound",
@@ -90,6 +104,7 @@ export function createCapacityReport(input: {
     },
     transfer_session: input.transferSession,
     file_bytes: input.fileBytes,
+    payload_sha256: input.payloadSha256,
     transfer_seconds: round(measurement.seconds, 3),
     verified_payload_bytes_per_second: Math.round(measurement.payloadBytesPerSecond),
     accepted_codes: measurement.acceptedCodes,
@@ -103,6 +118,15 @@ export function createCapacityReport(input: {
     decoded_acceptance_percent: round(measurement.acceptanceRate * 100, 1),
     fountain_overhead_percent: round(measurement.fountainOverhead * 100, 1),
     payload_efficiency_percent: round(measurement.payloadEfficiency * 100, 1),
+    transport: {
+      encoding: input.opticalPayload.encoding,
+      signed_envelope_bytes: input.opticalPayload.originalBytes,
+      optical_object_bytes: input.opticalPayload.transmittedBytes,
+      optical_reduction_percent: round(
+        (1 - input.opticalPayload.transmittedBytes / input.opticalPayload.originalBytes) * 100,
+        1,
+      ),
+    },
     camera: {
       observed_fps: round(input.camera.cameraFps, 2),
       negotiated_fps: round(input.camera.negotiatedFps, 2),
@@ -123,7 +147,9 @@ export function compareCapacityReport(
   history: CapacityReport[],
 ): CapacityComparison {
   const comparable = history.filter((report) =>
-    report.profile.id === current.profile.id && report.file_bytes === current.file_bytes
+    report.profile.id === current.profile.id &&
+    report.file_bytes === current.file_bytes &&
+    (current.payload_sha256 === undefined || report.payload_sha256 === current.payload_sha256)
   );
   const previous = comparable.at(-1);
   const best = comparable.reduce<CapacityReport | undefined>((value, report) => (
@@ -166,9 +192,12 @@ export function storeCapacityReport(
 function isCapacityReport(value: unknown): value is CapacityReport {
   if (!value || typeof value !== "object") return false;
   const report = value as Partial<CapacityReport>;
-  return report.schema === "glassbridge-capacity/2" &&
+  return (report.schema === "glassbridge-capacity/2" || report.schema === "glassbridge-capacity/3") &&
     typeof report.measured_at === "string" &&
     typeof report.file_bytes === "number" &&
+    (report.schema === "glassbridge-capacity/2" || (
+      typeof report.payload_sha256 === "string" && /^[a-f0-9]{64}$/u.test(report.payload_sha256)
+    )) &&
     typeof report.verified_payload_bytes_per_second === "number" &&
     typeof report.profile?.id === "string";
 }

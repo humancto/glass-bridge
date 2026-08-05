@@ -47,10 +47,11 @@ test("contains the complete public design baseline", async () => {
   assert.match(page, /novelty remains a hypothesis/i);
   assert.match(page, /QRFerry/);
   assert.match(page, /Decimen Optical Transfer/);
-  assert.match(page, /Runnable milestone 13/);
+  assert.match(page, /Runnable milestone 14/);
   assert.match(page, /Open-source gate/);
   assert.match(page, /Measure it on five device pairs/);
   assert.doesNotMatch(page, /Runnable milestone 9/);
+  assert.doesNotMatch(page, /Runnable milestone 13/);
   assert.doesNotMatch(page, /Write AGX-0001 before optimizing/);
   assert.match(page, /GB-052/);
 });
@@ -183,8 +184,8 @@ test("keeps comparable post-receive analytics visible through release", async ()
   assert.match(receiver, /POST-RECEIVE ANALYTICS/);
   assert.match(receiver, /Copy benchmark JSON/);
   assert.match(receiver, /Save \/ share benchmark JSON/);
-  assert.match(report, /glassbridge-capacity\/2/);
-  assert.match(report, /report\.profile\.id === current\.profile\.id && report\.file_bytes === current\.file_bytes/);
+  assert.match(report, /glassbridge-capacity\/3/);
+  assert.match(report, /report\.profile\.id === current\.profile\.id &&[\s\S]+report\.payload_sha256 === current\.payload_sha256/);
   assert.match(report, /CAPACITY_HISTORY_LIMIT = 20/);
 });
 

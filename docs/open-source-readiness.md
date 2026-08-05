@@ -1,7 +1,7 @@
 # GlassBridge open-source readiness review
 
 **Review date:** 2026-08-04  
-**Reviewed baseline:** `41c240a` (runnable milestone 13)  
+**Reviewed baseline:** milestone 14 browser research path, extending the `41c240a` trust-path audit  
 **Decision:** publish the work and invite technical review, but do not call the repository open source until a project license is committed.
 
 ## Executive answer
@@ -15,7 +15,7 @@ The repository is already public, but public source is not the same as open sour
 | Priority | Blocker | Why it matters | Recommended action |
 | --- | --- | --- | --- |
 | P0 | No project license | The repository is visible, but reuse and contribution rights are unclear. | Choose and commit an OSI-approved license. Apache-2.0 is the recommended default for this protocol/security project because it includes an express patent grant. |
-| P0 | No physical device-matrix result set | The implemented channel budgets and ideal-raster tests are not phone-camera goodput. A speed headline without raw physical results would overclaim. | Run at least three repetitions for each announced profile on five sender/receiver pairs; publish every run as `glassbridge-capacity/2` JSON. |
+| P0 | No physical device-matrix result set | The implemented channel budgets and ideal-raster tests are not phone-camera goodput. A speed headline without raw physical results would overclaim. | Run at least three repetitions for each announced profile on five sender/receiver pairs; publish every run as `glassbridge-capacity/3` JSON. |
 | P0 | Demo trust is session TOFU | The current pairing proves that the recovered envelope came from the ephemeral key shown during pairing. It does not prove a company, release role, managed device, or software publisher. | Keep the demo language explicit. Before a security-product claim, add provisioned organizational trust roots, signed role delegation, rotation, and revocation. |
 
 ### Important before a production claim
@@ -36,9 +36,10 @@ laptop chooses one file (<= 256 KiB)
   -> fresh transfer key + 128-bit optical session
   -> canonical AGX/1 manifest binds bytes, boundary, purpose, policy and digest
   -> Ed25519 signature
+  -> bounded adaptive gzip only when it reduces optical bytes
   -> AGF2 sparse-LT repair stream
   -> one or two animated QR lanes
-  -> phone camera + parallel ZXing-C++ WASM workers
+  -> phone camera + lane-parallel ZXing-C++ WASM workers
   -> wrong/mixed-session rejection and bounded reconstruction
   -> canonical CBOR + COSE + signature + boundary + length + SHA-256 verification
   -> receiver-local default-deny policy
@@ -72,11 +73,11 @@ This is substantially more than a product mock-up. The browser and Rust paths ha
 
 ### 3. One-way optical transport
 
-**Implemented:** no acknowledgment is required. Sparse LT repair frames can arrive out of order and tolerate erasures; Burst and Ceiling Lab expose a controlled 30/60/90/120 combined-code capacity ladder.
+**Implemented:** no acknowledgment is required. Sparse LT repair frames can arrive out of order and tolerate erasures; Burst and Ceiling Lab expose a controlled 30/60/90/120 combined-code capacity ladder. The sender uses bounded gzip only when it reduces the signed envelope, and pairing binds the packing mode. Dual-lane receiver work is split into overlapping one-code jobs with periodic full-frame reacquisition.
 
 **Security value:** the payload can cross without a network connection or writable removable medium. CRC rejects transport corruption; session binding rejects stream mixing.
 
-**Remaining risk:** CRC is not authentication. Light can be observed, injected, blocked, reflected, or recorded. The current payload is not encrypted. Commodity phones and laptops retain radios and other side channels.
+**Remaining risk:** CRC and gzip checks are not authentication. Compressed data adds a hostile decompression surface even with declared-output bounds. Light can be observed, injected, blocked, reflected, or recorded. The current payload is not encrypted. Commodity phones and laptops retain radios and other side channels.
 
 ### 4. Reconstruction and verification
 

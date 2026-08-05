@@ -65,6 +65,19 @@ describe("phone receiver AGX verification", () => {
     expect(trust.sessionId).toEqual(sessionId);
     expect(trust.profileId).toBe("burst");
   });
+
+  it("binds version 3 pairing to the negotiated optical packing mode", () => {
+    const publicKey = new Uint8Array(32).fill(7);
+    const sessionId = new Uint8Array(16).fill(9);
+    const trust = parseBootstrapHash(
+      `#v=3&key=${base64UrlEncode(publicKey)}&boundary=demo&session=${base64UrlEncode(sessionId)}&profile=ceiling&packing=gzip`,
+    );
+    expect(trust.profileId).toBe("ceiling");
+    expect(trust.packing).toBe("gzip");
+    expect(() => parseBootstrapHash(
+      `#v=3&key=${base64UrlEncode(publicKey)}&boundary=demo&session=${base64UrlEncode(sessionId)}&profile=ceiling&packing=brotli`,
+    )).toThrow(/packing mode/);
+  });
 });
 
 describe("phone receiver optical reconstruction", () => {

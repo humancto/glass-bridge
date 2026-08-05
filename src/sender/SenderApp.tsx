@@ -8,6 +8,8 @@ import {
   type OpticalProfile,
   type OpticalProfileId,
 } from "../protocol/optical-profile";
+import { packOpticalPayload, type OpticalPayload } from "../protocol/optical-payload";
+import { createCapacitySampleBytes } from "../protocol/capacity-sample";
 import {
   createBrowserEnvelope,
   formatBytes,
@@ -22,6 +24,7 @@ type Phase = "choose" | "preparing" | "pair" | "playing" | "paused" | "error";
 type PreparedTransfer = {
   envelope: BrowserEnvelope;
   encoder: OpticalTransferEncoder;
+  opticalPayload: OpticalPayload;
   pairing: string;
   originalBytes: number;
   profile: OpticalProfile;
@@ -232,7 +235,8 @@ export default function SenderApp() {
         boundary,
       });
       const profile = OPTICAL_PROFILES[profileId];
-      const encoder = new OpticalTransferEncoder(envelope.bytes, {
+      const opticalPayload = await packOpticalPayload(envelope.bytes);
+      const encoder = new OpticalTransferEncoder(opticalPayload.bytes, {
         symbolSize: profile.symbolSize,
         codec: profile.codec,
       });
@@ -248,6 +252,7 @@ export default function SenderApp() {
         envelope.boundary,
         encoder.sessionId,
         profile.id,
+        opticalPayload.encoding,
       );
       frameRef.current = 0;
       loopsRef.current = 0;
@@ -255,7 +260,7 @@ export default function SenderApp() {
       setFrameNumber(0);
       setLoops(0);
       setRenderDrops(0);
-      setPrepared({ envelope, encoder, pairing, originalBytes: candidate.size, profile, qrVersion });
+      setPrepared({ envelope, encoder, opticalPayload, pairing, originalBytes: candidate.size, profile, qrVersion });
       setPhase("pair");
     } catch (prepareError) {
       fail(prepareError);
@@ -277,13 +282,8 @@ export default function SenderApp() {
   }
 
   async function useCapacitySample(): Promise<void> {
-    const bytes = new Uint8Array(144 * 1_024);
-    const heading = new TextEncoder().encode("GlassBridge 144 KiB capacity measurement\n");
-    bytes.set(heading);
-    for (let index = heading.length; index < bytes.length; index += 1) {
-      bytes[index] = (index * 31 + 17) & 0xff;
-    }
-    const sample = new File([bytes], "glassbridge-capacity-144k.bin", {
+    const bytes = createCapacitySampleBytes();
+    const sample = new File([bytes.slice().buffer], "glassbridge-capacity-144k.bin", {
       type: "application/octet-stream",
     });
     selectFile(sample);
@@ -338,7 +338,7 @@ export default function SenderApp() {
 
       <section className="sender-intro">
         <div>
-          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 13 CAPACITY LAB</p>
+          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 14 CAPACITY LAB</p>
           <h1>Choose a file.<br /><em>Send it through light.</em></h1>
         </div>
         <p>
@@ -578,6 +578,18 @@ export default function SenderApp() {
                 {prepared.profile.lanes === 2 ? "2 lanes · " : ""}{prepared.profile.symbolSize.toLocaleString()} B/symbol · QR v{prepared.qrVersion}-{prepared.profile.errorCorrectionLevel} · {prepared.profile.continuousRepair
                   ? `${formatDuration(cycleSeconds)} expected solve window · endless unique repair`
                   : `${formatDuration(cycleSeconds)} repair loop · ${loops} loops`}
+              </small>
+            </div>
+            <div>
+              <span>Optical packing</span>
+              <strong>
+                {prepared.opticalPayload.encoding === "gzip" ? "Adaptive gzip" : "Identity"}
+                {` · ${formatBytes(prepared.opticalPayload.transmittedBytes)}`}
+              </strong>
+              <small>
+                {prepared.opticalPayload.encoding === "gzip"
+                  ? `${formatPercent(1 - prepared.opticalPayload.transmittedBytes / prepared.opticalPayload.originalBytes)} fewer optical bytes than the signed envelope`
+                  : "Compression was unavailable or would not reduce the transfer"}
               </small>
             </div>
             <div>
