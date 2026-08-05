@@ -62,10 +62,14 @@ JavaScript QR generation—is the constraint.
    a repeatable distance.
 2. Start with Burst / 30. Run it three times with a fresh generated envelope
    each time. A replayed successful envelope is intentionally rejected.
-3. Copy the measurement JSON after every verified run. It includes transfer
-   seconds, verified payload B/s, accepted codes/s, symbol size, fountain
-   overhead, payload efficiency, negotiated and observed camera FPS, valid
-   codes/s, decode latency, worker count, and busy drops.
+3. Review the phone's post-receive analytics after every verified run. It
+   compares the current verified goodput with the previous and best run using
+   the same profile and payload size, and retains the last 20 runs locally.
+   Export the benchmark JSON before changing devices. It includes transfer
+   seconds, verified payload B/s, accepted/rejected/duplicate codes, accepted
+   codes/s, symbol rate, decoded acceptance, fountain overhead, payload
+   efficiency, negotiated and observed camera FPS, valid codes/s, decode
+   latency, worker count, and busy drops.
 4. Repeat Burst at 60, 90, and 120. Stop increasing rate after any step fails
    verification or its median verified goodput improves by less than 10%.
 5. Return to 60 and compare Ceiling Lab against Burst. Only then try Ceiling at

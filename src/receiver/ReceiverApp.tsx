@@ -12,8 +12,16 @@ import { DecodeWorkerPool, type DecodeResult } from "./decode-worker-pool";
 import { fitCaptureDimensions } from "./camera-capture";
 import {
   measureTransport,
-  type TransportMeasurement,
 } from "./capacity-measurement";
+import {
+  CAPACITY_HISTORY_LIMIT,
+  compareCapacityReport,
+  createCapacityReport,
+  readCapacityHistory,
+  storeCapacityReport,
+  type CapacityComparison,
+  type CapacityReport,
+} from "./capacity-report";
 import {
   createBrowserReleaseReceipt,
   type BrowserReleaseReceipt,
@@ -128,7 +136,9 @@ export default function ReceiverApp() {
   const [saveStatus, setSaveStatus] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("camera");
   const [liveMetrics, setLiveMetrics] = useState<LiveMetrics>(EMPTY_METRICS);
-  const [measurement, setMeasurement] = useState<TransportMeasurement>();
+  const [capacityReport, setCapacityReport] = useState<CapacityReport>();
+  const [capacityComparison, setCapacityComparison] = useState<CapacityComparison>();
+  const [capacityHistorySaved, setCapacityHistorySaved] = useState(false);
   const [measurementStatus, setMeasurementStatus] = useState("");
   const [mustRepair, setMustRepair] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -139,6 +149,7 @@ export default function ReceiverApp() {
   const releasingRef = useRef(false);
   const lastProgressPaintRef = useRef(0);
   const transferStartedAtRef = useRef<number | undefined>(undefined);
+  const liveMetricsRef = useRef<LiveMetrics>(EMPTY_METRICS);
 
   useEffect(() => {
     if (!trust) {
@@ -168,7 +179,6 @@ export default function ReceiverApp() {
       return;
     }
     verifyingRef.current = true;
-    const completedAtMs = performance.now();
     callbackControls?.stop();
     setStage("verifying");
     try {
@@ -178,12 +188,33 @@ export default function ReceiverApp() {
         throw new Error(`${decision.code}: ${decision.reason}`);
       }
       assertFreshTransfer(transfer);
+      const verifiedAtMs = performance.now();
       setVerified(transfer);
       setPolicyDecision(decision);
       const startedAt = transferStartedAtRef.current;
       if (startedAt !== undefined && completion && completion.acceptedFrames > 0) {
-        const seconds = Math.max(0.001, (completedAtMs - startedAt) / 1_000);
-        setMeasurement(measureTransport(transfer.payload.length, seconds, completion));
+        const seconds = Math.max(0.001, (verifiedAtMs - startedAt) / 1_000);
+        const nextMeasurement = measureTransport(transfer.payload.length, seconds, completion);
+        const nextReport = createCapacityReport({
+          profileId: trust.profileId,
+          transferSession: trust.sessionId ? formatSession(trust.sessionId) : undefined,
+          fileBytes: transfer.payload.length,
+          measurement: nextMeasurement,
+          camera: liveMetricsRef.current,
+          device: navigator.userAgent,
+        });
+        let previousReports: CapacityReport[] = [];
+        let historySaved = false;
+        try {
+          previousReports = readCapacityHistory(window.localStorage);
+          storeCapacityReport(window.localStorage, nextReport);
+          historySaved = true;
+        } catch {
+          // Private browsing or a full storage quota must not fail the transfer.
+        }
+        setCapacityReport(nextReport);
+        setCapacityComparison(compareCapacityReport(nextReport, previousReports));
+        setCapacityHistorySaved(historySaved);
       }
       setStage("quarantined");
     } catch (verificationError) {
@@ -218,7 +249,10 @@ export default function ReceiverApp() {
     setError("");
     setSaveStatus("");
     setLiveMetrics(EMPTY_METRICS);
-    setMeasurement(undefined);
+    liveMetricsRef.current = EMPTY_METRICS;
+    setCapacityReport(undefined);
+    setCapacityComparison(undefined);
+    setCapacityHistorySaved(false);
     setMeasurementStatus("");
     setMustRepair(false);
     transferStartedAtRef.current = undefined;
@@ -248,15 +282,16 @@ export default function ReceiverApp() {
       let cameraFrames = 0;
       let decodedFrames = 0;
       let busyDrops = 0;
-      let lastMetricsPaint = performance.now();
+      const cameraStartedAt = performance.now();
+      let lastMetricsPaint = cameraStartedAt;
       const decodeTimes: number[] = [];
 
       const updateMetrics = (force = false) => {
         const now = performance.now();
         if (!force && now - lastMetricsPaint < 500) return;
-        const seconds = Math.max(0.001, (now - lastMetricsPaint) / 1_000);
+        const seconds = Math.max(0.001, (now - cameraStartedAt) / 1_000);
         const sorted = [...decodeTimes].sort((left, right) => left - right);
-        setLiveMetrics({
+        const nextMetrics: LiveMetrics = {
           cameraFps: cameraFrames / seconds,
           decodeFps: decodedFrames / seconds,
           medianDecodeMs: percentile(sorted, 0.5),
@@ -266,10 +301,10 @@ export default function ReceiverApp() {
           width: sourceWidth,
           height: sourceHeight,
           negotiatedFps: trackSettings?.frameRate ?? 0,
-        });
+        };
+        liveMetricsRef.current = nextMetrics;
+        setLiveMetrics(nextMetrics);
         lastMetricsPaint = now;
-        cameraFrames = 0;
-        decodedFrames = 0;
       };
 
       let controls: ScannerControls;
@@ -316,11 +351,12 @@ export default function ReceiverApp() {
             return;
           }
           if (next.envelope) {
+            updateMetrics(true);
             void finishEnvelope(next.envelope, controls, next);
             break;
           }
         }
-        updateMetrics(verifyingRef.current);
+        if (!verifyingRef.current) updateMetrics();
       });
 
       const stop = () => {
@@ -454,7 +490,10 @@ export default function ReceiverApp() {
     setError("");
     setSaveStatus("");
     setLiveMetrics(EMPTY_METRICS);
-    setMeasurement(undefined);
+    liveMetricsRef.current = EMPTY_METRICS;
+    setCapacityReport(undefined);
+    setCapacityComparison(undefined);
+    setCapacityHistorySaved(false);
     setMeasurementStatus("");
     setMustRepair(false);
     transferStartedAtRef.current = undefined;
@@ -469,36 +508,40 @@ export default function ReceiverApp() {
   }
 
   async function copyCapacityReport(): Promise<void> {
-    if (!verified || !measurement) return;
-    const report = {
-      schema: "glassbridge-capacity/1",
-      measured_at: new Date().toISOString(),
-      file_bytes: verified.payload.length,
-      transfer_seconds: round(measurement.seconds, 3),
-      verified_payload_bytes_per_second: Math.round(measurement.payloadBytesPerSecond),
-      accepted_codes: measurement.acceptedCodes,
-      accepted_codes_per_second: round(measurement.acceptedCodesPerSecond, 2),
-      symbol_bytes: measurement.symbolSize,
-      fountain_overhead_percent: round(measurement.fountainOverhead * 100, 1),
-      payload_efficiency_percent: round(measurement.payloadEfficiency * 100, 1),
-      camera: {
-        observed_fps: round(liveMetrics.cameraFps, 2),
-        negotiated_fps: round(liveMetrics.negotiatedFps, 2),
-        width: liveMetrics.width,
-        height: liveMetrics.height,
-        valid_codes_per_second: round(liveMetrics.decodeFps, 2),
-        busy_drops: liveMetrics.busyDrops,
-        decode_p50_ms: round(liveMetrics.medianDecodeMs, 2),
-        decode_p95_ms: round(liveMetrics.p95DecodeMs, 2),
-        workers: liveMetrics.workers,
-      },
-      device: navigator.userAgent,
-    };
+    if (!capacityReport) return;
     try {
-      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
-      setMeasurementStatus("Capacity report copied.");
+      await navigator.clipboard.writeText(JSON.stringify(capacityReport, null, 2));
+      setMeasurementStatus("Benchmark JSON copied.");
     } catch {
-      setMeasurementStatus("Copy was blocked by this browser. Take a screenshot of these measurements.");
+      setMeasurementStatus("Copy was blocked. Use Save / share benchmark JSON instead.");
+    }
+  }
+
+  async function shareCapacityReport(): Promise<void> {
+    if (!capacityReport) return;
+    const file = new File(
+      [JSON.stringify(capacityReport, null, 2)],
+      `glassbridge-benchmark-${capacityReport.measured_at.replaceAll(":", "-")}.json`,
+      { type: "application/json" },
+    );
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({
+          title: "GlassBridge transfer benchmark",
+          text: `${formatRate(capacityReport.verified_payload_bytes_per_second)} verified goodput`,
+          files: [file],
+        });
+        setMeasurementStatus("Benchmark JSON shared.");
+      } else {
+        downloadFile(file);
+        setMeasurementStatus("Benchmark JSON download started.");
+      }
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === "AbortError") {
+        setMeasurementStatus("Benchmark share cancelled. The result remains on this screen.");
+      } else {
+        setMeasurementStatus("The browser could not export the benchmark. Copy the JSON instead.");
+      }
     }
   }
 
@@ -671,6 +714,16 @@ export default function ReceiverApp() {
           <p className="receiver-kicker">VERIFIED QUARANTINE / POLICY {policyDecision.code}</p>
           <h1>Verified. Held for approval.</h1>
           <p>The payload remains in memory and is not exposed as a file until you explicitly authorize release.</p>
+          {capacityReport && capacityComparison && (
+            <CapacityScorecard
+              report={capacityReport}
+              comparison={capacityComparison}
+              historySaved={capacityHistorySaved}
+              status={measurementStatus}
+              onCopy={() => void copyCapacityReport()}
+              onShare={() => void shareCapacityReport()}
+            />
+          )}
           <div className="policy-decision">
             <span>LOCAL DECISION</span>
             <strong>{policyDecision.code}</strong>
@@ -684,16 +737,7 @@ export default function ReceiverApp() {
             <div><dt>Purpose</dt><dd>{verified.purpose}</dd></div>
             <div><dt>Policy</dt><dd>{verified.policyId}</dd></div>
             <div><dt>SHA-256</dt><dd>{verified.payloadSha256}</dd></div>
-            {measurement && <div><dt>Verified goodput</dt><dd>{formatRate(measurement.payloadBytesPerSecond)} in {measurement.seconds.toFixed(2)} sec</dd></div>}
-            {measurement && <div><dt>Accepted code rate</dt><dd>{measurement.acceptedCodesPerSecond.toFixed(1)} codes/sec · {measurement.acceptedCodes} total</dd></div>}
-            {measurement && <div><dt>Transport efficiency</dt><dd>{(measurement.payloadEfficiency * 100).toFixed(1)}% payload · {(measurement.fountainOverhead * 100).toFixed(1)}% fountain overhead</dd></div>}
           </dl>
-          {measurement && (
-            <button className="receiver-button secondary measurement-button" type="button" onClick={() => void copyCapacityReport()}>
-              Copy capacity measurement JSON
-            </button>
-          )}
-          {measurementStatus && <p className="measurement-status" role="status">{measurementStatus}</p>}
           <button
             className="receiver-button primary save-button"
             type="button"
@@ -713,6 +757,16 @@ export default function ReceiverApp() {
           <p className="receiver-kicker">RELEASE AUTHORIZED / SIGNED EVIDENCE READY</p>
           <h1>Released with a receipt.</h1>
           <p>The envelope is now in the bounded replay ledger. The receipt proves this receiver authorized browser exposure—not that another application opened the file.</p>
+          {capacityReport && capacityComparison && (
+            <CapacityScorecard
+              report={capacityReport}
+              comparison={capacityComparison}
+              historySaved={capacityHistorySaved}
+              status={measurementStatus}
+              onCopy={() => void copyCapacityReport()}
+              onShare={() => void shareCapacityReport()}
+            />
+          )}
           <dl className="verified-details">
             <div><dt>File</dt><dd>{verified.filename}</dd></div>
             <div><dt>Envelope</dt><dd>{verified.envelopeId}</dd></div>
@@ -756,6 +810,95 @@ export default function ReceiverApp() {
         <span>Pre-alpha research · not a certified data diode</span>
       </footer>
     </main>
+  );
+}
+
+export function CapacityScorecard({
+  report,
+  comparison,
+  historySaved,
+  status,
+  onCopy,
+  onShare,
+}: {
+  report: CapacityReport;
+  comparison: CapacityComparison;
+  historySaved: boolean;
+  status: string;
+  onCopy: () => void;
+  onShare: () => void;
+}) {
+  const previousDelta = comparison.changeFromPrevious;
+  const deltaClass = previousDelta === undefined || Math.abs(previousDelta) < 0.005
+    ? "neutral"
+    : previousDelta > 0 ? "positive" : "negative";
+  return (
+    <section className="capacity-scorecard" aria-label="Post-receive transfer analytics">
+      <div className="capacity-scorecard-heading">
+        <div>
+          <span>POST-RECEIVE ANALYTICS</span>
+          <strong>Verified goodput</strong>
+        </div>
+        <b className={comparison.isNewBest ? "new-best" : "run-number"}>
+          {comparison.isNewBest && comparison.runNumber > 1 ? "NEW BEST" : `RUN ${comparison.runNumber}`}
+        </b>
+      </div>
+      <div className="capacity-hero">
+        <strong>{formatRate(report.verified_payload_bytes_per_second)}</strong>
+        <span>{formatBytes(report.file_bytes)} cryptographically verified in {report.transfer_seconds.toFixed(2)} sec</span>
+      </div>
+      <div className="capacity-comparison">
+        {comparison.previousGoodput === undefined ? (
+          <div className="capacity-baseline">
+            <span>DEVICE BASELINE</span>
+            <strong>First {report.profile.label} result saved</strong>
+            <small>Repeat this profile and payload size to see the change.</small>
+          </div>
+        ) : (
+          <>
+            <div>
+              <span>VS PREVIOUS</span>
+              <strong className={deltaClass}>{formatDelta(previousDelta)}</strong>
+              <small>Previous {formatRate(comparison.previousGoodput)} · {comparison.previousAcceptedCodesPerSecond?.toFixed(1) ?? "—"} codes/s</small>
+            </div>
+            <div>
+              <span>PREVIOUS BEST</span>
+              <strong>{formatRate(comparison.bestGoodputBefore ?? 0)}</strong>
+              <small>{formatDelta(comparison.changeFromBest)} this run · {comparison.bestAcceptedCodesPerSecond?.toFixed(1) ?? "—"} codes/s</small>
+            </div>
+          </>
+        )}
+      </div>
+      <div className="capacity-metric-grid">
+        <div><span>ELAPSED</span><strong>{report.transfer_seconds.toFixed(2)} s</strong><small>first accepted code → verified</small></div>
+        <div><span>CODE RATE</span><strong>{report.accepted_codes_per_second.toFixed(1)}/s</strong><small>{report.accepted_codes} accepted codes</small></div>
+        <div><span>ACCEPTANCE</span><strong>{report.decoded_acceptance_percent.toFixed(1)}%</strong><small>accepted ÷ all decoded codes</small></div>
+        <div><span>PAYLOAD EFFICIENCY</span><strong>{report.payload_efficiency_percent.toFixed(1)}%</strong><small>file bytes ÷ accepted symbol bytes</small></div>
+      </div>
+      <details className="capacity-diagnostics">
+        <summary>Pipeline diagnostics</summary>
+        <dl>
+          <div><dt>Profile</dt><dd>{report.profile.label} · {report.profile.lanes || "—"} lane{report.profile.lanes === 1 ? "" : "s"}{report.profile.qr_version ? ` · QR v${report.profile.qr_version}` : ""}</dd></div>
+          <div><dt>Accepted / required</dt><dd>{report.accepted_codes} / {report.required_codes} codes</dd></div>
+          <div><dt>Rejected / duplicate</dt><dd>{report.rejected_codes} / {report.duplicate_codes} codes</dd></div>
+          <div><dt>Accepted optical rate</dt><dd>{formatRate(report.accepted_symbol_bytes_per_second)}</dd></div>
+          <div><dt>Fountain overhead</dt><dd>{report.fountain_overhead_percent.toFixed(1)}%</dd></div>
+          <div><dt>Camera</dt><dd>{report.camera.width}×{report.camera.height} · {report.camera.observed_fps.toFixed(1)} observed / {report.camera.negotiated_fps.toFixed(0)} negotiated FPS</dd></div>
+          <div><dt>Decoder</dt><dd>{report.camera.valid_codes_per_second.toFixed(1)} valid codes/s · p50 {report.camera.decode_p50_ms.toFixed(1)} ms · p95 {report.camera.decode_p95_ms.toFixed(1)} ms</dd></div>
+          <div><dt>Pressure</dt><dd>{report.camera.busy_drops} busy drops · {report.camera.workers} workers</dd></div>
+        </dl>
+      </details>
+      <div className="capacity-actions">
+        <button type="button" onClick={onCopy}>Copy benchmark JSON</button>
+        <button type="button" onClick={onShare}>Save / share benchmark JSON</button>
+      </div>
+      <p className="capacity-history-note">
+        {historySaved
+          ? `Saved privately on this device · last ${CAPACITY_HISTORY_LIMIT} runs retained · comparisons match profile + payload size`
+          : "Device history is unavailable in this browser session. Export the JSON to preserve this run."}
+      </p>
+      {status && <p className="measurement-status" role="status">{status}</p>}
+    </section>
   );
 }
 
@@ -821,8 +964,17 @@ function formatRate(bytesPerSecond: number): string {
   return `${(bytesPerSecond / 1_024).toFixed(1)} KiB/s`;
 }
 
-function round(value: number, digits: number): number {
-  return Number(value.toFixed(digits));
+function formatBytes(bytes: number): string {
+  if (bytes < 1_024) return `${bytes} B`;
+  if (bytes < 1_024 * 1_024) return `${(bytes / 1_024).toFixed(1)} KiB`;
+  return `${(bytes / (1_024 * 1_024)).toFixed(1)} MiB`;
+}
+
+function formatDelta(value: number | undefined): string {
+  if (value === undefined) return "—";
+  const percent = value * 100;
+  const prefix = percent > 0.05 ? "+" : "";
+  return `${prefix}${percent.toFixed(1)}%`;
 }
 
 function formatSession(sessionId: Uint8Array): string {
