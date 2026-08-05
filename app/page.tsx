@@ -769,7 +769,7 @@ for await event in session.events {
             </div>
             <h3>Next open-source wave</h3>
             <div className="wave-grid">
-              <div><span>Track A · legal + community</span><strong>License + contribution surface</strong><p>Choose Apache-2.0, add project metadata and issue templates, enable private vulnerability reporting.</p></div>
+              <div><span>Track A · legal + community</span><strong>Choose the project license</strong><p>Apache-2.0 is recommended. Repository metadata, issue templates, Dependabot, and private vulnerability reporting are now in place.</p></div>
               <div><span>Track B · evidence</span><strong>Five-pair device matrix</strong><p>Three repetitions per condition, raw JSON and failures, no fastest-ever headline from one run.</p></div>
               <div><span>Track C · trust</span><strong>Organization-bound provenance</strong><p>Provisioned roots, release roles, signed policy bundle, rotation, revocation, negative vectors.</p></div>
               <div><span>Track D · assurance</span><strong>Fuzz + provenance + managed edge</strong><p>Continuous hostile-input testing, SBOM, signed build evidence, reproducibility, response headers.</p></div>
