@@ -322,6 +322,7 @@ export default function SenderApp() {
   const cycleSeconds = prepared ? prepared.encoder.frameCount / fps : 0;
   const idealSeconds = prepared ? prepared.encoder.sourceCount / fps : 0;
   const selectedProfile = OPTICAL_PROFILES[profileId];
+  const senderStatus = !file && !prepared && phase === "choose" ? "empty" : phase;
 
   return (
     <main className="sender-app">
@@ -332,7 +333,7 @@ export default function SenderApp() {
         </a>
         <div className="sender-header-actions">
           <a href={`${import.meta.env.BASE_URL}receive.html`}>Phone receiver</a>
-          <span className={`sender-phase phase-${phase}`}>{phase.toUpperCase()}</span>
+          <span className={`sender-phase phase-${senderStatus}`}>{senderStatus.toUpperCase()}</span>
         </div>
       </header>
 
@@ -396,88 +397,98 @@ export default function SenderApp() {
             )}
           </div>
 
-          <fieldset className="profile-field" disabled={phase === "preparing"}>
-            <legend>Optical profile</legend>
-            <div className="profile-options">
-              {OPTICAL_PROFILE_ORDER.map((candidateId) => {
-                const candidate = OPTICAL_PROFILES[candidateId];
-                return (
-                  <button
-                    key={candidate.id}
-                    type="button"
-                    className={candidate.id === profileId ? "selected" : ""}
-                    aria-pressed={candidate.id === profileId}
-                    onClick={() => {
-                      setProfileId(candidate.id);
-                      setFps(candidate.defaultFps);
-                    }}
-                  >
-                    <b>{candidate.label}</b>
-                    <small>{candidate.summary}</small>
-                  </button>
-                );
-              })}
-            </div>
-            <small>
-              {formatRate(nominalGoodputBytes(selectedProfile, selectedProfile.defaultFps))} nominal.
-              Burst is the recommended phone path. Ceiling lab combines two maximum-density QR codes.
-            </small>
-          </fieldset>
-
-          {selectedProfile.lanes === 2 && (
-            <fieldset className="capacity-field" disabled={phase === "preparing"}>
-              <legend>Capacity step · combined code rate</legend>
-              <div className="capacity-options">
-                {CAPACITY_RATES.map((step) => (
-                  <button
-                    key={step.rate}
-                    type="button"
-                    className={fps === step.rate ? "selected" : ""}
-                    aria-pressed={fps === step.rate}
-                    onClick={() => setFps(step.rate)}
-                  >
-                    <b>{step.rate}/s</b>
-                    <span>{step.label}</span>
-                    <small>{formatRate(nominalGoodputBytes(selectedProfile, step.rate))}</small>
-                  </button>
-                ))}
+          {!file && phase === "choose" ? (
+            <div className="empty-send-state">
+              <div className="empty-send-mark" aria-hidden="true">—</div>
+              <p className="sender-kicker" role="status" aria-live="polite">NOTHING QUEUED</p>
+              <h2>There is nothing to send.</h2>
+              <p>Choose a file first. Transfer settings, pairing, and optical codes stay hidden until a real payload exists.</p>
+              <div className="choose-actions empty-actions">
+                <button onClick={() => { void useSample(); }}>Load demo sample</button>
+                <button onClick={() => { void useCapacitySample(); }}>Load 144 KiB test payload</button>
               </div>
-              <small>Change one step at a time. Peak requires two new QR codes on every 60 Hz display refresh.</small>
-            </fieldset>
+            </div>
+          ) : (
+            <>
+              <fieldset className="profile-field" disabled={phase === "preparing"}>
+                <legend>Optical profile</legend>
+                <div className="profile-options">
+                  {OPTICAL_PROFILE_ORDER.map((candidateId) => {
+                    const candidate = OPTICAL_PROFILES[candidateId];
+                    return (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        className={candidate.id === profileId ? "selected" : ""}
+                        aria-pressed={candidate.id === profileId}
+                        onClick={() => {
+                          setProfileId(candidate.id);
+                          setFps(candidate.defaultFps);
+                        }}
+                      >
+                        <b>{candidate.label}</b>
+                        <small>{candidate.summary}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+                <small>
+                  {formatRate(nominalGoodputBytes(selectedProfile, selectedProfile.defaultFps))} nominal.
+                  Burst is the recommended phone path. Ceiling lab combines two maximum-density QR codes.
+                </small>
+              </fieldset>
+
+              {selectedProfile.lanes === 2 && (
+                <fieldset className="capacity-field" disabled={phase === "preparing"}>
+                  <legend>Capacity step · combined code rate</legend>
+                  <div className="capacity-options">
+                    {CAPACITY_RATES.map((step) => (
+                      <button
+                        key={step.rate}
+                        type="button"
+                        className={fps === step.rate ? "selected" : ""}
+                        aria-pressed={fps === step.rate}
+                        onClick={() => setFps(step.rate)}
+                      >
+                        <b>{step.rate}/s</b>
+                        <span>{step.label}</span>
+                        <small>{formatRate(nominalGoodputBytes(selectedProfile, step.rate))}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <small>Change one step at a time. Peak requires two new QR codes on every 60 Hz display refresh.</small>
+                </fieldset>
+              )}
+
+              <label className="boundary-field">
+                <span>Receiving boundary</span>
+                <input
+                  value={boundary}
+                  maxLength={120}
+                  onChange={(event) => setBoundary(event.currentTarget.value)}
+                  disabled={phase === "preparing"}
+                />
+                <small>The signed envelope and pairing QR must agree on this value.</small>
+              </label>
+
+              {error && <p className="sender-error" role="alert">{error}</p>}
+
+              <div className="choose-actions">
+                <button
+                  className="primary-action"
+                  disabled={phase === "preparing"}
+                  onClick={() => { void prepareTransfer(); }}
+                >
+                  {phase === "preparing" ? "Signing and encoding…" : "Prepare secure transfer"}
+                </button>
+                <button disabled={phase === "preparing"} onClick={reset}>Clear queued file</button>
+              </div>
+              <p className="security-note">
+                The generated signer is ephemeral and trusted only through this pairing QR. It proves
+                this session’s integrity—not an organizational identity.
+              </p>
+            </>
           )}
-
-          <label className="boundary-field">
-            <span>Receiving boundary</span>
-            <input
-              value={boundary}
-              maxLength={120}
-              onChange={(event) => setBoundary(event.currentTarget.value)}
-              disabled={phase === "preparing"}
-            />
-            <small>The signed envelope and pairing QR must agree on this value.</small>
-          </label>
-
-          {error && <p className="sender-error" role="alert">{error}</p>}
-
-          <div className="choose-actions">
-            <button
-              className="primary-action"
-              disabled={!file || phase === "preparing"}
-              onClick={() => { void prepareTransfer(); }}
-            >
-              {phase === "preparing" ? "Signing and encoding…" : "Prepare secure transfer"}
-            </button>
-            <button disabled={phase === "preparing"} onClick={() => { void useSample(); }}>
-              Try the sample file
-            </button>
-            <button disabled={phase === "preparing"} onClick={() => { void useCapacitySample(); }}>
-              Use 144 KiB capacity test
-            </button>
-          </div>
-          <p className="security-note">
-            The generated signer is ephemeral and trusted only through this pairing QR. It proves
-            this session’s integrity—not an organizational identity.
-          </p>
         </section>
       )}
 

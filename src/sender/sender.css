@@ -24,6 +24,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .sender-header-actions a { color: #9eb0a5; font-size: 12px; text-decoration: none; }
 .sender-header-actions a:hover { color: #fff; }
 .sender-phase { padding: 7px 10px; border: 1px solid #2b3d32; border-radius: 100px; color: #8fa196; font: 700 8px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.phase-empty { border-color: #3b463f; color: #a3aea7; background: #111713; }
 .phase-playing { border-color: #5ee1ad; color: #7ff2c4; background: #0f2a20; }
 .phase-error { border-color: #7d3e44; color: #ff9da7; }
 
@@ -53,6 +54,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .drop-zone strong { max-width: 560px; overflow-wrap: anywhere; font-size: clamp(19px, 3vw, 29px); letter-spacing: -.03em; }
 .drop-zone small { color: #83978b; font-size: 12px; }
 .drop-icon { display: grid; place-items: center; width: 54px; height: 54px; border: 1px solid #4a725d; border-radius: 50%; color: #65e6b7; font-size: 27px; }
+.empty-send-state { display: grid; align-content: center; justify-items: start; gap: 12px; min-height: 240px; padding: 24px; border: 1px solid #26352c; border-radius: 18px; background: #09100c; }
+.empty-send-state .sender-kicker { margin: 0; color: #839188; }
+.empty-send-state h2 { max-width: 430px; margin: 0; color: #dce5df; font-size: clamp(25px, 3vw, 36px); letter-spacing: -.035em; }
+.empty-send-state > p:not(.sender-kicker) { max-width: 470px; margin: 0; color: #7d8d83; font-size: 12px; line-height: 1.6; }
+.empty-send-mark { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid #34453a; border-radius: 50%; color: #75837a; font: 800 18px/1 ui-monospace, monospace; }
+.empty-actions { margin-top: 8px; }
 .profile-field { display: grid; gap: 9px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .profile-field legend { margin-bottom: 9px; padding: 0; color: #b6c3bb; font-size: 12px; font-weight: 700; }
 .profile-field > small { color: #75877c; font-size: 10px; line-height: 1.55; }
