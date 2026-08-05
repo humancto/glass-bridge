@@ -1,5 +1,6 @@
 import { verifyAsync } from "@noble/ed25519";
 import { decode, encode } from "cborg";
+import { OPTICAL_PROFILES, type OpticalProfileId } from "../protocol/optical-profile";
 import { base64UrlDecode } from "./transport";
 
 const MANIFEST_AAD = new TextEncoder().encode("GlassBridge/AGX1/manifest");
@@ -9,6 +10,8 @@ const MAX_TEXT_BYTES = 512;
 export type BootstrapTrust = {
   publicKey: Uint8Array;
   boundary: string;
+  sessionId?: Uint8Array;
+  profileId?: OpticalProfileId;
 };
 
 export type VerifiedTransfer = {
@@ -36,14 +39,14 @@ type DecodedObject = {
 export function parseBootstrapHash(hash: string): BootstrapTrust {
   const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
   const keys = Array.from(params.keys());
-  if (
-    keys.length !== 3 ||
-    new Set(keys).size !== 3 ||
-    keys.some((key) => key !== "v" && key !== "key" && key !== "boundary")
-  ) {
+  const version = params.get("v");
+  const expectedKeys = version === "2"
+    ? new Set(["v", "key", "boundary", "session", "profile"])
+    : new Set(["v", "key", "boundary"]);
+  if (keys.length !== expectedKeys.size || new Set(keys).size !== keys.length || keys.some((key) => !expectedKeys.has(key))) {
     throw new Error("The pairing QR has unexpected or duplicate fields.");
   }
-  if (params.get("v") !== "1") {
+  if (version !== "1" && version !== "2") {
     throw new Error("Scan the pairing QR displayed by GlassBridge on the laptop.");
   }
   const encodedKey = params.get("key");
@@ -56,7 +59,23 @@ export function parseBootstrapHash(hash: string): BootstrapTrust {
     throw new Error("The paired Ed25519 public key must be 32 bytes.");
   }
   validateText(boundary, "boundary");
-  return { publicKey, boundary };
+  if (version === "1") {
+    return { publicKey, boundary };
+  }
+
+  const encodedSession = params.get("session");
+  const profileId = params.get("profile");
+  if (!encodedSession || !profileId) {
+    throw new Error("The pairing QR is missing its transfer session.");
+  }
+  const sessionId = base64UrlDecode(encodedSession);
+  if (sessionId.length !== 16) {
+    throw new Error("The paired optical session must be 16 bytes.");
+  }
+  if (!Object.hasOwn(OPTICAL_PROFILES, profileId)) {
+    throw new Error("The pairing QR names an unsupported optical profile.");
+  }
+  return { publicKey, boundary, sessionId, profileId: profileId as OpticalProfileId };
 }
 
 export async function trustFingerprint(trust: BootstrapTrust): Promise<string> {

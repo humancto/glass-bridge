@@ -36,6 +36,7 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .trust-strip { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1px; margin: -38px -38px 24px; background: #20332c; border-bottom: 1px solid #20332c; }
 .trust-strip div { min-width: 0; padding: 17px 22px; background: #0e1714; }
+.trust-strip div:nth-child(3) { grid-column: 1 / -1; }
 .trust-strip span, .trust-strip strong { display: block; }
 .trust-strip span { margin-bottom: 8px; color: #6f857c; font: 650 8px/1 ui-monospace, monospace; letter-spacing: .12em; }
 .trust-strip strong { overflow: hidden; color: #cde6dc; font: 650 11px/1.3 ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }

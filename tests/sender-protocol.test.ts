@@ -6,7 +6,7 @@ import {
   MAX_BROWSER_FILE_BYTES,
 } from "../src/sender/agx";
 import { verifyAgxEnvelope } from "../src/receiver/agx";
-import { OpticalTransferDecoder } from "../src/receiver/transport";
+import { base64UrlEncode, OpticalTransferDecoder } from "../src/receiver/transport";
 import { OpticalTransferEncoder, pairingUrl } from "../src/sender/transport";
 
 const ROOT = new URL("../", import.meta.url);
@@ -89,16 +89,23 @@ describe("browser sender optical interoperability", () => {
   });
 
   it("creates a strict receiver pairing URL", () => {
+    const sessionId = new Uint8Array(16).fill(9);
     const url = new URL(pairingUrl(
       "https://humancto.github.io/glass-bridge/receive.html",
       new Uint8Array(32).fill(7),
       "demo/phone-laptop",
+      sessionId,
+      "burst",
     ));
     expect(url.origin + url.pathname).toBe(
       "https://humancto.github.io/glass-bridge/receive.html",
     );
     expect(new URLSearchParams(url.hash.slice(1)).get("boundary"))
       .toBe("demo/phone-laptop");
+    expect(new URLSearchParams(url.hash.slice(1)).get("v")).toBe("2");
+    expect(new URLSearchParams(url.hash.slice(1)).get("session"))
+      .toBe(base64UrlEncode(sessionId));
+    expect(new URLSearchParams(url.hash.slice(1)).get("profile")).toBe("burst");
   });
 });
 

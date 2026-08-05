@@ -53,9 +53,41 @@ describe("phone receiver AGX verification", () => {
       `#v=1&key=${encodedKey}&boundary=demo&debug=1`,
     )).toThrow("unexpected");
   });
+
+  it("binds version 2 pairing to one optical session and profile", () => {
+    const publicKey = new Uint8Array(32).fill(7);
+    const sessionId = new Uint8Array(16).fill(9);
+    const trust = parseBootstrapHash(
+      `#v=2&key=${base64UrlEncode(publicKey)}&boundary=demo&session=${base64UrlEncode(sessionId)}&profile=burst`,
+    );
+
+    expect(trust.publicKey).toEqual(publicKey);
+    expect(trust.sessionId).toEqual(sessionId);
+    expect(trust.profileId).toBe("burst");
+  });
 });
 
 describe("phone receiver optical reconstruction", () => {
+  it("rejects a different paired session before accepting any frame", () => {
+    const expectedSession = new Uint8Array(16).fill(1);
+    const wrongSession = new Uint8Array(16).fill(2);
+    const payload = new TextEncoder().encode("session-bound optical transfer");
+    const decoder = new OpticalTransferDecoder(expectedSession);
+
+    const wrong = decoder.ingestText(
+      `AGF1B64:${base64UrlEncode(makeRawFrame(payload, wrongSession, 32, 0))}`,
+    );
+    expect(wrong.rejectionReason).toBe("wrong-session");
+    expect(wrong.acceptedFrames).toBe(0);
+    expect(wrong.sessionId).toBeUndefined();
+
+    const correct = decoder.ingestText(
+      `AGF1B64:${base64UrlEncode(makeRawFrame(payload, expectedSession, 32, 0))}`,
+    );
+    expect(correct.rejectionReason).toBeUndefined();
+    expect(correct.acceptedFrames).toBe(1);
+  });
+
   it("reconstructs a committed Rust-generated browser transport fixture", async () => {
     const frames = (await readFile(
       new URL("tests/fixtures/rust-browser-frames.txt", ROOT),

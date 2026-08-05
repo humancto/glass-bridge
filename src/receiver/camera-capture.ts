@@ -1,4 +1,16 @@
+import { OPTICAL_PROFILES, type OpticalProfileId } from "../protocol/optical-profile";
+
 export type CaptureDimensions = { width: number; height: number };
+
+export function dualLaneNeedsLandscape(
+  profileId: OpticalProfileId | undefined,
+  sourceWidth: number,
+  sourceHeight: number,
+): boolean {
+  return profileId !== undefined &&
+    OPTICAL_PROFILES[profileId].lanes === 2 &&
+    sourceHeight > sourceWidth;
+}
 
 /** Preserve the complete camera field of view while bounding decoder work. */
 export function fitCaptureDimensions(

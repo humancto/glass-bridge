@@ -42,6 +42,7 @@ export type TransferProgress = {
   symbolSize: number;
   payloadLength: number;
   expectedFrames: number;
+  rejectionReason?: "invalid-frame" | "wrong-session" | "mixed-session";
 };
 
 export type IngestResult = TransferProgress & {
@@ -49,6 +50,7 @@ export type IngestResult = TransferProgress & {
 };
 
 export class OpticalTransferDecoder {
+  private readonly expectedSessionHex?: string;
   private sessionId?: Uint8Array;
   private sessionHex?: string;
   private sourceCount = 0;
@@ -62,13 +64,22 @@ export class OpticalTransferDecoder {
   private acceptedFrames = 0;
   private duplicateFrames = 0;
   private rejectedFrames = 0;
+  private rejectionReason?: TransferProgress["rejectionReason"];
   private envelope?: Uint8Array;
+
+  constructor(expectedSessionId?: Uint8Array) {
+    if (expectedSessionId && expectedSessionId.length !== 16) {
+      throw new Error("Expected optical session identifiers must be 16 bytes.");
+    }
+    this.expectedSessionHex = expectedSessionId ? toHex(expectedSessionId) : undefined;
+  }
 
   ingestText(value: string): IngestResult {
     try {
       return this.ingestFrame(decodeTextFrame(value));
     } catch {
       this.rejectedFrames += 1;
+      this.rejectionReason = "invalid-frame";
       return this.progress();
     }
   }
@@ -81,11 +92,18 @@ export class OpticalTransferDecoder {
     let frame: ParsedFrame;
     try {
       frame = parseFrame(bytes);
+      if (this.expectedSessionHex && frame.sessionHex !== this.expectedSessionHex) {
+        this.rejectedFrames += 1;
+        this.rejectionReason = "wrong-session";
+        return this.progress();
+      }
       this.initializeOrValidateSession(frame);
     } catch {
       this.rejectedFrames += 1;
+      this.rejectionReason = this.sessionHex ? "mixed-session" : "invalid-frame";
       return this.progress();
     }
+    this.rejectionReason = undefined;
 
     if (this.seenSymbols.has(frame.symbolId)) {
       this.duplicateFrames += 1;
@@ -139,6 +157,7 @@ export class OpticalTransferDecoder {
     this.acceptedFrames = 0;
     this.duplicateFrames = 0;
     this.rejectedFrames = 0;
+    this.rejectionReason = undefined;
     this.envelope = undefined;
   }
 
@@ -217,6 +236,7 @@ export class OpticalTransferDecoder {
           ? expectedLtFrames(this.sourceCount)
           : this.sourceCount
         : 0,
+      rejectionReason: this.rejectionReason,
     };
   }
 }

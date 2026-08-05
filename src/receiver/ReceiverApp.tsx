@@ -9,7 +9,7 @@ import {
 import { evaluateBrowserPolicy, type LocalPolicyDecision } from "./policy";
 import { ingestDecodedQr } from "./qr-result";
 import { DecodeWorkerPool, type DecodeResult } from "./decode-worker-pool";
-import { fitCaptureDimensions } from "./camera-capture";
+import { dualLaneNeedsLandscape, fitCaptureDimensions } from "./camera-capture";
 import {
   measureTransport,
   type TransportMeasurement,
@@ -42,7 +42,8 @@ type LiveMetrics = {
   negotiatedFps: number;
 };
 
-const SESSION_TRUST_KEY = "glassbridge-demo-trust-v1";
+const SESSION_TRUST_KEY = "glassbridge-demo-trust-v2";
+const INVALID_FRAME_LIMIT = 180;
 const EMPTY_PROGRESS: TransferProgress = {
   rank: 0,
   required: 0,
@@ -76,6 +77,8 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
         JSON.stringify({
           key: base64UrlEncode(trust.publicKey),
           boundary: trust.boundary,
+          session: trust.sessionId ? base64UrlEncode(trust.sessionId) : undefined,
+          profile: trust.profileId,
         }),
       );
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
@@ -85,14 +88,27 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
     if (!stored) {
       return {};
     }
-    const value = JSON.parse(stored) as { key?: unknown; boundary?: unknown };
+    const value = JSON.parse(stored) as {
+      key?: unknown;
+      boundary?: unknown;
+      session?: unknown;
+      profile?: unknown;
+    };
     if (typeof value.key !== "string" || typeof value.boundary !== "string") {
       throw new Error("Stored pairing is invalid.");
     }
+    const hasSession = typeof value.session === "string" && typeof value.profile === "string";
+    const params = new URLSearchParams({
+      v: hasSession ? "2" : "1",
+      key: value.key,
+      boundary: value.boundary,
+    });
+    if (hasSession) {
+      params.set("session", value.session as string);
+      params.set("profile", value.profile as string);
+    }
     return {
-      trust: parseBootstrapHash(
-        `#v=1&key=${encodeURIComponent(value.key)}&boundary=${encodeURIComponent(value.boundary)}`,
-      ),
+      trust: parseBootstrapHash(`#${params.toString()}`),
     };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Pairing failed." };
@@ -114,10 +130,11 @@ export default function ReceiverApp() {
   const [liveMetrics, setLiveMetrics] = useState<LiveMetrics>(EMPTY_METRICS);
   const [measurement, setMeasurement] = useState<TransportMeasurement>();
   const [measurementStatus, setMeasurementStatus] = useState("");
+  const [mustRepair, setMustRepair] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const controlsRef = useRef<ScannerControls | undefined>(undefined);
-  const decoderRef = useRef(new OpticalTransferDecoder());
+  const decoderRef = useRef(new OpticalTransferDecoder(initial.trust?.sessionId));
   const verifyingRef = useRef(false);
   const releasingRef = useRef(false);
   const lastProgressPaintRef = useRef(0);
@@ -203,6 +220,7 @@ export default function ReceiverApp() {
     setLiveMetrics(EMPTY_METRICS);
     setMeasurement(undefined);
     setMeasurementStatus("");
+    setMustRepair(false);
     transferStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("scanning");
@@ -217,6 +235,13 @@ export default function ReceiverApp() {
       const trackSettings = stream.getVideoTracks()[0]?.getSettings();
       const sourceWidth = video.videoWidth || trackSettings?.width || 1_280;
       const sourceHeight = video.videoHeight || trackSettings?.height || 720;
+      if (dualLaneNeedsLandscape(trust.profileId, sourceWidth, sourceHeight)) {
+        for (const track of stream.getTracks()) track.stop();
+        video.srcObject = null;
+        setError("Turn the phone sideways to landscape, then retry. This paired transfer uses two QR lanes and cannot be decoded reliably from a portrait camera frame.");
+        setStage("error");
+        return;
+      }
       const { width: captureWidth, height: captureHeight } = fitCaptureDimensions(sourceWidth, sourceHeight);
       const captureCanvas = document.createElement("canvas");
       captureCanvas.width = captureWidth;
@@ -278,10 +303,25 @@ export default function ReceiverApp() {
           const next = code.bytes && isOpticalFrame(code.bytes)
             ? decoder.ingestFrame(code.bytes)
             : decoder.ingestText(code.text ?? "");
+          if (next.rejectionReason === "wrong-session") {
+            controls.stop();
+            controlsRef.current = undefined;
+            setMustRepair(true);
+            setError("This phone is paired to a different transfer session. Scan the stationary pairing QR currently shown on the laptop, then try again.");
+            setStage("error");
+            return;
+          }
           if (next.acceptedFrames > before && transferStartedAtRef.current === undefined) {
             transferStartedAtRef.current = performance.now();
           }
           publishProgress(next, next.complete);
+          if (next.acceptedFrames === 0 && next.rejectedFrames >= INVALID_FRAME_LIMIT) {
+            controls.stop();
+            controlsRef.current = undefined;
+            setError("The camera can see QR shapes, but no intact GlassBridge frame survived. Keep the phone landscape, use the current pairing QR, and restart at 30/s before increasing speed.");
+            setStage("error");
+            return;
+          }
           if (next.envelope) {
             void finishEnvelope(next.envelope, controls, next);
             break;
@@ -423,6 +463,7 @@ export default function ReceiverApp() {
     setLiveMetrics(EMPTY_METRICS);
     setMeasurement(undefined);
     setMeasurementStatus("");
+    setMustRepair(false);
     transferStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("paired");
@@ -570,6 +611,7 @@ export default function ReceiverApp() {
           <div className="trust-strip">
             <div><span>PAIRED SENDER</span><strong>{fingerprint}</strong></div>
             <div><span>BOUNDARY</span><strong>{trust.boundary}</strong></div>
+            {trust.sessionId && <div><span>TRANSFER SESSION</span><strong>{formatSession(trust.sessionId)}</strong></div>}
           </div>
 
           <div className={`camera-shell ${stage === "scanning" && sourceMode === "camera" ? "camera-live" : ""}`}>
@@ -706,10 +748,10 @@ export default function ReceiverApp() {
           <p className="receiver-kicker">FAIL CLOSED</p>
           <h1>Nothing was released.</h1>
           <p>{error}</p>
-          {trust ? (
+          {trust && !mustRepair ? (
             <button className="receiver-button primary" type="button" onClick={resetToPaired}>Return to paired receiver</button>
           ) : (
-            <button className="receiver-button secondary" type="button" onClick={clearPairing}>Scan a new pairing QR</button>
+            <button className="receiver-button secondary" type="button" onClick={clearPairing}>Scan the current pairing QR</button>
           )}
           <button className="text-button" type="button" onClick={clearPairing}>Clear pairing state</button>
         </section>
@@ -788,4 +830,8 @@ function formatRate(bytesPerSecond: number): string {
 
 function round(value: number, digits: number): number {
   return Number(value.toFixed(digits));
+}
+
+function formatSession(sessionId: Uint8Array): string {
+  return Array.from(sessionId.slice(0, 4), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
