@@ -122,6 +122,21 @@ test("keeps status labels outside QR quiet zones", async () => {
   assert.doesNotMatch(css, /\.burst-label \{[^}]*position: absolute/);
 });
 
+test("keeps transfer controls hidden when no payload is queued", async () => {
+  const [sender, css] = await Promise.all([
+    readFile(senderAppUrl, "utf8"),
+    readFile(senderCssUrl, "utf8"),
+  ]);
+
+  assert.match(sender, /senderStatus = !file && !prepared && phase === "choose" \? "empty"/);
+  assert.match(sender, /!file && phase === "choose" \? \(/);
+  assert.match(sender, /className="empty-send-state"/);
+  assert.match(sender, /There is nothing to send\./);
+  assert.match(sender, /Transfer settings, pairing, and optical codes stay hidden/);
+  assert.match(css, /\.phase-empty \{/);
+  assert.match(css, /\.empty-send-state \{/);
+});
+
 function serviceWorkerHarness(
   source,
   { networkResponse, networkError, cachedResponse, cachePutError } = {},
