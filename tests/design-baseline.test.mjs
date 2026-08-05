@@ -12,6 +12,8 @@ const researchDocumentUrl = new URL(
 const serviceWorkerUrl = new URL("../dist/receiver-sw.js", import.meta.url);
 const senderAppUrl = new URL("../src/sender/SenderApp.tsx", import.meta.url);
 const senderCssUrl = new URL("../src/sender/sender.css", import.meta.url);
+const receiverAppUrl = new URL("../src/receiver/ReceiverApp.tsx", import.meta.url);
+const cameraCaptureUrl = new URL("../src/receiver/camera-capture.ts", import.meta.url);
 
 test("contains the complete public design baseline", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -135,6 +137,14 @@ test("keeps transfer controls hidden when no payload is queued", async () => {
   assert.match(sender, /Transfer settings, pairing, and optical codes stay hidden/);
   assert.match(css, /\.phase-empty \{/);
   assert.match(css, /\.empty-send-state \{/);
+});
+
+test("never blocks camera startup using unreliable phone orientation metadata", async () => {
+  const receiver = await readFile(receiverAppUrl, "utf8");
+  const capture = await readFile(cameraCaptureUrl, "utf8");
+  assert.doesNotMatch(receiver, /dualLaneNeedsLandscape|dualLaneViewportNeedsLandscape/);
+  assert.match(receiver, /Landscape is recommended[^<]+never a blocker/);
+  assert.match(capture, /Math\.sqrt\(maxPixels \/ \(sourceWidth \* sourceHeight\)\)/);
 });
 
 function serviceWorkerHarness(

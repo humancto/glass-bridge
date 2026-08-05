@@ -9,7 +9,7 @@ import {
 import { evaluateBrowserPolicy, type LocalPolicyDecision } from "./policy";
 import { ingestDecodedQr } from "./qr-result";
 import { DecodeWorkerPool, type DecodeResult } from "./decode-worker-pool";
-import { dualLaneNeedsLandscape, fitCaptureDimensions } from "./camera-capture";
+import { fitCaptureDimensions } from "./camera-capture";
 import {
   measureTransport,
   type TransportMeasurement,
@@ -235,13 +235,6 @@ export default function ReceiverApp() {
       const trackSettings = stream.getVideoTracks()[0]?.getSettings();
       const sourceWidth = video.videoWidth || trackSettings?.width || 1_280;
       const sourceHeight = video.videoHeight || trackSettings?.height || 720;
-      if (dualLaneNeedsLandscape(trust.profileId, sourceWidth, sourceHeight)) {
-        for (const track of stream.getTracks()) track.stop();
-        video.srcObject = null;
-        setError("Turn the phone sideways to landscape, then retry. This paired transfer uses two QR lanes and cannot be decoded reliably from a portrait camera frame.");
-        setStage("error");
-        return;
-      }
       const { width: captureWidth, height: captureHeight } = fitCaptureDimensions(sourceWidth, sourceHeight);
       const captureCanvas = document.createElement("canvas");
       captureCanvas.width = captureWidth;
@@ -318,7 +311,7 @@ export default function ReceiverApp() {
           if (next.acceptedFrames === 0 && next.rejectedFrames >= INVALID_FRAME_LIMIT) {
             controls.stop();
             controlsRef.current = undefined;
-            setError("The camera can see QR shapes, but no intact GlassBridge frame survived. Keep the phone landscape, use the current pairing QR, and restart at 30/s before increasing speed.");
+            setError("The camera can see QR shapes, but no intact GlassBridge frame survived. Keep both codes fully inside the guide, move closer until each code is sharp, and restart at 30/s before increasing speed.");
             setStage("error");
             return;
           }
@@ -652,7 +645,7 @@ export default function ReceiverApp() {
               <button className="receiver-button primary" type="button" onClick={() => void startCamera()}>
                 Trust sender &amp; open camera
               </button>
-              <p className="security-note">For dual-lane capacity modes, turn the phone landscape and keep both QR codes inside the camera guide.</p>
+              <p className="security-note">Landscape is recommended for dual-lane capacity modes, but it is never a blocker. Start the camera and keep both QR codes fully inside the guide.</p>
               <button className="receiver-button secondary" type="button" onClick={() => fileInputRef.current?.click()}>
                 Diagnostic: decode saved QR frames
               </button>
