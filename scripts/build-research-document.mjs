@@ -40,10 +40,10 @@ const document = `<!doctype html>
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="GlassBridge / AGX product and research definition for controlled optical exchange across air-gapped boundaries.">
+    <meta name="description" content="GlassBridge / AGX runnable pre-alpha and research definition for signed, policy-gated optical exchange across disconnected security boundaries.">
     <meta name="generator" content="GlassBridge research document exporter">
     <meta name="theme-color" content="#101914">
-    <title>GlassBridge / AGX — Product &amp; Research Definition</title>
+    <title>GlassBridge / AGX — Signed Optical Boundary Research</title>
     <style>${safeCss}</style>
   </head>
   <body>${body}</body>

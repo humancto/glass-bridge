@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 
-const researchDate = "03 AUG 2026";
+const researchDate = "04 AUG 2026";
+const repositoryHref = "https://github.com/humancto/glass-bridge";
+const launchArticleHref = `${repositoryHref}/blob/main/docs/launch-article.md`;
+const readinessHref = `${repositoryHref}/blob/main/docs/open-source-readiness.md`;
 
 type SectionProps = {
   id: string;
@@ -115,11 +118,12 @@ const sources = [
   ["USENIX NSDI ’27", "Call for networked systems design and evaluation", "https://www.usenix.org/conference/nsdi27/call-for-papers"],
   ["ACM MobiCom ’26", "Call for wireless networking and mobile computing research", "https://sigmobile.org/mobicom/2026/cfp.html"],
   ["NDSS ’27", "Call for network and systems security research", "https://www.ndss-symposium.org/ndss2027/submissions/call-for-papers/"],
+  ["GitHub Docs", "Why an explicit license is required for an open-source repository", "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository"],
 ];
 
 export const metadata = {
-  title: "GlassBridge / AGX — Product & Research Definition",
-  description: "A buildable plan for fast, verifiable optical exchange across air-gapped boundaries.",
+  title: "GlassBridge / AGX — Signed Optical Boundary Research",
+  description: "A runnable pre-alpha for signed, policy-gated optical file exchange across disconnected security boundaries.",
 };
 
 export default function Home({
@@ -143,26 +147,27 @@ export default function Home({
             <a href="#decision">Decision</a>
             <a href="#architecture">Architecture</a>
             <a href="#backlog">Build plan</a>
-            <a className="source-pill" href="#sources">28 sources</a>
+            <a href={repositoryHref} target="_blank" rel="noreferrer">Source</a>
+            <a className="source-pill" href="#sources">29 sources</a>
           </div>
         </nav>
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <div className="status-line"><span></span> Product & research definition · v0.10</div>
+            <div className="status-line"><span></span> Runnable pre-alpha · milestone 13 · v0.11</div>
             <h1>Move trusted data<br />through <em>light.</em></h1>
             <p className="dek">
-              A fast, verifiable optical gateway for controlled data exchange across air-gapped boundaries—without removable media, transient networking, or invisible policy decisions.
+              A signed, policy-gated experiment for moving a file through light—without a removable-media payload path, and without pretending that photons alone create trust.
             </p>
             <div className="hero-actions">
               <a className="button button-primary" href={senderHref}>Send a file now</a>
               <a className="button button-secondary" href={receiverHref}>Open phone receiver</a>
-              <a className="button button-secondary" href="#decision">Read the decision</a>
+              <a className="button button-secondary" href={launchArticleHref} target="_blank" rel="noreferrer">Read the launch brief</a>
             </div>
             <div className="hero-meta">
               <div><span>Research cut</span><strong>{researchDate}</strong></div>
-              <div><span>Initial platform</span><strong>macOS + Rust</strong></div>
-              <div><span>Channel</span><strong>Screen → camera</strong></div>
+              <div><span>Runnable today</span><strong>Laptop browser → phone browser</strong></div>
+              <div><span>Payload channel</span><strong>Screen → camera</strong></div>
             </div>
           </div>
 
@@ -214,8 +219,8 @@ export default function Home({
           </ol>
           <div className="toc-note">
             <span>Recommendation</span>
-            <b>Proceed to prototype</b>
-            <small>Gate publication claims on measured results.</small>
+              <b>Publish a research preview</b>
+              <small>License and physical results gate the open-source launch.</small>
           </div>
         </aside>
 
@@ -240,8 +245,11 @@ export default function Home({
             <Callout label="Product thesis">
               <p>GlassBridge is a high-speed, verifiable optical gateway for controlled data exchange across air-gapped boundaries, designed to reduce dependence on removable media while making every crossing explicit, authenticated, policy-constrained, observable, and auditable.</p>
             </Callout>
-            <Callout label="Runnable milestone 9" tone="blue">
-              <p>The public laptop-to-phone demo now carries an arbitrary bounded file through one-way optical reconstruction, cryptographic verification, a phone-local policy decision, memory quarantine, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. It remains pre-alpha: session pairing is not organizational provenance, browser replay state is not tamper-resistant, and no content inspection or certification is claimed.</p>
+            <Callout label="Runnable milestone 13" tone="blue">
+              <p>The public laptop-to-phone demo carries a bounded file through session-bound one-way optical reconstruction, cryptographic verification, a phone-local policy decision, memory quarantine, post-receive verified-goodput analytics, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. It remains pre-alpha: session pairing is not organizational provenance, browser replay state is not tamper-resistant, and no content inspection or certification is claimed.</p>
+            </Callout>
+            <Callout label="Open-source gate" tone="amber">
+              <p>The code is public and runnable, but the repository is not legally open source yet because it has no project-wide license. <a href={readinessHref} target="_blank" rel="noreferrer"><strong>Read the launch audit</strong></a>; Apache-2.0 is the recommended first-release license because it is permissive and includes an express patent grant.</p>
             </Callout>
             <h3>Success looks like</h3>
             <div className="check-grid">
@@ -302,11 +310,11 @@ export default function Home({
                 <thead><tr><th>System / work</th><th>Visual file transport</th><th>Fountain / FEC</th><th>Cryptographic authorization</th><th>Boundary policy</th><th>Quarantine / import</th><th>Audit semantics</th></tr></thead>
                 <tbody>
                   <tr><td>TXQR / qram</td><td>Yes</td><td>LT / fountain</td><td className="muted">Not central</td><td>—</td><td>—</td><td>—</td></tr>
-                  <tr><td>Decimen</td><td>Yes</td><td>LT-style fountain</td><td>Hash integrity</td><td>—</td><td>Download gate</td><td>—</td></tr>
+                  <tr><td>Decimen</td><td>Yes</td><td>LT-style fountain</td><td>Hash integrity</td><td>—</td><td>Download after verification</td><td>—</td></tr>
                   <tr><td>QRFerry</td><td>Yes</td><td>RaptorQ</td><td>Checksums</td><td>—</td><td>Save after checks</td><td>Telemetry</td></tr>
                   <tr><td>libcimbar</td><td>Yes, custom code</td><td>Wirehair + RS</td><td className="muted">Not central</td><td>—</td><td>—</td><td>—</td></tr>
                   <tr><td>AirGap Vault</td><td>Small transactions</td><td>Animated QR varies</td><td>Offline signing workflow</td><td>Transaction schema</td><td>User review</td><td>Domain-specific</td></tr>
-                  <tr className="highlight-row"><td>GlassBridge / AGX</td><td>Yes, pluggable</td><td>Pluggable</td><td>Role + policy-bound signatures</td><td>Default-deny engine</td><td>Stateful quarantine + atomic import</td><td>Typed signed receipts</td></tr>
+                  <tr className="highlight-row"><td>GlassBridge / AGX today</td><td>Yes; codec boundary</td><td>Sparse LT baseline</td><td>Session-key signature; org roles planned</td><td>Receiver-local default deny</td><td>Memory quarantine + explicit release</td><td>Receiver-signed release receipt + analytics</td></tr>
                 </tbody>
               </table>
             </div>
@@ -321,6 +329,9 @@ export default function Home({
             </div>
             <Callout label="Novelty claim discipline" tone="amber">
               <p>Do not publish “the first secure optical transfer system” or “the first adaptive optical transport” without a formal systematic review. Phrase the first paper as a designed system and empirical evaluation. Let measured results establish contribution.</p>
+            </Callout>
+            <Callout label="The special part, in one sentence" tone="green">
+              <p>QRFerry and Decimen move bytes through light; GlassBridge’s experiment is to move the <strong>security decision</strong> with them—then let the receiving boundary verify, constrain, quarantine, measure, approve, and receipt the crossing.</p>
             </Callout>
           </Section>
 
@@ -711,6 +722,9 @@ for await event in session.events {
           </Section>
 
           <Section id="roadmap" eyebrow="13 / Milestones, risks & licensing" title="A 22-week path to an evidence-backed alpha.">
+            <Callout label="Actual status · milestone 13" tone="blue">
+              <p>The repository has already crossed the original specification and loopback phases: AGX/1, Rust core/CLI, browser sender/receiver, QR video boundaries, sparse LT repair, dual-lane scheduling, a 30/60/90/120 capacity ladder, and post-receive analytics are runnable. The next gates are physical device evidence, organizational trust, continuous security testing, and release hygiene—not another planning-only prototype.</p>
+            </Callout>
             <div className="timeline">
               <div><span>M0 · W1–2</span><strong>Threats + AGX draft</strong><p>CDDL, trust model, golden vectors, benchmark preregistration draft.</p><b>Exit: independent parser can reject all negative vectors.</b></div>
               <div><span>M1 · W3–5</span><strong>Secure core</strong><p>Encoding, signing, trust, policy, quarantine, receipt, loopback.</p><b>Exit: signed object round-trip + fuzz harness.</b></div>
@@ -731,7 +745,7 @@ for await event in session.events {
             </div>
             <h3>Licensing and prior-art notes</h3>
             <div className="legal-note">
-              <div><strong>Recommended project license</strong><p>Apache-2.0 OR MIT for original Rust protocol/core code to maximize adoption while adding Apache’s express patent grant. Documentation/specification under CC BY 4.0 or an IETF-compatible contribution policy after counsel review.</p></div>
+              <div><strong>Open-source blocker + recommendation</strong><p>No project license is committed today, so the public repository remains normal copyrighted source. Use Apache-2.0 across the first release for a simple permissive grant with explicit patent terms. Consider a separate specification contribution/IPR policy only if AGX enters a standards process.</p></div>
               <div><strong>Dependency isolation</strong><p>Track every codec/FEC dependency and license in an automated inventory. libcimbar is MPL-2.0; TXQR and Decimen identify MIT; qram identifies BSD-3-Clause. Reuse only under compatible terms and preserve notices.</p></div>
               <div><strong>RaptorQ caution</strong><p>RFC 6330 is an IETF standard and has associated IETF IPR disclosures, including Qualcomm #1958. An RFC is not a blanket patent license. Keep FEC pluggable, use LT for the clean baseline, and obtain qualified legal review before shipping or marketing a RaptorQ implementation.</p></div>
               <div><strong>No legal conclusion here</strong><p>This document is a technical planning artifact, not a patent landscape, license opinion, or freedom-to-operate analysis. Search claims, jurisdictions, expiration, continuations, and current license text with counsel before commercial release.</p></div>
@@ -753,12 +767,12 @@ for await event in session.events {
                 <tbody>{backlog.map(([id, priority, area, task, deps]) => <tr key={id}><td><code>{id}</code></td><td><span className={priority.toLowerCase()}>{priority}</span></td><td>{area}</td><td>{task}</td><td>{deps}</td></tr>)}</tbody>
               </table>
             </div>
-            <h3>First two-week agent wave</h3>
+            <h3>Next open-source wave</h3>
             <div className="wave-grid">
-              <div><span>Track A · spec</span><strong>GB-001 → 003</strong><p>Terminology, CDDL, golden vectors. Blocks all protocol code.</p></div>
-              <div><span>Track B · harness</span><strong>GB-004 + 033</strong><p>Workspace, CI, benchmark result schema. Can start immediately.</p></div>
-              <div><span>Track C · threat fixtures</span><strong>Prep GB-031/032 corpus</strong><p>Collect hostile cases without implementing parser assumptions.</p></div>
-              <div><span>Human review gate</span><strong>End of week 2</strong><p>Approve AGX/1 semantics, limits, trust roles, receipt meanings, and H1–H6 before parallelizing.</p></div>
+              <div><span>Track A · legal + community</span><strong>License + contribution surface</strong><p>Choose Apache-2.0, add project metadata and issue templates, enable private vulnerability reporting.</p></div>
+              <div><span>Track B · evidence</span><strong>Five-pair device matrix</strong><p>Three repetitions per condition, raw JSON and failures, no fastest-ever headline from one run.</p></div>
+              <div><span>Track C · trust</span><strong>Organization-bound provenance</strong><p>Provisioned roots, release roles, signed policy bundle, rotation, revocation, negative vectors.</p></div>
+              <div><span>Track D · assurance</span><strong>Fuzz + provenance + managed edge</strong><p>Continuous hostile-input testing, SBOM, signed build evidence, reproducibility, response headers.</p></div>
             </div>
           </Section>
 
@@ -769,9 +783,9 @@ for await event in session.events {
             </div>
             <div className="closing-card">
               <p>Recommended next move</p>
-              <h2>Write AGX-0001 before optimizing a single QR frame.</h2>
-              <span>Freeze the security contract. Then make the photons fast.</span>
-              <a className="button button-primary" href="#backlog">Open the implementation backlog</a>
+              <h2>Measure it on five device pairs. Publish the failures too.</h2>
+              <span>The protocol and live vertical slice exist. Physical evidence, organizational trust, and an explicit license now determine whether this becomes a credible open project.</span>
+              <a className="button button-primary" href={launchArticleHref} target="_blank" rel="noreferrer">Open the launch article</a>
             </div>
           </Section>
         </article>
@@ -779,7 +793,7 @@ for await event in session.events {
 
       <footer>
         <div className="brand"><span className="brand-mark">GB</span><span>GlassBridge <b>/ AGX</b></span></div>
-        <p>Product & Research Definition · v0.10 · Research cut {researchDate}</p>
+        <p>Product & Research Definition · v0.11 · Research cut {researchDate}</p>
         <a href="#top">Back to top ↑</a>
       </footer>
     </main>

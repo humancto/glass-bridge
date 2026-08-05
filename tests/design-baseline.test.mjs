@@ -15,6 +15,9 @@ const senderCssUrl = new URL("../src/sender/sender.css", import.meta.url);
 const receiverAppUrl = new URL("../src/receiver/ReceiverApp.tsx", import.meta.url);
 const cameraCaptureUrl = new URL("../src/receiver/camera-capture.ts", import.meta.url);
 const capacityReportUrl = new URL("../src/receiver/capacity-report.ts", import.meta.url);
+const readinessUrl = new URL("../docs/open-source-readiness.md", import.meta.url);
+const securityAuditUrl = new URL("../docs/open-source-security-audit.md", import.meta.url);
+const launchArticleUrl = new URL("../docs/launch-article.md", import.meta.url);
 
 test("contains the complete public design baseline", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -44,7 +47,30 @@ test("contains the complete public design baseline", async () => {
   assert.match(page, /novelty remains a hypothesis/i);
   assert.match(page, /QRFerry/);
   assert.match(page, /Decimen Optical Transfer/);
+  assert.match(page, /Runnable milestone 13/);
+  assert.match(page, /Open-source gate/);
+  assert.match(page, /Measure it on five device pairs/);
+  assert.doesNotMatch(page, /Runnable milestone 9/);
+  assert.doesNotMatch(page, /Write AGX-0001 before optimizing/);
   assert.match(page, /GB-052/);
+});
+
+test("publishes an honest open-source and launch package", async () => {
+  const [readiness, securityAudit, launchArticle] = await Promise.all([
+    readFile(readinessUrl, "utf8"),
+    readFile(securityAuditUrl, "utf8"),
+    readFile(launchArticleUrl, "utf8"),
+  ]);
+
+  assert.match(readiness, /public source is not the same as open source/i);
+  assert.match(readiness, /session TOFU/i);
+  assert.match(readiness, /five sender\/receiver pairs/i);
+  assert.match(securityAudit, /No confirmed critical or high-severity frontend vulnerability/i);
+  assert.match(securityAudit, /GB-WEB-001/);
+  assert.match(securityAudit, /GB-TRUST-001/);
+  assert.match(launchArticle, /We did not invent animated QR transfer/i);
+  assert.match(launchArticle, /The Trust Boundary Came With It/i);
+  assert.match(launchArticle, /The QR transfer is prior art/i);
 });
 
 test("uses product-specific metadata and no starter copy", async () => {
@@ -54,7 +80,7 @@ test("uses product-specific metadata and no starter copy", async () => {
   ]);
 
   assert.match(index, /GlassBridge \/ AGX/);
-  assert.match(index, /air-gapped boundaries/i);
+  assert.match(index, /disconnected security boundaries/i);
   assert.doesNotMatch(`${page}\n${index}`, /Your site is taking shape|Starter Project/);
 });
 

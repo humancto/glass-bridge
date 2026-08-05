@@ -16,7 +16,6 @@ import {
 } from "./agx";
 import { symbolsForRefresh } from "./scheduler";
 import { OpticalTransferEncoder, pairingUrl } from "./transport";
-import "./sender.css";
 
 type Phase = "choose" | "preparing" | "pair" | "playing" | "paused" | "error";
 
