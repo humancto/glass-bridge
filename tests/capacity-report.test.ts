@@ -1,0 +1,94 @@
+import { describe, expect, it } from "vitest";
+import {
+  CAPACITY_HISTORY_KEY,
+  CAPACITY_HISTORY_LIMIT,
+  compareCapacityReport,
+  createCapacityReport,
+  readCapacityHistory,
+  storeCapacityReport,
+  type CapacityReport,
+} from "../src/receiver/capacity-report";
+import { measureTransport } from "../src/receiver/capacity-measurement";
+
+const measurement = measureTransport(144 * 1_024, 2.4, {
+  rank: 88,
+  required: 88,
+  acceptedFrames: 96,
+  duplicateFrames: 3,
+  rejectedFrames: 7,
+  complete: true,
+  symbolSize: 1_688,
+  payloadLength: 148_000,
+  expectedFrames: 116,
+});
+
+const camera = {
+  cameraFps: 59.94,
+  decodeFps: 40,
+  medianDecodeMs: 4.25,
+  p95DecodeMs: 8.5,
+  busyDrops: 2,
+  workers: 4,
+  width: 1_280,
+  height: 720,
+  negotiatedFps: 60,
+};
+
+function report(goodput?: number): CapacityReport {
+  const value = createCapacityReport({
+    measuredAt: new Date("2026-08-05T01:02:03.000Z"),
+    profileId: "burst",
+    transferSession: "09090909",
+    fileBytes: 144 * 1_024,
+    measurement,
+    camera,
+    device: "test-phone",
+  });
+  return goodput === undefined ? value : {
+    ...value,
+    verified_payload_bytes_per_second: goodput,
+  };
+}
+
+describe("post-receive capacity reports", () => {
+  it("records comparable transfer, optical, and camera metrics", () => {
+    const value = report();
+    expect(value.schema).toBe("glassbridge-capacity/2");
+    expect(value.profile).toMatchObject({ id: "burst", label: "Burst", lanes: 2, qr_version: 30 });
+    expect(value.transfer_seconds).toBe(2.4);
+    expect(value.verified_payload_bytes_per_second).toBe(61_440);
+    expect(value.accepted_symbol_bytes_per_second).toBe(67_520);
+    expect(value.decoded_acceptance_percent).toBe(90.6);
+    expect(value.camera).toMatchObject({ observed_fps: 59.94, decode_p95_ms: 8.5, busy_drops: 2 });
+  });
+
+  it("compares only like-for-like optical profiles and payload sizes", () => {
+    const balanced = {
+      ...report(70_000),
+      profile: { id: "balanced" as const, label: "Balanced", lanes: 1 },
+    };
+    const differentSize = { ...report(80_000), file_bytes: 159 };
+    const comparison = compareCapacityReport(report(66_000), [report(60_000), balanced, differentSize, report(62_000)]);
+    expect(comparison.runNumber).toBe(3);
+    expect(comparison.previousGoodput).toBe(62_000);
+    expect(comparison.previousAcceptedCodesPerSecond).toBe(40);
+    expect(comparison.bestGoodputBefore).toBe(62_000);
+    expect(comparison.bestAcceptedCodesPerSecond).toBe(40);
+    expect(comparison.changeFromPrevious).toBeCloseTo(66 / 62 - 1);
+    expect(comparison.isNewBest).toBe(true);
+  });
+
+  it("keeps a bounded, corruption-tolerant on-device history", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => void values.set(key, value),
+    };
+    for (let index = 0; index < CAPACITY_HISTORY_LIMIT + 4; index += 1) {
+      storeCapacityReport(storage, report(50_000 + index));
+    }
+    expect(readCapacityHistory(storage)).toHaveLength(CAPACITY_HISTORY_LIMIT);
+    values.set(CAPACITY_HISTORY_KEY, "not-json");
+    expect(readCapacityHistory(storage)).toEqual([]);
+  });
+});

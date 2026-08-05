@@ -93,8 +93,43 @@ button { -webkit-tap-highlight-color: transparent; }
 .verified-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #c6d8d1; font: 600 10px/1.4 ui-monospace, monospace; }
 .save-button { min-height: 60px; font-size: 16px; }
 .save-status { color: #87e7c1 !important; font-size: 12px !important; }
-.measurement-button { margin: -10px 0 18px; }
-.measurement-status { margin: -8px 0 18px; color: #87e7c1 !important; font: 650 10px/1.5 ui-monospace, monospace !important; }
+.capacity-scorecard { margin: 26px 0; overflow: hidden; border: 1px solid #39775f; border-radius: 16px; background: linear-gradient(145deg, rgba(18,49,38,.98), rgba(6,15,12,.98) 58%); text-align: left; box-shadow: inset 0 1px rgba(134,255,206,.08), 0 20px 60px rgba(0,0,0,.22); }
+.capacity-scorecard-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 18px 13px; border-bottom: 1px solid #29483b; }
+.capacity-scorecard-heading div { display: grid; gap: 6px; }
+.capacity-scorecard-heading span { color: #64e6b9; font: 750 8px/1 ui-monospace, monospace; letter-spacing: .14em; }
+.capacity-scorecard-heading strong { color: #dcebe5; font-size: 14px; }
+.capacity-scorecard-heading b { flex: none; border: 1px solid #416054; border-radius: 100px; padding: 7px 10px; color: #98afa6; font: 750 8px/1 ui-monospace, monospace; letter-spacing: .1em; }
+.capacity-scorecard-heading b.new-best { border-color: #d4aa4e; background: #33270e; color: #ffe09a; box-shadow: 0 0 22px rgba(255,199,75,.1); }
+.capacity-hero { display: grid; gap: 7px; padding: 23px 18px 20px; background: radial-gradient(circle at 15% 0, rgba(77,218,165,.17), transparent 55%); }
+.capacity-hero strong { color: #8affd3; font: 800 clamp(36px, 10vw, 58px)/.95 ui-monospace, monospace; letter-spacing: -.065em; }
+.capacity-hero span { color: #9fb5ac; font: 600 10px/1.45 ui-monospace, monospace; }
+.capacity-comparison { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1px; border-block: 1px solid #29483b; background: #29483b; }
+.capacity-comparison > div { min-width: 0; padding: 15px 18px; background: rgba(7,18,14,.96); }
+.capacity-comparison .capacity-baseline { grid-column: 1 / -1; }
+.capacity-comparison span,.capacity-comparison strong,.capacity-comparison small { display: block; }
+.capacity-comparison span { color: #6e8e81; font: 750 7px/1 ui-monospace, monospace; letter-spacing: .13em; }
+.capacity-comparison strong { margin-top: 7px; color: #e7f7f0; font: 750 16px/1.15 ui-monospace, monospace; }
+.capacity-comparison strong.positive { color: #7ef0c2; }
+.capacity-comparison strong.negative { color: #ff9cab; }
+.capacity-comparison strong.neutral { color: #d1dfda; }
+.capacity-comparison small { margin-top: 5px; color: #71877e; font: 600 8px/1.35 ui-monospace, monospace; }
+.capacity-metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1px; background: #20372e; }
+.capacity-metric-grid > div { min-width: 0; padding: 15px 18px; background: #0a1511; }
+.capacity-metric-grid span,.capacity-metric-grid strong,.capacity-metric-grid small { display: block; }
+.capacity-metric-grid span { color: #68bd9c; font: 750 7px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.capacity-metric-grid strong { margin-top: 7px; color: #effbf6; font: 760 18px/1 ui-monospace, monospace; }
+.capacity-metric-grid small { margin-top: 6px; color: #6d827a; font: 600 7px/1.35 ui-monospace, monospace; }
+.capacity-diagnostics { border-top: 1px solid #29483b; background: #08120e; }
+.capacity-diagnostics summary { padding: 15px 18px; color: #9cb3aa; font: 700 9px/1.3 ui-monospace, monospace; cursor: pointer; }
+.capacity-diagnostics dl { display: grid; gap: 1px; margin: 0; border-top: 1px solid #20362d; background: #20362d; }
+.capacity-diagnostics dl div { display: grid; grid-template-columns: minmax(105px,.8fr) minmax(0,1.7fr); gap: 12px; padding: 11px 18px; background: #09130f; }
+.capacity-diagnostics dt { color: #688077; font: 700 7px/1.4 ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; }
+.capacity-diagnostics dd { min-width: 0; margin: 0; color: #b9cec6; font: 650 8px/1.4 ui-monospace, monospace; overflow-wrap: anywhere; }
+.capacity-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; padding: 15px 18px 9px; border-top: 1px solid #29483b; }
+.capacity-actions button { min-height: 44px; border: 1px solid #3d6253; border-radius: 10px; background: #10241c; color: #cce7dc; padding: 10px; font: 750 9px/1.3 ui-monospace, monospace; cursor: pointer; }
+.capacity-actions button:last-child { border-color: #62d6aa; background: #50c99c; color: #06110d; }
+.capacity-history-note { margin: 0; padding: 2px 18px 15px; color: #637a71; font: 600 7px/1.45 ui-monospace, monospace; }
+.measurement-status { margin: 0; padding: 0 18px 15px; color: #87e7c1 !important; font: 650 9px/1.5 ui-monospace, monospace !important; }
 .evidence-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
 .evidence-actions button { min-height: 44px; border: 1px solid #365047; border-radius: 10px; background: #0d1814; color: #cce1d9; font: 700 9px/1.25 ui-monospace, monospace; cursor: pointer; }
 
@@ -117,6 +152,10 @@ button { -webkit-tap-highlight-color: transparent; }
   .receiver-footer span { padding: 8px 2px; }
   .camera-shell { aspect-ratio: 3 / 4; }
   .evidence-actions { grid-template-columns: 1fr; }
+  .capacity-actions { grid-template-columns: 1fr; }
+  .capacity-scorecard-heading,.capacity-hero,.capacity-comparison > div,.capacity-metric-grid > div,.capacity-diagnostics summary,.capacity-diagnostics dl div { padding-inline: 14px; }
+  .capacity-actions { padding-inline: 14px; }
+  .capacity-history-note,.measurement-status { padding-inline: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

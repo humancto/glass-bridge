@@ -19,6 +19,10 @@ describe("capacity measurement", () => {
     const result = measureTransport(144 * 1_024, 2.4, COMPLETE);
     expect(result.payloadBytesPerSecond).toBe(61_440);
     expect(result.acceptedCodesPerSecond).toBe(40);
+    expect(result.acceptedSymbolBytesPerSecond).toBe(67_520);
+    expect(result.requiredCodes).toBe(88);
+    expect(result.observedCodes).toBe(96);
+    expect(result.acceptanceRate).toBe(1);
     expect(result.fountainOverhead).toBeCloseTo(8 / 88);
     expect(result.payloadEfficiency).toBeCloseTo((144 * 1_024) / (96 * 1_688));
   });

@@ -14,6 +14,7 @@ const senderAppUrl = new URL("../src/sender/SenderApp.tsx", import.meta.url);
 const senderCssUrl = new URL("../src/sender/sender.css", import.meta.url);
 const receiverAppUrl = new URL("../src/receiver/ReceiverApp.tsx", import.meta.url);
 const cameraCaptureUrl = new URL("../src/receiver/camera-capture.ts", import.meta.url);
+const capacityReportUrl = new URL("../src/receiver/capacity-report.ts", import.meta.url);
 
 test("contains the complete public design baseline", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -145,6 +146,20 @@ test("never blocks camera startup using unreliable phone orientation metadata", 
   assert.doesNotMatch(receiver, /dualLaneNeedsLandscape|dualLaneViewportNeedsLandscape/);
   assert.match(receiver, /Landscape is recommended[^<]+never a blocker/);
   assert.match(capture, /Math\.sqrt\(maxPixels \/ \(sourceWidth \* sourceHeight\)\)/);
+});
+
+test("keeps comparable post-receive analytics visible through release", async () => {
+  const [receiver, report] = await Promise.all([
+    readFile(receiverAppUrl, "utf8"),
+    readFile(capacityReportUrl, "utf8"),
+  ]);
+  assert.equal(receiver.match(/<CapacityScorecard/g)?.length, 2);
+  assert.match(receiver, /POST-RECEIVE ANALYTICS/);
+  assert.match(receiver, /Copy benchmark JSON/);
+  assert.match(receiver, /Save \/ share benchmark JSON/);
+  assert.match(report, /glassbridge-capacity\/2/);
+  assert.match(report, /report\.profile\.id === current\.profile\.id && report\.file_bytes === current\.file_bytes/);
+  assert.match(report, /CAPACITY_HISTORY_LIMIT = 20/);
 });
 
 function serviceWorkerHarness(

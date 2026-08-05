@@ -22,12 +22,16 @@ on the laptop. No installation or command line is required.
 7. Select **Approve release & create signed receipt**. Only then can the phone save or share the file.
 8. Preserve the signed COSE receipt, receipt JSON, and receiver public key with the file.
 
-For a capacity run, record the verified goodput and select **Copy capacity
-measurement JSON** before release. Repeat each step three times. Compare Burst
-30/60/90/120 to isolate timing, then compare Burst and Ceiling Lab at the same
-rate to isolate QR density. The highest setting is not automatically the fastest:
-the device's stable capacity is the last step that verifies reliably and still
-improves median goodput.
+After reconstruction and cryptographic verification, the phone shows a
+**Post-receive analytics** scorecard. It reports verified goodput, elapsed time,
+accepted code rate, decoded acceptance, payload efficiency, fountain overhead,
+camera/decode diagnostics, and the previous/best like-for-like result. The last
+20 runs remain private in that browser for comparison; **Copy benchmark JSON**
+and **Save / share benchmark JSON** export a versioned record. Repeat each step
+three times. Compare Burst 30/60/90/120 to isolate timing, then compare Burst and
+Ceiling Lab at the same rate to isolate QR density. The highest setting is not
+automatically the fastest: the device's stable capacity is the last step that
+verifies reliably and still improves median goodput.
 
 The laptop browser creates a fresh Ed25519 key for that transfer, builds and signs
 a canonical AGX/1 envelope in memory, fountain-encodes it into Rust-compatible
