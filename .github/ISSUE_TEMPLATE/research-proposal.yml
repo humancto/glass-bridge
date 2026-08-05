@@ -1,0 +1,52 @@
+name: Feature or research proposal
+description: Propose a product, protocol, security, transport, or measurement change.
+title: "[proposal] "
+labels:
+  - enhancement
+  - research
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        GlassBridge separates implemented behavior, measured results, and
+        hypotheses. Please state which kind of contribution you are proposing.
+  - type: dropdown
+    id: claim
+    attributes:
+      label: Proposal type
+      options:
+        - Implemented product behavior
+        - Protocol or compatibility change
+        - Security control or threat-model change
+        - Transport or performance experiment
+        - Documentation or research synthesis
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What user, operator, or research problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and prior art
+      description: Link primary sources, related systems, measurements, or prototypes.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and compatibility consequences
+      description: Address trust, one-way semantics, parsing/resource bounds, wire compatibility, and migration where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: How should this be validated?
+      description: Name test vectors, device conditions, baselines, failure criteria, and artifacts to publish.
+    validations:
+      required: true

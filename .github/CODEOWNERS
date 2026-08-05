@@ -1,0 +1,9 @@
+# Default ownership while GlassBridge remains a maintainer-led research project.
+* @humancto
+
+# Security- and compatibility-sensitive surfaces.
+/spec/ @humancto
+/crates/agx-core/ @humancto
+/src/protocol/ @humancto
+/src/receiver/ @humancto
+/SECURITY.md @humancto

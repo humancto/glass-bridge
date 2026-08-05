@@ -18,6 +18,13 @@ const capacityReportUrl = new URL("../src/receiver/capacity-report.ts", import.m
 const readinessUrl = new URL("../docs/open-source-readiness.md", import.meta.url);
 const securityAuditUrl = new URL("../docs/open-source-security-audit.md", import.meta.url);
 const launchArticleUrl = new URL("../docs/launch-article.md", import.meta.url);
+const readmeUrl = new URL("../README.md", import.meta.url);
+const conductUrl = new URL("../CODE_OF_CONDUCT.md", import.meta.url);
+const governanceUrl = new URL("../GOVERNANCE.md", import.meta.url);
+const supportUrl = new URL("../SUPPORT.md", import.meta.url);
+const citationUrl = new URL("../CITATION.cff", import.meta.url);
+const issueConfigUrl = new URL("../.github/ISSUE_TEMPLATE/config.yml", import.meta.url);
+const deviceResultUrl = new URL("../.github/ISSUE_TEMPLATE/device-result.yml", import.meta.url);
 
 test("contains the complete public design baseline", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -72,6 +79,30 @@ test("publishes an honest open-source and launch package", async () => {
   assert.match(launchArticle, /We did not invent animated QR transfer/i);
   assert.match(launchArticle, /The Trust Boundary Came With It/i);
   assert.match(launchArticle, /The QR transfer is prior art/i);
+});
+
+test("publishes a visitor-first community front door", async () => {
+  const [readme, conduct, governance, support, citation, issueConfig, deviceResult] = await Promise.all([
+    readFile(readmeUrl, "utf8"),
+    readFile(conductUrl, "utf8"),
+    readFile(governanceUrl, "utf8"),
+    readFile(supportUrl, "utf8"),
+    readFile(citationUrl, "utf8"),
+    readFile(issueConfigUrl, "utf8"),
+    readFile(deviceResultUrl, "utf8"),
+  ]);
+
+  assert.match(readme, /Move trusted data through light/i);
+  assert.match(readme, /glassbridge-social-preview\.png/);
+  assert.match(readme, /See it work in about a minute/i);
+  assert.match(readme, /Speed without fiction/i);
+  assert.match(readme, /not legally open source/i);
+  assert.match(conduct, /technical candor/i);
+  assert.match(governance, /maintainer-led research project/i);
+  assert.match(support, /private vulnerability reporting/i);
+  assert.match(citation, /cff-version: 1\.2\.0/);
+  assert.match(issueConfig, /security\/advisories\/new/);
+  assert.match(deviceResult, /glassbridge-capacity\/3/);
 });
 
 test("uses product-specific metadata and no starter copy", async () => {

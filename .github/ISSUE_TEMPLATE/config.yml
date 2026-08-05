@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/humancto/glass-bridge/security/advisories/new
+    about: Do not disclose suspected vulnerabilities in a public issue.
+  - name: Try the live GlassBridge demo
+    url: https://humancto.github.io/glass-bridge/send.html
+    about: Reproduce the current browser sender-to-phone receiver flow.
+  - name: Read the research and threat model
+    url: https://humancto.github.io/glass-bridge/
+    about: Review the product definition, prior art, limitations, and roadmap.
