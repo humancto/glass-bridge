@@ -25,7 +25,7 @@ The repository is already public, but public source is not the same as open sour
 - Add continuous parser/transport fuzzing, dependency automation, release SBOMs, signed provenance, and reproducible release experiments.
 - Add content inspection hooks and narrow content-disarm/reconstruction profiles before claiming that a verified file is safe to open.
 - Define a receive-only reference appliance and document every radio, display, camera, storage, debug, and peripheral path before using “data diode” language.
-- Enable GitHub private vulnerability reporting and document a monitored security-response address or advisory workflow.
+- Maintain the newly enabled GitHub private vulnerability reporting path and document a monitored security-response owner before a production release.
 
 ## What works now
 
@@ -175,8 +175,8 @@ If it succeeds, GlassBridge is not “a QR app.” It is an open boundary protoc
 
 - [ ] Code of conduct.
 - [ ] Bug, performance-result, and security-research issue templates.
-- [ ] Private vulnerability reporting enabled on GitHub.
-- [ ] Dependency update automation for npm, Cargo, and GitHub Actions.
+- [x] Private vulnerability reporting enabled on GitHub.
+- [x] Dependabot version/security updates configured for npm, Cargo, and GitHub Actions.
 - [ ] `CITATION.cff` after author/order and preferred citation are confirmed.
 - [ ] Governance and protocol-change process before accepting incompatible AGX changes.
 

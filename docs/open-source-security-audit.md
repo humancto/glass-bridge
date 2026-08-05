@@ -45,16 +45,16 @@ The public demo remains unsuitable as a production security boundary. Three medi
 - **Mitigation:** the ledger fails closed on malformed state, is limited to 256 entries, and uses an exclusive Web Lock where supported. Receipt wording correctly limits the event to browser release authorization.
 - **False-positive notes:** no authentication/session secret is stored in web storage. The finding is not secret exfiltration; it is insufficient persistence assurance.
 
-### GB-SUPPLY-001 — Automated dependency response is incomplete
+### GB-SUPPLY-001 — Advisory scanning is not yet a CI gate
 
 - **Rule ID:** REACT-SUPPLY-001
 - **Severity:** Low
 - **Location:** `package-lock.json`, `Cargo.lock`, `.github/workflows/ci.yml:14-29`, GitHub repository security settings
-- **Evidence:** CI uses `npm ci` and locked Cargo commands. Manual audit on 2026-08-04 reported zero npm vulnerabilities across 117 dependencies and zero RustSec vulnerabilities across 92 locked Rust dependencies. GitHub reported Dependabot security updates disabled, and CI does not run npm/Rust advisory checks.
+- **Evidence:** CI uses `npm ci` and locked Cargo commands. Manual audit on 2026-08-04 reported zero npm vulnerabilities across 117 dependencies and zero RustSec vulnerabilities across 92 locked Rust dependencies. Dependabot configuration, vulnerability alerts, and automated security updates were enabled during this review; CI still does not run npm/Rust advisory checks as a merge gate.
 - **Impact:** a newly disclosed dependency vulnerability may not automatically open an update or fail a pull request.
-- **Fix:** add Dependabot configuration, enable security updates and private vulnerability reporting, and add pinned advisory scanning to scheduled/CI workflows.
+- **Fix:** completed: Dependabot configuration, security updates, vulnerability alerts, and private vulnerability reporting. Remaining: add pinned advisory scanning to scheduled/CI workflows.
 - **Mitigation:** preserve lockfiles, continue `npm ci`/`cargo --locked`, and record audit results before every release.
-- **False-positive notes:** GitHub may still generate alerts separately from automated security-update pull requests. Verify repository settings after adding configuration.
+- **False-positive notes:** repository settings were verified after enablement. A future organization-level policy can still change their effective state.
 
 ### GB-CSP-001 — Receiver needs a narrow WebAssembly CSP exception
 
