@@ -71,7 +71,8 @@ method and stop rules.
 
 Milestone 14 adds two independent optimizations. Adaptive packing can remove
 most optical bytes from structured text while preserving the exact signed AGX
-object after bounded decompression. Dual-lane camera frames are normally split
+object after bounded decompression; a paired packing-mode mismatch is rejected
+before decompression. Dual-lane camera frames are normally split
 into overlapping one-code regions and decoded by independent workers, with a
 periodic full-frame pass for off-center recovery. On ideal development rasters,
 lane splitting approximately halved v30/v40 acquisition latency. Run

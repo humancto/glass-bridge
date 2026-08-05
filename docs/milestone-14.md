@@ -16,8 +16,8 @@ goodput remains the deciding measurement.
 The browser now attempts gzip on the complete signed AGX envelope before LT
 coding. It uses the compressed representation only when the packing header plus
 gzip stream saves at least 64 bytes. Pairing version 3 binds `identity` or
-`gzip`, so a stale or mismatched receiver fails before treating the reconstructed
-object as AGX.
+`gzip`, so a stale or mismatched receiver fails before decompression and before
+treating the reconstructed object as AGX.
 
 The receiver decompresses into a declared, bounded output size before it parses
 or verifies AGX. It then performs the same canonical-CBOR, COSE, Ed25519,
@@ -46,12 +46,13 @@ npm run benchmark:parallel-decode
 
 On the development machine, ideal 1280×720 exposures produced:
 
-| Profile | Full-frame p50 | Slowest split-lane p50 | Full-frame p95 | Slowest split-lane p95 |
+| Profile | Full-frame p50 | Modeled parallel p50 | Full-frame p95 | Modeled parallel p95 |
 |---|---:|---:|---:|---:|
-| dual v30-L | 6.66 ms | 3.54 ms | 9.56 ms | 4.22 ms |
-| dual v40-L | 8.72 ms | 4.54 ms | 9.50 ms | 4.90 ms |
+| dual v30-L | 6.84 ms | 3.40 ms | 8.54 ms | 4.09 ms |
+| dual v40-L | 8.56 ms | 4.54 ms | 9.42 ms | 4.91 ms |
 
-The split figures model independent workers. They exclude camera delivery,
+The parallel figures take the slower lane for each modeled exposure before
+calculating percentiles. They model independent workers and exclude camera delivery,
 pixel readback, scheduling, focus, perspective, moiré, and display transitions.
 They show that lane-level parallelism has CPU headroom; they do not prove a 2×
 phone-camera goodput gain.

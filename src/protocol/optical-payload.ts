@@ -48,9 +48,16 @@ export async function packOpticalPayload(payload: Uint8Array): Promise<OpticalPa
  * A compressed stream is still untrusted at this point; AGX signature, digest,
  * policy, and quarantine checks happen after this function returns.
  */
-export async function unpackOpticalPayload(payload: Uint8Array): Promise<OpticalPayload> {
+export async function unpackOpticalPayload(
+  payload: Uint8Array,
+  expectedEncoding?: OpticalPayloadEncoding,
+): Promise<OpticalPayload> {
   assertPayloadLength(payload.length);
-  if (!startsWithMagic(payload)) return identity(payload);
+  const encoding = startsWithMagic(payload) ? "gzip" : "identity";
+  if (expectedEncoding !== undefined && encoding !== expectedEncoding) {
+    throw new Error("The optical payload packing does not match the paired transfer.");
+  }
+  if (encoding === "identity") return identity(payload);
   if (payload.length <= PACKED_HEADER_BYTES) {
     throw new Error("The optical packing envelope is truncated.");
   }

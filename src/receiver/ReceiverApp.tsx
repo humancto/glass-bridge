@@ -188,10 +188,7 @@ export default function ReceiverApp() {
     callbackControls?.stop();
     setStage("verifying");
     try {
-      const opticalPayload = await unpackOpticalPayload(envelope);
-      if (trust.packing && opticalPayload.encoding !== trust.packing) {
-        throw new Error("The optical payload packing does not match the paired transfer.");
-      }
+      const opticalPayload = await unpackOpticalPayload(envelope, trust.packing ?? "identity");
       const transfer = await verifyAgxEnvelope(opticalPayload.bytes, trust);
       const decision = await evaluateBrowserPolicy(transfer);
       if (!decision.allowed) {

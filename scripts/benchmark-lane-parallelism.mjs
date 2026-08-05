@@ -9,9 +9,11 @@ const HEIGHT = 720;
 const OVERLAP = Math.floor(WIDTH * 0.08);
 const MEASURED_EXPOSURES = 40;
 const configurations = [
-  { id: "burst-v30", version: 30, symbolBytes: 1_688, scale: 4 },
-  { id: "ceiling-v40", version: 40, symbolBytes: 2_900, scale: 3 },
+  { id: "burst-v30", profileId: "burst", version: 30, symbolBytes: 1_688, scale: 4 },
+  { id: "ceiling-v40", profileId: "ceiling", version: 40, symbolBytes: 2_900, scale: 3 },
 ];
+
+assertProductionProfiles(configurations);
 
 const wasmPath = fileURLToPath(import.meta.resolve("zxing-wasm/reader/zxing_reader.wasm"));
 await prepareZXingModule({
@@ -40,23 +42,25 @@ async function benchmark(configuration) {
   const rightX = Math.floor(WIDTH / 2) - OVERLAP;
   const right = crop(exposure, rightX, WIDTH - rightX);
 
-  const full = await measure(exposure, frames, 2);
-  const leftResult = await measure(left, [frames[0]], 1);
-  const rightResult = await measure(right, [frames[1]], 1);
-  const parallelP50 = Math.max(leftResult.p50_ms, rightResult.p50_ms);
-  const parallelP95 = Math.max(leftResult.p95_ms, rightResult.p95_ms);
+  const fullMeasurement = await measure(exposure, frames, 2);
+  const leftMeasurement = await measure(left, [frames[0]], 1);
+  const rightMeasurement = await measure(right, [frames[1]], 1);
+  const parallelSamples = leftMeasurement.samples.map((sample, index) => (
+    Math.max(sample, rightMeasurement.samples[index])
+  ));
+  const parallelResult = summarize(parallelSamples);
   return {
     id: configuration.id,
     qr_version: configuration.version,
     symbol_bytes: configuration.symbolBytes,
-    full_frame: full,
-    split_lane_left: leftResult,
-    split_lane_right: rightResult,
-    modeled_parallel_roi_p50_ms: parallelP50,
-    modeled_parallel_roi_p95_ms: parallelP95,
-    modeled_parallel_symbols_per_second: round(2_000 / parallelP50, 1),
+    full_frame: fullMeasurement.summary,
+    split_lane_left: leftMeasurement.summary,
+    split_lane_right: rightMeasurement.summary,
+    modeled_parallel_roi_p50_ms: parallelResult.p50_ms,
+    modeled_parallel_roi_p95_ms: parallelResult.p95_ms,
+    modeled_parallel_symbols_per_second: round(2_000 / parallelResult.p50_ms, 1),
     modeled_parallel_symbol_bytes_per_second: Math.round(
-      configuration.symbolBytes * 2_000 / parallelP50,
+      configuration.symbolBytes * 2_000 / parallelResult.p50_ms,
     ),
   };
 }
@@ -78,12 +82,32 @@ async function measure(image, expected, maxNumberOfSymbols) {
     await decodeExact(image, expected, options);
     samples.push(performance.now() - startedAt);
   }
-  samples.sort((left, right) => left - right);
+  return { samples, summary: summarize(samples) };
+}
+
+function summarize(samples) {
+  const sorted = [...samples].sort((left, right) => left - right);
   return {
-    p50_ms: round(percentile(samples, 0.5), 3),
-    p95_ms: round(percentile(samples, 0.95), 3),
+    p50_ms: round(percentile(sorted, 0.5), 3),
+    p95_ms: round(percentile(sorted, 0.95), 3),
     mean_ms: round(samples.reduce((sum, value) => sum + value, 0) / samples.length, 3),
   };
+}
+
+function assertProductionProfiles(benchmarkConfigurations) {
+  const source = readFileSync(new URL("../src/protocol/optical-profile.ts", import.meta.url), "utf8");
+  for (const configuration of benchmarkConfigurations) {
+    const block = source.match(new RegExp(`\\n  ${configuration.profileId}: \\{([\\s\\S]*?)\\n  \\},`, "u"))?.[1];
+    const symbolSize = block?.match(/symbolSize: ([\d_]+),/u)?.[1];
+    const qrVersion = block?.match(/qrVersion: (\d+),/u)?.[1];
+    if (
+      block === undefined ||
+      Number(symbolSize?.replaceAll("_", "")) !== configuration.symbolBytes ||
+      Number(qrVersion) !== configuration.version
+    ) {
+      throw new Error(`Benchmark configuration ${configuration.id} has drifted from production profile ${configuration.profileId}.`);
+    }
+  }
 }
 
 async function decodeExact(image, expected, options) {

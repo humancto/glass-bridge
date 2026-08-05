@@ -76,7 +76,7 @@ The public demo remains unsuitable as a production security boundary. Three medi
 - Uploaded diagnostic images are decoded as images, never rendered as active HTML/SVG, and their object URLs are revoked.
 - Download object URLs are revoked after a bounded delay.
 - Optical frames have bounded text/binary sizes, CRC checks, session binding, unique-frame caps, and reconstruction limits.
-- Optional gzip packing is bound into pairing, used only when it saves optical bytes, and decompressed through a declared output ceiling before AGX parsing and verification.
+- Optional gzip packing is bound into pairing, used only when it saves optical bytes, rejected before decompression on a mode mismatch, and decompressed through a declared output ceiling before AGX parsing and verification.
 - AGX verification requires canonical CBOR, a fixed Ed25519 COSE profile, signer-key match, boundary match, declared length, and SHA-256 before policy and exposure.
 - The replay ledger validates its schema, size, field formats, and duplicate identifiers and fails closed on malformed data.
 - The service worker is same-origin only, uses versioned caches, removes old caches, uses network-first navigation to prevent mixed releases, and caches no authenticated API responses.

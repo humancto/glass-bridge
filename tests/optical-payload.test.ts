@@ -58,4 +58,9 @@ describe("adaptive optical payload packing", () => {
     new DataView(malformed.buffer).setUint32(8, 16, false);
     await expect(unpackOpticalPayload(malformed)).rejects.toThrow(/declared limit/);
   });
+
+  it("rejects a packing mismatch before parsing a compressed header", async () => {
+    const malformed = new Uint8Array([0x41, 0x47, 0x50, 0x31]);
+    await expect(unpackOpticalPayload(malformed, "identity")).rejects.toThrow(/does not match/);
+  });
 });
