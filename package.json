@@ -2,7 +2,23 @@
   "name": "glassbridge-design-baseline",
   "version": "0.1.0",
   "private": true,
-  "description": "Public product and research definition for GlassBridge / AGX",
+  "description": "Fast, verifiable optical file transfer for controlled crossings into air-gapped systems",
+  "homepage": "https://humancto.github.io/glass-bridge/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/humancto/glass-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/humancto/glass-bridge/issues"
+  },
+  "author": "HumanCTO",
+  "keywords": [
+    "air-gap",
+    "optical-data-transfer",
+    "secure-file-transfer",
+    "visible-light-communication",
+    "systems-security"
+  ],
   "engines": {
     "node": ">=22.13.0"
   },

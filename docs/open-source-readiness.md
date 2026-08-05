@@ -10,6 +10,18 @@ GlassBridge is ready for a public **research preview**. It has a real laptop-to-
 
 The repository is already public, but public source is not the same as open source. A project-wide license has not been selected. Until that is resolved, normal copyright restrictions apply and outside contributors do not have clear permission to use, modify, or redistribute the original work.
 
+### Public front-door audit
+
+| Surface | Status | Evidence |
+| --- | --- | --- |
+| Visitor-first README | Ready | Live demo, differentiator, trust flow, honest performance table, local setup, contribution routes, and limitations are visible before implementation detail. |
+| Share artwork | Ready | A repository-owned 1280×640 social preview and accessible SVG source are in `docs/assets/`. |
+| Repository metadata | Ready | The concise About description, live-demo homepage, focused discovery topics, Discussions, labels, and issue routes are configured; the unused Wiki is disabled. |
+| Community package | Ready | Code of conduct, governance, support, citation, CODEOWNERS, guided issue forms, contribution policy, security policy, and pull-request checklist are present. |
+| Dependency and disclosure posture | Ready for preview | Dependabot, secret scanning, push protection, and private vulnerability reporting are enabled; third-party notices are committed. |
+| Legal permission | Blocked | The owner must explicitly select and commit the project license before the repository is described as open source. |
+| Performance headline | Blocked | Physical device-matrix data is still required before claiming a phone-camera speed record. |
+
 ### Launch blockers
 
 | Priority | Blocker | Why it matters | Recommended action |
@@ -174,12 +186,13 @@ If it succeeds, GlassBridge is not “a QR app.” It is an open boundary protoc
 
 ### Recommended community readiness
 
-- [ ] Code of conduct.
-- [ ] Bug, performance-result, and security-research issue templates.
+- [x] Code of conduct.
+- [x] Bug, performance-result, feature/research, and private-security routes.
 - [x] Private vulnerability reporting enabled on GitHub.
 - [x] Dependabot version/security updates configured for npm, Cargo, and GitHub Actions.
-- [ ] `CITATION.cff` after author/order and preferred citation are confirmed.
-- [ ] Governance and protocol-change process before accepting incompatible AGX changes.
+- [x] `CITATION.cff` with repository-level software citation metadata.
+- [x] Maintainer-led governance and protocol-change process.
+- [x] Support routing, CODEOWNERS, and guided issue configuration.
 
 ## Recommended license decision
 

@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">GlassBridge / AGX — Move trusted data through light</title>
+  <desc id="desc">A social preview for the GlassBridge optical transfer research project.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#020605"/>
+      <stop offset="0.55" stop-color="#071510"/>
+      <stop offset="1" stop-color="#0b2018"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#64e6b9" stop-opacity="0"/>
+      <stop offset="0.28" stop-color="#64e6b9"/>
+      <stop offset="0.72" stop-color="#a7ffe0"/>
+      <stop offset="1" stop-color="#64e6b9" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse">
+      <path d="M52 0H0V52" fill="none" stroke="#64e6b9" stroke-opacity="0.065"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#grid)"/>
+  <circle cx="1080" cy="120" r="240" fill="#64e6b9" opacity="0.035"/>
+  <circle cx="1110" cy="540" r="310" fill="#64e6b9" opacity="0.025"/>
+
+  <g transform="translate(76 74)">
+    <rect width="88" height="88" rx="24" fill="#07110e" stroke="#64e6b9" stroke-width="3"/>
+    <text x="44" y="57" fill="#eafff7" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="30" font-weight="800" text-anchor="middle">GB</text>
+    <circle cx="24" cy="72" r="4" fill="#64e6b9"/>
+    <circle cx="38" cy="72" r="2.5" fill="#64e6b9" opacity=".55"/>
+  </g>
+
+  <g transform="translate(196 78)" font-family="Inter, ui-sans-serif, system-ui, -apple-system, sans-serif">
+    <text x="0" y="32" fill="#64e6b9" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="21" font-weight="700" letter-spacing="5">GLASSBRIDGE / AGX</text>
+    <text x="0" y="104" fill="#f1fff9" font-size="54" font-weight="760" letter-spacing="-2">Move trusted data</text>
+    <text x="0" y="164" fill="#f1fff9" font-size="54" font-weight="760" letter-spacing="-2">through <tspan fill="#64e6b9">light.</tspan></text>
+    <text x="0" y="214" fill="#91a9a0" font-size="22">Fast, verifiable optical exchange across disconnected</text>
+    <text x="0" y="246" fill="#91a9a0" font-size="22">and air-gapped security boundaries.</text>
+  </g>
+
+  <g transform="translate(196 366)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" letter-spacing="1.5">
+    <g><rect width="112" height="38" rx="19" fill="#0b2119" stroke="#285344"/><text x="56" y="25" fill="#9af5d4" text-anchor="middle">SIGNED</text></g>
+    <g transform="translate(126)"><rect width="112" height="38" rx="19" fill="#0b2119" stroke="#285344"/><text x="56" y="25" fill="#9af5d4" text-anchor="middle">POLICY</text></g>
+    <g transform="translate(252)"><rect width="142" height="38" rx="19" fill="#0b2119" stroke="#285344"/><text x="71" y="25" fill="#9af5d4" text-anchor="middle">QUARANTINE</text></g>
+    <g transform="translate(408)"><rect width="104" height="38" rx="19" fill="#0b2119" stroke="#285344"/><text x="52" y="25" fill="#9af5d4" text-anchor="middle">AUDIT</text></g>
+  </g>
+
+  <g transform="translate(730 298)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+    <rect x="0" y="0" width="176" height="220" rx="28" fill="#06100d" stroke="#285344" stroke-width="2"/>
+    <text x="88" y="40" fill="#91a9a0" font-size="13" text-anchor="middle" letter-spacing="2">CONNECTED</text>
+    <rect x="28" y="70" width="120" height="120" rx="10" fill="#effff8"/>
+    <path d="M43 85h32v32H43zm60 0h30v30h-30zM43 145h28v28H43zm48-12h14v14H91zm20 19h22v21h-22z" fill="#07110e"/>
+    <path d="M49 91h20v20H49zm60 0h18v18h-18zM49 151h16v16H49z" fill="#effff8"/>
+
+    <path d="M188 110h164" stroke="url(#beam)" stroke-width="5" filter="url(#glow)"/>
+    <path d="M322 98l24 12-24 12" fill="none" stroke="#a7ffe0" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="270" y="88" fill="#64e6b9" font-size="12" text-anchor="middle" letter-spacing="2">SCREEN → CAMERA</text>
+
+    <g transform="translate(364)">
+      <rect width="176" height="220" rx="28" fill="#06100d" stroke="#64e6b9" stroke-width="2"/>
+      <text x="88" y="40" fill="#64e6b9" font-size="13" text-anchor="middle" letter-spacing="2">RECEIVER</text>
+      <path d="M50 84h76v90H50z" fill="none" stroke="#91a9a0" stroke-width="2"/>
+      <path d="M66 104h44M66 122h44M66 140h29" stroke="#64e6b9" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="115" cy="158" r="18" fill="#0b2119" stroke="#64e6b9" stroke-width="2"/>
+      <path d="M107 158l6 6 11-13" fill="none" stroke="#a7ffe0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <line x1="76" y1="564" x2="1204" y2="564" stroke="#285344"/>
+  <text x="76" y="602" fill="#71877e" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" letter-spacing="2">OPEN SYSTEMS RESEARCH · RUNNABLE PRE-ALPHA · HUMANCTO/GLASS-BRIDGE</text>
+</svg>

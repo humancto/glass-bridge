@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: >-
+  If GlassBridge or AGX contributes to your research, please cite this software
+  and the exact commit or release used.
+title: GlassBridge / AGX
+type: software
+authors:
+  - name: HumanCTO
+repository-code: https://github.com/humancto/glass-bridge
+url: https://humancto.github.io/glass-bridge/
+version: 0.12.0-pre-alpha
+abstract: >-
+  A research prototype for fast, verifiable optical file exchange across
+  disconnected and air-gapped security boundaries using signed, policy-bound
+  AGX envelopes, receiver-local quarantine, and auditable release evidence.
+keywords:
+  - air gap
+  - optical data transfer
+  - secure file transfer
+  - systems security
+  - visible light communication
