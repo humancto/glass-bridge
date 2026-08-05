@@ -8,7 +8,7 @@
 
 No confirmed critical or high-severity frontend vulnerability was found in this review. The application avoids raw HTML sinks and remote scripts, uses a restrictive meta-delivered Content Security Policy, strictly validates pairing state and optical frames, bounds reconstruction, verifies the signed envelope before policy/release, revokes object URLs, and uses reproducible lockfiles in CI.
 
-The public demo remains unsuitable as a production security boundary. Three medium-severity assurance gaps are intentional prototype limitations: GitHub Pages cannot provide the required response-header posture, pairing is trust on first use rather than organizational provenance, and replay/receipt state lives in browser-managed storage. Dependency automation and production release provenance also need work before an open-source security-product launch.
+The public demo remains unsuitable as a production security boundary. Three medium-severity assurance gaps are intentional prototype limitations: GitHub Pages cannot provide the required response-header posture, pairing is trust on first use rather than organizational provenance, and replay/receipt state lives in browser-managed storage. Dependabot and private vulnerability reporting are now enabled; advisory scanning as a CI gate and production release provenance still need work before a security-product launch.
 
 ## Findings
 

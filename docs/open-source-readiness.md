@@ -22,7 +22,7 @@ The repository is already public, but public source is not the same as open sour
 
 - Host reviewed, version-pinned receiver assets at a managed origin that can set security response headers. GitHub Pages is appropriate for the public demo, not for a high-assurance receiver.
 - Move replay and rollback state from browser storage to protected monotonic storage in the native or appliance profile.
-- Add continuous parser/transport fuzzing, dependency automation, release SBOMs, signed provenance, and reproducible release experiments.
+- Add continuous parser/transport fuzzing, advisory scanning as a CI gate, release SBOMs, signed provenance, and reproducible release experiments. Dependabot version and security updates are already enabled.
 - Add content inspection hooks and narrow content-disarm/reconstruction profiles before claiming that a verified file is safe to open.
 - Define a receive-only reference appliance and document every radio, display, camera, storage, debug, and peripheral path before using “data diode” language.
 - Maintain the newly enabled GitHub private vulnerability reporting path and document a monitored security-response owner before a production release.
