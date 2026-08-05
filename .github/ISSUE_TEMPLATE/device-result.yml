@@ -1,0 +1,55 @@
+name: Physical device result
+description: Contribute repeatable GlassBridge phone-camera measurements.
+title: "[device] sender → receiver / profile"
+labels:
+  - benchmark
+  - device-matrix
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thank you for measuring the physical channel. Use synthetic payloads,
+        repeat one unchanged condition at least three times, and include failed
+        runs. A best run by itself is not a benchmark.
+  - type: input
+    id: build
+    attributes:
+      label: GlassBridge build
+      placeholder: Commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: sender
+    attributes:
+      label: Sender
+      description: Device, OS, browser, display refresh/resolution, brightness, and whether it was fullscreen.
+    validations:
+      required: true
+  - type: textarea
+    id: receiver
+    attributes:
+      label: Receiver
+      description: Device, OS, browser, negotiated camera format/FPS, orientation, and whether it was handheld or propped.
+    validations:
+      required: true
+  - type: input
+    id: profile
+    attributes:
+      label: Profile and payload
+      placeholder: Burst 60/s Stable, 147456 bytes
+    validations:
+      required: true
+  - type: textarea
+    id: runs
+    attributes:
+      label: All repeated runs
+      description: Attach or paste each exported `glassbridge-capacity/2` JSON record, including failures and retry notes.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Physical setup
+      description: Distance, angle, lighting, motion, mounting, and anything else needed to reproduce the condition.
+    validations:
+      required: true

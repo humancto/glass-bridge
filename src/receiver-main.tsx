@@ -1,6 +1,5 @@
 import { createRoot } from "react-dom/client";
 import ReceiverApp from "./receiver/ReceiverApp";
-import "./receiver/receiver.css";
 
 const root = document.getElementById("receiver-root");
 

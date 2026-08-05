@@ -4,6 +4,17 @@ GlassBridge is a research project exploring fast, verifiable optical data exchan
 
 > **Project status:** runnable milestone 13 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, a measurable 30/60/90/120-code capacity ladder, dual-v30 Burst and dual-v40 Ceiling Lab paths, parallel multi-code WASM phone decoding with exportable pipeline telemetry, sparse LT repair, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. Physical goodput still requires device-matrix validation. This must not be used as a production security control.
 
+> **Open-source status:** the source is public for review, but no project-wide license has been selected. Until a license is committed, normal copyright restrictions apply. See the [open-source readiness review](docs/open-source-readiness.md) before describing or launching the project as open source.
+
+## Start here
+
+- [Product, threat model, prior art, and research plan](https://humancto.github.io/glass-bridge/)
+- [Live laptop sender](https://humancto.github.io/glass-bridge/send.html)
+- [Live phone receiver](https://humancto.github.io/glass-bridge/receive.html)
+- [Draft launch article: *A File Crossed an Air Gap. The Trust Boundary Came With It.*](docs/launch-article.md)
+- [Open-source readiness and flow audit](docs/open-source-readiness.md)
+- [Browser security audit](docs/open-source-security-audit.md)
+
 ## See it work
 
 With Rust 1.91.1 installed:
@@ -184,6 +195,21 @@ Animated QR transfer, fountain coding, and high-density visual channels already 
 - honest one-way operating modes;
 - typed audit receipts; and
 - verified goodput rather than nominal optical throughput.
+
+The current runnable differentiator is the complete crossing state machine:
+
+```text
+session-bound signed envelope -> bounded optical reconstruction
+  -> signature + boundary + digest verification -> receiver-local policy
+  -> memory quarantine -> verified-goodput analytics -> explicit approval
+  -> replay reservation -> receiver-signed release evidence -> save/share
+```
+
+QRFerry and Decimen establish that optical transport itself can be sophisticated
+and fast. GlassBridge asks a different question: can the receiving boundary make
+the crossing authenticated, constrained, observable, and auditable without
+coupling that security contract to one visual codec? This is a systems research
+claim, not yet proof of global novelty.
 
 ## Review the research design
 

@@ -2,9 +2,15 @@
 
 ## Current status
 
-GlassBridge is currently a research and design project. The repository does not yet provide a production optical transfer system, certified data diode, malware scanner, or cross-domain solution. Do not rely on it to protect sensitive or operational environments.
+GlassBridge is currently a runnable pre-alpha research project. The repository does not provide a production optical transfer system, certified data diode, malware scanner, or cross-domain solution. Do not rely on it to protect sensitive or operational environments.
 
 Implemented prototype properties are identified in the milestone documents, but none has been independently evaluated for production use.
+
+The current browser security review is published in
+[docs/open-source-security-audit.md](docs/open-source-security-audit.md). Report
+suspected vulnerabilities privately through GitHub Security Advisories when
+private vulnerability reporting is available; do not include sensitive details
+in a public issue.
 
 ## Browser sender warning
 
