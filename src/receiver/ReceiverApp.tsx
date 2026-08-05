@@ -407,7 +407,12 @@ export default function ReceiverApp() {
           captureHeight,
         );
         if (laneRegions && cameraFrames % 15 !== 0) {
-          for (const region of laneRegions) {
+          // Alternate submission priority so a saturated worker pool cannot
+          // repeatedly favor the left lane and starve the right lane.
+          const orderedRegions = cameraFrames % 2 === 0
+            ? laneRegions
+            : [laneRegions[1], laneRegions[0]];
+          for (const region of orderedRegions) {
             const image = captureContext.getImageData(region.x, region.y, region.width, region.height);
             if (!pool.submit(image, 1)) busyDrops += 1;
           }

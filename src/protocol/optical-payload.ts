@@ -2,6 +2,7 @@ const PACKED_MAGIC = new Uint8Array([0x41, 0x47, 0x50, 0x31]); // AGP1
 const PACKED_HEADER_BYTES = 12;
 const GZIP_ALGORITHM = 1;
 const MAX_UNPACKED_BYTES = 2 * 1024 * 1024;
+const MAX_GZIP_OVERHEAD_BYTES = 64 * 1024;
 const MIN_SAVINGS_BYTES = 64;
 
 export type OpticalPayloadEncoding = "identity" | "gzip";
@@ -24,7 +25,7 @@ export async function packOpticalPayload(payload: Uint8Array): Promise<OpticalPa
 
   const compressed = await collectStream(
     new Blob([payload.slice().buffer]).stream().pipeThrough(new CompressionStream("gzip")),
-    MAX_UNPACKED_BYTES,
+    payload.length + MAX_GZIP_OVERHEAD_BYTES,
   );
   const transmittedBytes = PACKED_HEADER_BYTES + compressed.length;
   if (transmittedBytes + MIN_SAVINGS_BYTES > payload.length) return identity(payload);

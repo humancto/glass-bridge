@@ -37,6 +37,19 @@ describe("adaptive optical payload packing", () => {
     expect(packed.transmittedBytes).toBe(payload.length);
   });
 
+  it("falls back to identity for an incompressible payload at the browser size limit", async () => {
+    let state = 0x9e37_79b9;
+    const payload = Uint8Array.from({ length: 2 * 1_024 * 1_024 }, () => {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      return state & 0xff;
+    });
+    const packed = await packOpticalPayload(payload);
+    expect(packed.encoding).toBe("identity");
+    expect(packed.bytes).toEqual(payload);
+  });
+
   it("rejects a compressed object whose declared output is smaller than reality", async () => {
     const payload = new TextEncoder().encode("bounded optical payload ".repeat(1_000));
     const packed = await packOpticalPayload(payload);
