@@ -23,7 +23,7 @@ async function decode(request: DecodeWorkerRequest): Promise<void> {
     const pixels = new Uint8ClampedArray(request.pixels);
     const results = await readBarcodes(
       new ImageData(pixels, request.width, request.height),
-      TURBO_READER_OPTIONS,
+      { ...TURBO_READER_OPTIONS, maxNumberOfSymbols: request.maxSymbols },
     );
     const decoded = results.filter((result) => result.isValid);
     const copiedBytes = decoded.map((result) => result.bytes.slice());

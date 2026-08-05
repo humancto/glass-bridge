@@ -154,7 +154,7 @@ export default function Home({
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <div className="status-line"><span></span> Runnable pre-alpha · milestone 13 · v0.11</div>
+            <div className="status-line"><span></span> Runnable pre-alpha · milestone 14 · v0.12</div>
             <h1>Move trusted data<br />through <em>light.</em></h1>
             <p className="dek">
               A signed, policy-gated experiment for moving a file through light—without a removable-media payload path, and without pretending that photons alone create trust.
@@ -245,8 +245,8 @@ export default function Home({
             <Callout label="Product thesis">
               <p>GlassBridge is a high-speed, verifiable optical gateway for controlled data exchange across air-gapped boundaries, designed to reduce dependence on removable media while making every crossing explicit, authenticated, policy-constrained, observable, and auditable.</p>
             </Callout>
-            <Callout label="Runnable milestone 13" tone="blue">
-              <p>The public laptop-to-phone demo carries a bounded file through session-bound one-way optical reconstruction, cryptographic verification, a phone-local policy decision, memory quarantine, post-receive verified-goodput analytics, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. It remains pre-alpha: session pairing is not organizational provenance, browser replay state is not tamper-resistant, and no content inspection or certification is claimed.</p>
+            <Callout label="Runnable milestone 14" tone="blue">
+              <p>The public laptop-to-phone demo now applies bounded adaptive gzip when it removes optical bytes, binds that packing mode into pairing, and decodes dual QR lanes as parallel overlapping regions with periodic full-frame reacquisition. The verified path still ends in receiver-local policy, memory quarantine, post-receive analytics, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. Physical phone goodput remains the proof gate.</p>
             </Callout>
             <Callout label="Open-source gate" tone="amber">
               <p>The code is public and runnable, but the repository is not legally open source yet because it has no project-wide license. <a href={readinessHref} target="_blank" rel="noreferrer"><strong>Read the launch audit</strong></a>; Apache-2.0 is the recommended first-release license because it is permissive and includes an express patent grant.</p>
@@ -722,8 +722,8 @@ for await event in session.events {
           </Section>
 
           <Section id="roadmap" eyebrow="13 / Milestones, risks & licensing" title="A 22-week path to an evidence-backed alpha.">
-            <Callout label="Actual status · milestone 13" tone="blue">
-              <p>The repository has already crossed the original specification and loopback phases: AGX/1, Rust core/CLI, browser sender/receiver, QR video boundaries, sparse LT repair, dual-lane scheduling, a 30/60/90/120 capacity ladder, and post-receive analytics are runnable. The next gates are physical device evidence, organizational trust, continuous security testing, and release hygiene—not another planning-only prototype.</p>
+            <Callout label="Actual status · milestone 14" tone="blue">
+              <p>The repository has already crossed the original specification and loopback phases: AGX/1, Rust core/CLI, browser sender/receiver, bounded adaptive optical packing, QR video boundaries, sparse LT repair, dual-lane scheduling and lane-parallel acquisition, a 30/60/90/120 capacity ladder, and post-receive analytics are runnable. The next speed gate is physical device evidence; the next transport research gate is a registered custom grid beyond standard QR.</p>
             </Callout>
             <div className="timeline">
               <div><span>M0 · W1–2</span><strong>Threats + AGX draft</strong><p>CDDL, trust model, golden vectors, benchmark preregistration draft.</p><b>Exit: independent parser can reject all negative vectors.</b></div>
@@ -793,7 +793,7 @@ for await event in session.events {
 
       <footer>
         <div className="brand"><span className="brand-mark">GB</span><span>GlassBridge <b>/ AGX</b></span></div>
-        <p>Product & Research Definition · v0.11 · Research cut {researchDate}</p>
+        <p>Product & Research Definition · v0.12 · Research cut {researchDate}</p>
         <a href="#top">Back to top ↑</a>
       </footer>
     </main>

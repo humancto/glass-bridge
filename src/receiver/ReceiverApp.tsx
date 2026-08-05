@@ -9,10 +9,12 @@ import {
 import { evaluateBrowserPolicy, type LocalPolicyDecision } from "./policy";
 import { ingestDecodedQr } from "./qr-result";
 import { DecodeWorkerPool, type DecodeResult } from "./decode-worker-pool";
-import { fitCaptureDimensions } from "./camera-capture";
+import { dualLaneCaptureRegions, fitCaptureDimensions } from "./camera-capture";
+import { OPTICAL_PROFILES } from "../protocol/optical-profile";
 import {
   measureTransport,
 } from "./capacity-measurement";
+import { unpackOpticalPayload } from "../protocol/optical-payload";
 import {
   CAPACITY_HISTORY_LIMIT,
   compareCapacityReport,
@@ -87,6 +89,7 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
           boundary: trust.boundary,
           session: trust.sessionId ? base64UrlEncode(trust.sessionId) : undefined,
           profile: trust.profileId,
+          packing: trust.packing,
         }),
       );
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
@@ -101,13 +104,15 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
       boundary?: unknown;
       session?: unknown;
       profile?: unknown;
+      packing?: unknown;
     };
     if (typeof value.key !== "string" || typeof value.boundary !== "string") {
       throw new Error("Stored pairing is invalid.");
     }
     const hasSession = typeof value.session === "string" && typeof value.profile === "string";
+    const hasPacking = value.packing === "identity" || value.packing === "gzip";
     const params = new URLSearchParams({
-      v: hasSession ? "2" : "1",
+      v: hasPacking ? "3" : hasSession ? "2" : "1",
       key: value.key,
       boundary: value.boundary,
     });
@@ -115,6 +120,7 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
       params.set("session", value.session as string);
       params.set("profile", value.profile as string);
     }
+    if (hasPacking) params.set("packing", value.packing as string);
     return {
       trust: parseBootstrapHash(`#${params.toString()}`),
     };
@@ -182,7 +188,11 @@ export default function ReceiverApp() {
     callbackControls?.stop();
     setStage("verifying");
     try {
-      const transfer = await verifyAgxEnvelope(envelope, trust);
+      const opticalPayload = await unpackOpticalPayload(envelope);
+      if (trust.packing && opticalPayload.encoding !== trust.packing) {
+        throw new Error("The optical payload packing does not match the paired transfer.");
+      }
+      const transfer = await verifyAgxEnvelope(opticalPayload.bytes, trust);
       const decision = await evaluateBrowserPolicy(transfer);
       if (!decision.allowed) {
         throw new Error(`${decision.code}: ${decision.reason}`);
@@ -199,7 +209,9 @@ export default function ReceiverApp() {
           profileId: trust.profileId,
           transferSession: trust.sessionId ? formatSession(trust.sessionId) : undefined,
           fileBytes: transfer.payload.length,
+          payloadSha256: transfer.payloadSha256,
           measurement: nextMeasurement,
+          opticalPayload,
           camera: liveMetricsRef.current,
           device: navigator.userAgent,
         });
@@ -276,6 +288,10 @@ export default function ReceiverApp() {
       const captureContext = captureCanvas.getContext("2d", { willReadFrequently: true });
       if (!captureContext) throw new Error("The camera capture surface is unavailable.");
 
+      const opticalLanes = trust.profileId ? OPTICAL_PROFILES[trust.profileId].lanes : 1;
+      const laneRegions = opticalLanes === 2
+        ? dualLaneCaptureRegions(captureWidth, captureHeight)
+        : undefined;
       const workerCount = Math.min(4, Math.max(2, Math.floor((navigator.hardwareConcurrency || 4) / 2)));
       let active = true;
       let callbackId = 0;
@@ -390,8 +406,17 @@ export default function ReceiverApp() {
           captureWidth,
           captureHeight,
         );
-        const image = captureContext.getImageData(0, 0, captureWidth, captureHeight);
-        if (!pool.submit(image)) busyDrops += 1;
+        if (laneRegions && cameraFrames % 15 !== 0) {
+          for (const region of laneRegions) {
+            const image = captureContext.getImageData(region.x, region.y, region.width, region.height);
+            if (!pool.submit(image, 1)) busyDrops += 1;
+          }
+        } else {
+          // Periodic full-frame acquisition lets the operator recover when the
+          // display is not perfectly centered across the two lane regions.
+          const image = captureContext.getImageData(0, 0, captureWidth, captureHeight);
+          if (!pool.submit(image, opticalLanes)) busyDrops += 1;
+        }
         updateMetrics();
       };
 
@@ -648,6 +673,7 @@ export default function ReceiverApp() {
             <div><span>PAIRED SENDER</span><strong>{fingerprint}</strong></div>
             <div><span>BOUNDARY</span><strong>{trust.boundary}</strong></div>
             {trust.sessionId && <div><span>TRANSFER SESSION</span><strong>{formatSession(trust.sessionId)}</strong></div>}
+            {trust.packing && <div><span>PACKING</span><strong>{trust.packing.toUpperCase()}</strong></div>}
           </div>
 
           <div className={`camera-shell ${stage === "scanning" && sourceMode === "camera" ? "camera-live" : ""}`}>
@@ -883,6 +909,7 @@ export function CapacityScorecard({
           <div><dt>Rejected / duplicate</dt><dd>{report.rejected_codes} / {report.duplicate_codes} codes</dd></div>
           <div><dt>Accepted optical rate</dt><dd>{formatRate(report.accepted_symbol_bytes_per_second)}</dd></div>
           <div><dt>Fountain overhead</dt><dd>{report.fountain_overhead_percent.toFixed(1)}%</dd></div>
+          {report.transport && <div><dt>Optical packing</dt><dd>{report.transport.encoding} · {formatBytes(report.transport.optical_object_bytes)} transmitted · {report.transport.optical_reduction_percent.toFixed(1)}% reduction</dd></div>}
           <div><dt>Camera</dt><dd>{report.camera.width}×{report.camera.height} · {report.camera.observed_fps.toFixed(1)} observed / {report.camera.negotiated_fps.toFixed(0)} negotiated FPS</dd></div>
           <div><dt>Decoder</dt><dd>{report.camera.valid_codes_per_second.toFixed(1)} valid codes/s · p50 {report.camera.decode_p50_ms.toFixed(1)} ms · p95 {report.camera.decode_p95_ms.toFixed(1)} ms</dd></div>
           <div><dt>Pressure</dt><dd>{report.camera.busy_drops} busy drops · {report.camera.workers} workers</dd></div>
@@ -894,7 +921,7 @@ export function CapacityScorecard({
       </div>
       <p className="capacity-history-note">
         {historySaved
-          ? `Saved privately on this device · last ${CAPACITY_HISTORY_LIMIT} runs retained · comparisons match profile + payload size`
+          ? `Saved privately on this device · last ${CAPACITY_HISTORY_LIMIT} runs retained · comparisons match profile + exact payload`
           : "Device history is unavailable in this browser session. Export the JSON to preserve this run."}
       </p>
       {status && <p className="measurement-status" role="status">{status}</p>}

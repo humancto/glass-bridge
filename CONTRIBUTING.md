@@ -14,6 +14,6 @@ Before proposing a large change, open an issue describing the problem, security 
 - Do not implement new cryptographic primitives.
 - Do not include private data, internal conversations, credentials, or proprietary artifacts.
 - Treat physical throughput, security, and novelty as claims that require reproducible evidence.
-- For a device result, attach the exported `glassbridge-capacity/2` JSON and include every repeated run, including failures.
+- For a device result, attach the exported `glassbridge-capacity/3` JSON and include every repeated run, including failures. Version 3 separates effective file goodput from optical packing reduction.
 
 Run `npm test` and the relevant locked Rust checks before submitting changes. See the pull request template for the minimum evidence expected.

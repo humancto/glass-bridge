@@ -3,6 +3,7 @@ export type DecodeWorkerRequest = {
   width: number;
   height: number;
   pixels: ArrayBuffer;
+  maxSymbols: 1 | 2;
 };
 
 export type DecodeWorkerCode = {
@@ -77,7 +78,7 @@ export class DecodeWorkerPool {
     return this.slots.reduce((count, slot) => count + Number(slot.busy), 0);
   }
 
-  submit(imageData: ImageData): boolean {
+  submit(imageData: ImageData, maxSymbols: 1 | 2 = 2): boolean {
     if (!this.active) return false;
     const slot = this.slots.find((candidate) => !candidate.busy);
     if (!slot) return false;
@@ -87,6 +88,7 @@ export class DecodeWorkerPool {
       width: imageData.width,
       height: imageData.height,
       pixels: imageData.data.buffer,
+      maxSymbols,
     };
     this.nextId += 1;
     slot.worker.postMessage(request, [request.pixels]);

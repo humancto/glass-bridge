@@ -84,9 +84,11 @@ This is a defensible systems contribution, not yet a claim of being the first sy
 
 ## The live result—and the honest speed story
 
-The public pre-alpha currently supports one file up to 256 KiB. Its default Burst mode shows two QR lanes and uses sparse LT repair. Milestone 13 adds controlled 30/60/90/120 combined-code steps and a dense Ceiling Lab profile.
+The public pre-alpha currently supports one file up to 256 KiB. Its default Burst mode shows two QR lanes and uses sparse LT repair. Milestone 13 added controlled 30/60/90/120 combined-code steps and a dense Ceiling Lab profile. Milestone 14 adds bounded adaptive gzip before optical coding and sends the two camera regions to independent one-code decoder jobs, with periodic full-frame reacquisition.
 
 The implemented Ceiling Lab channel budget reaches 348,000 useful symbol bytes per second, or 339.8 KiB/s, before camera loss and protocol overhead. That is a capacity bound, not physical goodput.
+
+For structured files, effective file goodput can rise without increasing the optical symbol rate. A deterministic 144 KiB structured-CSV development sample required 23,907 optical bytes after packing, a 6.17× reduction. Already-compressed and encrypted inputs do not receive that benefit. On ideal 1280×720 rasters, lane-level acquisition approximately halved QR decode latency; only the phone-camera tests can show whether that CPU headroom becomes completed-file goodput.
 
 The phone now reports the number that matters after a successful run: verified payload bytes per second. It also preserves the last 20 comparable results locally and exports a versioned JSON record, so a fast-looking best run cannot silently replace the distribution.
 
@@ -128,7 +130,7 @@ After verification, save the benchmark JSON. Repeat the exact condition three ti
 
 The source, protocol snapshots, tests, milestone reports, and limitations are in [humancto/glass-bridge](https://github.com/humancto/glass-bridge). The most useful contributions right now are:
 
-- raw `glassbridge-capacity/2` results from named device pairs;
+- raw `glassbridge-capacity/3` results from named device pairs;
 - optical and protocol failure cases;
 - adversarial review of AGX, pairing, policy, quarantine, replay, and receipt semantics;
 - independently written decoders for the published fixtures; and

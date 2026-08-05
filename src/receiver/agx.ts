@@ -1,6 +1,7 @@
 import { verifyAsync } from "@noble/ed25519";
 import { decode, encode } from "cborg";
 import { OPTICAL_PROFILES, type OpticalProfileId } from "../protocol/optical-profile";
+import type { OpticalPayloadEncoding } from "../protocol/optical-payload";
 import { base64UrlDecode } from "./transport";
 
 const MANIFEST_AAD = new TextEncoder().encode("GlassBridge/AGX1/manifest");
@@ -12,6 +13,7 @@ export type BootstrapTrust = {
   boundary: string;
   sessionId?: Uint8Array;
   profileId?: OpticalProfileId;
+  packing?: OpticalPayloadEncoding;
 };
 
 export type VerifiedTransfer = {
@@ -40,13 +42,15 @@ export function parseBootstrapHash(hash: string): BootstrapTrust {
   const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
   const keys = Array.from(params.keys());
   const version = params.get("v");
-  const expectedKeys = version === "2"
+  const expectedKeys = version === "3"
+    ? new Set(["v", "key", "boundary", "session", "profile", "packing"])
+    : version === "2"
     ? new Set(["v", "key", "boundary", "session", "profile"])
     : new Set(["v", "key", "boundary"]);
   if (keys.length !== expectedKeys.size || new Set(keys).size !== keys.length || keys.some((key) => !expectedKeys.has(key))) {
     throw new Error("The pairing QR has unexpected or duplicate fields.");
   }
-  if (version !== "1" && version !== "2") {
+  if (version !== "1" && version !== "2" && version !== "3") {
     throw new Error("Scan the pairing QR displayed by GlassBridge on the laptop.");
   }
   const encodedKey = params.get("key");
@@ -75,7 +79,17 @@ export function parseBootstrapHash(hash: string): BootstrapTrust {
   if (!Object.hasOwn(OPTICAL_PROFILES, profileId)) {
     throw new Error("The pairing QR names an unsupported optical profile.");
   }
-  return { publicKey, boundary, sessionId, profileId: profileId as OpticalProfileId };
+  const packing = params.get("packing");
+  if (version === "3" && packing !== "identity" && packing !== "gzip") {
+    throw new Error("The pairing QR names an unsupported optical packing mode.");
+  }
+  return {
+    publicKey,
+    boundary,
+    sessionId,
+    profileId: profileId as OpticalProfileId,
+    packing: version === "3" ? packing as OpticalPayloadEncoding : undefined,
+  };
 }
 
 export async function trustFingerprint(trust: BootstrapTrust): Promise<string> {

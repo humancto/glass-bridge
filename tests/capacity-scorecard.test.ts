@@ -5,11 +5,12 @@ import { CapacityScorecard } from "../src/receiver/ReceiverApp";
 import type { CapacityComparison, CapacityReport } from "../src/receiver/capacity-report";
 
 const report: CapacityReport = {
-  schema: "glassbridge-capacity/2",
+  schema: "glassbridge-capacity/3",
   measured_at: "2026-08-05T01:02:03.000Z",
   profile: { id: "burst", label: "Burst", lanes: 2, qr_version: 30 },
   transfer_session: "09090909",
   file_bytes: 147_456,
+  payload_sha256: "ab".repeat(32),
   transfer_seconds: 2.4,
   verified_payload_bytes_per_second: 61_440,
   accepted_codes: 96,
@@ -23,6 +24,12 @@ const report: CapacityReport = {
   decoded_acceptance_percent: 90.6,
   fountain_overhead_percent: 9.1,
   payload_efficiency_percent: 91,
+  transport: {
+    encoding: "gzip",
+    signed_envelope_bytes: 148_000,
+    optical_object_bytes: 32_000,
+    optical_reduction_percent: 78.4,
+  },
   camera: {
     observed_fps: 59.9,
     negotiated_fps: 60,
@@ -65,10 +72,11 @@ describe("post-receive analytics scorecard", () => {
     expect(html).toContain("first accepted code → verified");
     expect(html).toContain("90.6%");
     expect(html).toContain("Pipeline diagnostics");
+    expect(html).toContain("gzip · 31.3 KiB transmitted · 78.4% reduction");
     expect(html).toContain("Copy benchmark JSON");
     expect(html).toContain("Save / share benchmark JSON");
     expect(html).toContain("last 20 runs retained");
-    expect(html).toContain("comparisons match profile + payload size");
+    expect(html).toContain("comparisons match profile + exact payload");
     expect(html).toContain("Benchmark JSON copied.");
   });
 });

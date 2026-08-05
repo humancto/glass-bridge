@@ -2,7 +2,7 @@
 
 GlassBridge is a research project exploring fast, verifiable optical data exchange across air-gapped boundaries. Its central proposal is **AGX**: a signed, policy-bound transfer envelope that remains independent of the visual codec used to carry it.
 
-> **Project status:** runnable milestone 13 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, a measurable 30/60/90/120-code capacity ladder, dual-v30 Burst and dual-v40 Ceiling Lab paths, parallel multi-code WASM phone decoding with exportable pipeline telemetry, sparse LT repair, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. Physical goodput still requires device-matrix validation. This must not be used as a production security control.
+> **Project status:** runnable milestone 14 / pre-alpha. The repository now contains a no-install browser sender for arbitrary files up to 256 KiB, bounded adaptive gzip optical packing, a measurable 30/60/90/120-code capacity ladder, dual-v30 Burst and dual-v40 Ceiling Lab paths, lane-parallel WASM phone decoding with full-frame reacquisition, exportable pipeline telemetry, sparse LT repair, a live browser receiver with local default-deny policy, memory quarantine, replay detection, explicit release, receiver-signed evidence, canonical signed AGX envelopes, an H.264 benchmark harness, and deterministic Rust/browser interoperability vectors. Physical goodput still requires device-matrix validation. This must not be used as a production security control.
 
 > **Open-source status:** the source is public for review, but no project-wide license has been selected. Until a license is committed, normal copyright restrictions apply. See the [open-source readiness review](docs/open-source-readiness.md) before describing or launching the project as open source.
 
@@ -45,7 +45,8 @@ automatically the fastest: the device's stable capacity is the last step that
 verifies reliably and still improves median goodput.
 
 The laptop browser creates a fresh Ed25519 key for that transfer, builds and signs
-a canonical AGX/1 envelope in memory, fountain-encodes it into Rust-compatible
+a canonical AGX/1 envelope in memory, uses bounded gzip packing only when it
+reduces the signed envelope, fountain-encodes the resulting optical object into Rust-compatible
 AGF1 or AGF2 frames, and renders the QR stream locally. The file is not uploaded by the
 application. The ephemeral key proves integrity for the paired session; it is not
 an organizational identity or durable provenance credential.
@@ -67,6 +68,14 @@ with a 0.42-second loss-free payload-only floor for 144 KiB. That is a channel
 budget, not a promise. Run `npm run benchmark:capacity` for the ideal-raster
 decoder matrix and see [Milestone 13](docs/milestone-13.md) for the experimental
 method and stop rules.
+
+Milestone 14 adds two independent optimizations. Adaptive packing can remove
+most optical bytes from structured text while preserving the exact signed AGX
+object after bounded decompression. Dual-lane camera frames are normally split
+into overlapping one-code regions and decoded by independent workers, with a
+periodic full-frame pass for off-center recovery. On ideal development rasters,
+lane splitting approximately halved v30/v40 acquisition latency. Run
+`npm run benchmark:parallel-decode` and see [Milestone 14](docs/milestone-14.md).
 
 The test suite now exercises the dense Turbo path end to end below the physical
 camera boundary: it renders 2,944-byte AGF2 frames as v40-L pixels, decodes them
@@ -238,9 +247,10 @@ The current Rust prototype demonstrates:
 
 ```text
 chosen browser file -> canonical AGX envelope -> ephemeral Ed25519 signature
+     -> optional bounded gzip optical packing
      -> one-way repair frames generated in the laptop browser
      -> QR PNG codec -> fullscreen display -> live phone camera
-     -> browser reconstruction -> signature + boundary + digest verification
+     -> browser reconstruction -> bounded unpacking -> signature + boundary + digest verification
      -> local policy -> memory quarantine -> approval -> replay reservation
      -> receiver-signed release receipt -> save/share on phone
 
@@ -282,7 +292,7 @@ cargo run --locked -p glassbridge-cli -- qr-decode \
 ## What is not implemented yet
 
 - a native phone application, protected monotonic phone replay state, organizational trust provisioning, or published physical-goodput results
-- practical large-file transfer, compression, feedback-driven adaptation, or live receiver feedback
+- practical large-file transfer, Brotli/zstd packing, feedback-driven adaptation, or live receiver feedback
 - production-grade FEC/RaptorQ or an adaptive transport controller (AGF2 sparse LT is experimental)
 - multi-role trust-bundle rotation, threshold authorization, or universally available concurrent policy-state locking
 - malware scanning or content disarm and reconstruction
