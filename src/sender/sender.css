@@ -106,7 +106,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .transfer-capacity legend { margin-right: 3px; color: #839589; font-size: 9px; }
 .sender-panel .transfer-capacity button { padding: 8px 9px; font: 700 9px/1 ui-monospace, monospace; }
 .sender-panel .transfer-capacity button.selected { border-color: #63e6b7; background: #173729; color: #7ff0c1; }
-.transfer-facts { display: grid; grid-template-columns: 1.15fr 1fr .8fr 1.15fr 1fr .9fr; gap: 1px; margin-top: 20px; border: 1px solid #203027; border-radius: 14px; overflow: hidden; background: #203027; }
+.transfer-facts { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; margin-top: 20px; border: 1px solid #203027; border-radius: 14px; overflow: hidden; background: #203027; }
 .transfer-facts > div { min-width: 0; display: grid; gap: 6px; padding: 16px; background: #0a120d; }
 .transfer-facts span { color: #718177; font: 700 8px/1 ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; }
 .transfer-facts strong { overflow-wrap: anywhere; color: #dfe9e2; font-size: 12px; }

@@ -243,7 +243,13 @@ export default function SenderApp() {
         maskPattern: profile.maskPattern,
       }).version;
       const receiver = new URL(`${import.meta.env.BASE_URL}receive.html`, window.location.origin);
-      const pairing = pairingUrl(receiver.toString(), envelope.publicKey, envelope.boundary);
+      const pairing = pairingUrl(
+        receiver.toString(),
+        envelope.publicKey,
+        envelope.boundary,
+        encoder.sessionId,
+        profile.id,
+      );
       frameRef.current = 0;
       loopsRef.current = 0;
       renderDropsRef.current = 0;
@@ -549,6 +555,7 @@ export default function SenderApp() {
           <div className="transfer-facts">
             <div><span>File</span><strong>{prepared.envelope.filename}</strong><small>{formatBytes(prepared.originalBytes)}</small></div>
             <div><span>Sender fingerprint</span><strong>{prepared.envelope.signerKeyId}</strong><small>Match this on the phone</small></div>
+            <div><span>Transfer session</span><strong>{formatSession(prepared.encoder.sessionId)}</strong><small>Pair again whenever this changes</small></div>
             <div>
               <span>Source lower bound</span>
               <strong>~{formatDuration(idealSeconds)} at selected FPS</strong>
@@ -639,4 +646,8 @@ function formatRate(bytesPerSecond: number): string {
 
 function formatPercent(ratio: number): string {
   return `${Math.max(0, Math.min(999, ratio * 100)).toFixed(0)}%`;
+}
+
+function formatSession(sessionId: Uint8Array): string {
+  return Array.from(sessionId.slice(0, 4), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
