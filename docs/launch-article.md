@@ -136,7 +136,7 @@ The source, protocol snapshots, tests, milestone reports, and limitations are in
 - independently written decoders for the published fixtures; and
 - critique of the threat model and novelty framing.
 
-The project will be called open source after an explicit project license is committed. Until then, the public repository is available for review but normal copyright restrictions apply.
+The project is available under the Apache License 2.0. The license permits commercial use and includes an explicit patent grant while preserving required notices; it does not turn this pre-alpha research prototype into a production security product.
 
 ## Suggested launch package
 
@@ -157,7 +157,7 @@ The project will be called open source after an explicit project license is comm
 
 ### Distribution order
 
-1. Tag a reproducible pre-alpha release after the license and physical dataset are ready.
+1. Tag a reproducible pre-alpha release after the physical dataset, checksums, SBOM, and provenance are ready.
 2. Publish this article and a full-resolution, uncut benchmark run.
 3. Post the live demo and source to Hacker News, Lobsters, relevant security/systems communities, and professional networks.
 4. Ask one concrete question: “What would you require before trusting this boundary?”
