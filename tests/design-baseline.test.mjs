@@ -25,6 +25,10 @@ const supportUrl = new URL("../SUPPORT.md", import.meta.url);
 const citationUrl = new URL("../CITATION.cff", import.meta.url);
 const issueConfigUrl = new URL("../.github/ISSUE_TEMPLATE/config.yml", import.meta.url);
 const deviceResultUrl = new URL("../.github/ISSUE_TEMPLATE/device-result.yml", import.meta.url);
+const licenseUrl = new URL("../LICENSE", import.meta.url);
+const packageJsonUrl = new URL("../package.json", import.meta.url);
+const cargoManifestUrl = new URL("../Cargo.toml", import.meta.url);
+const contributingUrl = new URL("../CONTRIBUTING.md", import.meta.url);
 
 test("contains the complete public design baseline", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -55,7 +59,7 @@ test("contains the complete public design baseline", async () => {
   assert.match(page, /QRFerry/);
   assert.match(page, /Decimen Optical Transfer/);
   assert.match(page, /Runnable milestone 14/);
-  assert.match(page, /Open-source gate/);
+  assert.match(page, /Open-source status/);
   assert.match(page, /Measure it on five device pairs/);
   assert.doesNotMatch(page, /Runnable milestone 9/);
   assert.doesNotMatch(page, /Runnable milestone 13/);
@@ -70,7 +74,7 @@ test("publishes an honest open-source and launch package", async () => {
     readFile(launchArticleUrl, "utf8"),
   ]);
 
-  assert.match(readiness, /public source is not the same as open source/i);
+  assert.match(readiness, /canonical Apache License 2\.0/i);
   assert.match(readiness, /session TOFU/i);
   assert.match(readiness, /five sender\/receiver pairs/i);
   assert.match(securityAudit, /No confirmed critical or high-severity frontend vulnerability/i);
@@ -96,13 +100,30 @@ test("publishes a visitor-first community front door", async () => {
   assert.match(readme, /glassbridge-social-preview\.png/);
   assert.match(readme, /See it work in about a minute/i);
   assert.match(readme, /Speed without fiction/i);
-  assert.match(readme, /not legally open source/i);
+  assert.match(readme, /licensed under the.*Apache License 2\.0/is);
   assert.match(conduct, /technical candor/i);
   assert.match(governance, /maintainer-led research project/i);
   assert.match(support, /private vulnerability reporting/i);
   assert.match(citation, /cff-version: 1\.2\.0/);
   assert.match(issueConfig, /security\/advisories\/new/);
   assert.match(deviceResult, /glassbridge-capacity\/3/);
+});
+
+test("publishes coherent Apache-2.0 licensing metadata", async () => {
+  const [license, packageJson, cargoManifest, citation, contributing] = await Promise.all([
+    readFile(licenseUrl, "utf8"),
+    readFile(packageJsonUrl, "utf8"),
+    readFile(cargoManifestUrl, "utf8"),
+    readFile(citationUrl, "utf8"),
+    readFile(contributingUrl, "utf8"),
+  ]);
+
+  assert.match(license, /^Apache License\n\s+Version 2\.0, January 2004/);
+  assert.match(license, /Grant of Patent License/);
+  assert.equal(JSON.parse(packageJson).license, "Apache-2.0");
+  assert.match(cargoManifest, /license = "Apache-2\.0"/);
+  assert.match(citation, /license: Apache-2\.0/);
+  assert.match(contributing, /Under Section 5/i);
 });
 
 test("uses product-specific metadata and no starter copy", async () => {

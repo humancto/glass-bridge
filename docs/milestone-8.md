@@ -134,8 +134,10 @@ selection are prior art or standard engineering components. Milestone 8 is an
 integration and usability result; it does not create a new novelty claim for
 those components.
 
-The repository itself still has no selected license. Adding an MIT dependency
-does not license GlassBridge source code.
+At the time of milestone 8, the repository had no selected project license;
+adding an MIT dependency did not license GlassBridge source code. The project
+subsequently adopted Apache-2.0 at the repository level. Third-party components
+continue under their own licenses and notices.
 
 ## Deferred work
 

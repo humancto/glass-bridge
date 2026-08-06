@@ -12,6 +12,7 @@
     "url": "https://github.com/humancto/glass-bridge/issues"
   },
   "author": "HumanCTO",
+  "license": "Apache-2.0",
   "keywords": [
     "air-gap",
     "optical-data-transfer",

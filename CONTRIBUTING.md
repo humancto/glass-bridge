@@ -5,7 +5,7 @@ GlassBridge is a runnable pre-alpha research prototype. Contributions that impro
 Before proposing a large change, open an issue describing the problem, security assumptions, intended result, and evidence needed to evaluate it.
 
 > [!IMPORTANT]
-> The repository is public for technical review but does not yet have a project-wide license. Discuss proposals and contribute reproducible device results now; third-party code should not be merged until the owner selects the project license and contribution terms are unambiguous.
+> GlassBridge is licensed under the Apache License 2.0. Under Section 5, an intentional contribution submitted for inclusion is licensed on the same terms unless you explicitly state otherwise. Only submit work you have the right to contribute; employer-owned or third-party material requires documented authorization and preserved notices.
 
 ## Good first contributions
 
@@ -66,3 +66,16 @@ The maintainer may ask to split a change when implementation, benchmark claims,
 and protocol redesign cannot be reviewed independently. See
 [GOVERNANCE.md](GOVERNANCE.md) for the decision model and the pull request
 template for the minimum evidence expected.
+
+## Licensing contributions
+
+You retain copyright in your contribution. By intentionally submitting it for
+inclusion, you provide the grants described by Apache-2.0; you do not transfer
+copyright ownership. Mark any communication that is not intended as a
+contribution accordingly.
+
+This inbound-equals-outbound policy keeps provenance clear for users and future
+due diligence. The project does not currently require copyright assignment or a
+separate contributor license agreement. If exclusive relicensing or another
+commercial structure becomes important, contribution terms should be reviewed
+with qualified counsel before that policy changes.

@@ -23,11 +23,11 @@
   <a href="https://github.com/humancto/glass-bridge/actions/workflows/pages.yml"><img src="https://github.com/humancto/glass-bridge/actions/workflows/pages.yml/badge.svg" alt="GitHub Pages"></a>
   <img src="https://img.shields.io/badge/status-pre--alpha-efb366" alt="Pre-alpha">
   <img src="https://img.shields.io/badge/transport-screen%20%E2%86%92%20camera-64e6b9" alt="Screen to camera">
-  <img src="https://img.shields.io/badge/license-decision%20pending-87958f" alt="License decision pending">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-64e6b9" alt="Apache License 2.0"></a>
 </p>
 
 > [!WARNING]
-> GlassBridge is a runnable research prototype, not a certified data diode, malware scanner, or production cross-domain solution. The source is public for technical review, but it is not legally open source until a project-wide license is committed.
+> GlassBridge is a runnable research prototype, not a certified data diode, malware scanner, or production cross-domain solution. Open-source availability does not make the prototype suitable for production security enforcement.
 
 ## See it work in about a minute
 
@@ -193,4 +193,4 @@ Before participating, read [CONTRIBUTING.md](CONTRIBUTING.md), [GOVERNANCE.md](G
 
 GlassBridge is a public pre-alpha research preview. It is not ready for production security enforcement, and physical multi-device results remain the acceptance gate for performance claims.
 
-A project-wide license has not yet been selected. Until an OSI-approved license is committed, normal copyright restrictions apply. Apache-2.0 is the documented recommendation because it is permissive and includes an express patent grant; selecting it remains an owner decision. Bundled and adapted components retain their notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+GlassBridge is licensed under the [Apache License 2.0](LICENSE). It permits use, modification, distribution, and commercial use subject to the license terms, including preservation of required notices. The copyright holders retain ownership; publishing under Apache-2.0 does not prevent commercial products, services, investment, or a future acquisition, although permissions already granted for published versions cannot be withdrawn. Bundled and adapted components retain their notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

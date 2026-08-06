@@ -1,14 +1,14 @@
 # GlassBridge open-source readiness review
 
-**Review date:** 2026-08-04  
+**Review date:** 2026-08-06  
 **Reviewed baseline:** milestone 14 browser research path, extending the `41c240a` trust-path audit  
-**Decision:** publish the work and invite technical review, but do not call the repository open source until a project license is committed.
+**Decision:** publish as an Apache-2.0 open-source research preview while keeping production and performance claims gated on physical evidence and security hardening.
 
 ## Executive answer
 
 GlassBridge is ready for a public **research preview**. It has a real laptop-to-phone demonstration, a tested Rust and browser implementation, written protocol snapshots, deterministic vectors, security limitations, third-party notices, and reproducible benchmark tooling. It is not ready to be described as a production cross-domain solution, certified data diode, malware control, or proven fastest optical-transfer system.
 
-The repository is already public, but public source is not the same as open source. A project-wide license has not been selected. Until that is resolved, normal copyright restrictions apply and outside contributors do not have clear permission to use, modify, or redistribute the original work.
+The repository now includes the canonical Apache License 2.0 and matching package, Cargo, and citation metadata. Users and contributors have explicit permission to use, modify, distribute, and commercially use the work subject to the license terms. This resolves the legal-permission blocker; it does not resolve the physical-performance, organizational-trust, or production-assurance gates.
 
 ### Public front-door audit
 
@@ -19,16 +19,16 @@ The repository is already public, but public source is not the same as open sour
 | Repository metadata | Ready | The concise About description, live-demo homepage, focused discovery topics, Discussions, labels, and issue routes are configured; the unused Wiki is disabled. |
 | Community package | Ready | Code of conduct, governance, support, citation, CODEOWNERS, guided issue forms, contribution policy, security policy, and pull-request checklist are present. |
 | Dependency and disclosure posture | Ready for preview | Dependabot, secret scanning, push protection, and private vulnerability reporting are enabled; third-party notices are committed. |
-| Legal permission | Blocked | The owner must explicitly select and commit the project license before the repository is described as open source. |
+| Legal permission | Ready | The canonical Apache-2.0 text, SPDX package metadata, citation metadata, contribution terms, and third-party notices are committed. |
 | Performance headline | Blocked | Physical device-matrix data is still required before claiming a phone-camera speed record. |
 
 ### Launch blockers
 
 | Priority | Blocker | Why it matters | Recommended action |
 | --- | --- | --- | --- |
-| P0 | No project license | The repository is visible, but reuse and contribution rights are unclear. | Choose and commit an OSI-approved license. Apache-2.0 is the recommended default for this protocol/security project because it includes an express patent grant. |
 | P0 | No physical device-matrix result set | The implemented channel budgets and ideal-raster tests are not phone-camera goodput. A speed headline without raw physical results would overclaim. | Run at least three repetitions for each announced profile on five sender/receiver pairs; publish every run as `glassbridge-capacity/3` JSON. |
 | P0 | Demo trust is session TOFU | The current pairing proves that the recovered envelope came from the ephemeral key shown during pairing. It does not prove a company, release role, managed device, or software publisher. | Keep the demo language explicit. Before a security-product claim, add provisioned organizational trust roots, signed role delegation, rotation, and revocation. |
+| P1 | Future exclusive relicensing is undefined | Apache-2.0 supports commercial use and acquisition, but outside contributors retain copyright and existing public grants are irrevocable. | Keep inbound and outbound terms aligned now. If an exclusive dual-license model becomes important, review a contributor agreement with qualified counsel before accepting substantial outside code. |
 
 ### Important before a production claim
 
@@ -167,8 +167,8 @@ If it succeeds, GlassBridge is not “a QR app.” It is an open boundary protoc
 
 ### Required to say “open source”
 
-- [ ] Select and commit a project-wide OSI-approved license.
-- [ ] Update package and Cargo metadata with the chosen SPDX identifier.
+- [x] Select and commit a project-wide OSI-approved license.
+- [x] Update package and Cargo metadata with the chosen SPDX identifier.
 - [x] Preserve adapted-code and bundled-library notices.
 - [x] Publish contribution and security policies.
 - [x] Exclude secrets, private data, internal conversations, and generated work directories.
@@ -194,8 +194,10 @@ If it succeeds, GlassBridge is not “a QR app.” It is an open boundary protoc
 - [x] Maintainer-led governance and protocol-change process.
 - [x] Support routing, CODEOWNERS, and guided issue configuration.
 
-## Recommended license decision
+## License decision and commercial optionality
 
-Use **Apache License 2.0 for the whole repository** for the first release. It is OSI-approved, permissive, familiar to companies, compatible with the project’s current MIT/Apache dependencies, and includes an express patent license from contributors. A single license is easier for early adopters than splitting code and specification licensing immediately.
+GlassBridge is licensed under the **Apache License 2.0 for the whole repository**. It is OSI-approved, permissive, familiar to companies, compatible with the project’s current MIT/Apache dependencies, and includes an express patent license from contributors. A single license is easier for early adopters than splitting code and specification licensing immediately.
+
+Apache-2.0 does not prevent the copyright holders from building paid products or services, licensing separately owned future work under different terms, raising investment, or selling copyright, trademarks, and other business assets in an acquisition. Versions already distributed under Apache-2.0 remain available under those terms. Outside contributors retain copyright in their contributions, so a later exclusive relicensing strategy may require a contributor agreement; adding one should be a deliberate legal and community decision, not a retroactive assumption.
 
 If the specification later moves to a standards process, add an explicit specification contribution/IPR policy with qualified legal review. This review is technical guidance, not legal advice or a freedom-to-operate opinion.
