@@ -249,7 +249,7 @@ export default function Home({
               <p>The public laptop-to-phone demo now applies bounded adaptive gzip when it removes optical bytes, binds that packing mode into pairing, and decodes dual QR lanes as parallel overlapping regions with periodic full-frame reacquisition. The verified path still ends in receiver-local policy, memory quarantine, post-receive analytics, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. Physical phone goodput remains the proof gate.</p>
             </Callout>
             <Callout label="Open-source status" tone="amber">
-              <p>GlassBridge is licensed under Apache-2.0, a permissive license with an express patent grant. Commercial use and future acquisition remain possible, while versions already released retain their license. <a href={readinessHref} target="_blank" rel="noreferrer"><strong>Read the launch audit</strong></a> for contribution-provenance and production-readiness limits.</p>
+              <p>Project-authored GlassBridge code and materials are licensed under Apache-2.0, a permissive license with an express patent grant. Commercial use and future acquisition remain possible; released copyright grants remain in force, while Section 3 defines a patent-litigation termination condition. <a href={readinessHref} target="_blank" rel="noreferrer"><strong>Read the launch audit</strong></a> for third-party, contribution-provenance, and production-readiness limits.</p>
             </Callout>
             <h3>Success looks like</h3>
             <div className="check-grid">
@@ -745,7 +745,7 @@ for await event in session.events {
             </div>
             <h3>Licensing and prior-art notes</h3>
             <div className="legal-note">
-              <div><strong>Project license</strong><p>GlassBridge is licensed under Apache-2.0 across the first release, providing a permissive copyright grant and explicit patent terms. Existing public grants are irrevocable; review contributor agreements with counsel before pursuing any future exclusive dual-license model.</p></div>
+              <div><strong>Project license</strong><p>Project-authored GlassBridge code and materials are licensed under Apache-2.0, providing a permissive copyright grant and explicit patent terms. Released copyright grants are irrevocable; Section 3 preserves a patent-litigation termination condition. Third-party components retain their own terms. Review contributor agreements with counsel before pursuing any future exclusive dual-license model.</p></div>
               <div><strong>Dependency isolation</strong><p>Track every codec/FEC dependency and license in an automated inventory. libcimbar is MPL-2.0; TXQR and Decimen identify MIT; qram identifies BSD-3-Clause. Reuse only under compatible terms and preserve notices.</p></div>
               <div><strong>RaptorQ caution</strong><p>RFC 6330 is an IETF standard and has associated IETF IPR disclosures, including Qualcomm #1958. An RFC is not a blanket patent license. Keep FEC pluggable, use LT for the clean baseline, and obtain qualified legal review before shipping or marketing a RaptorQ implementation.</p></div>
               <div><strong>No legal conclusion here</strong><p>This document is a technical planning artifact, not a patent landscape, license opinion, or freedom-to-operate analysis. Search claims, jurisdictions, expiration, continuations, and current license text with counsel before commercial release.</p></div>

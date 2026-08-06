@@ -69,10 +69,12 @@ template for the minimum evidence expected.
 
 ## Licensing contributions
 
-You retain copyright in your contribution. By intentionally submitting it for
-inclusion, you provide the grants described by Apache-2.0; you do not transfer
-copyright ownership. Mark any communication that is not intended as a
-contribution accordingly.
+You retain any copyright you own in your contribution. If an employer or other
+party owns it, submit it only with documented authorization and preserve the
+owner's notices. An intentional submission grants the permissions described by
+Apache-2.0; it does not transfer copyright ownership. If the copyright owner
+does not intend a communication as a contribution, mark it conspicuously as
+“Not a Contribution.”
 
 This inbound-equals-outbound policy keeps provenance clear for users and future
 due diligence. The project does not currently require copyright assignment or a

@@ -28,6 +28,11 @@ const deviceResultUrl = new URL("../.github/ISSUE_TEMPLATE/device-result.yml", i
 const licenseUrl = new URL("../LICENSE", import.meta.url);
 const packageJsonUrl = new URL("../package.json", import.meta.url);
 const cargoManifestUrl = new URL("../Cargo.toml", import.meta.url);
+const crateManifestUrls = [
+  new URL("../crates/agx-core/Cargo.toml", import.meta.url),
+  new URL("../crates/agx-visual/Cargo.toml", import.meta.url),
+  new URL("../crates/glassbridge-cli/Cargo.toml", import.meta.url),
+];
 const contributingUrl = new URL("../CONTRIBUTING.md", import.meta.url);
 
 test("contains the complete public design baseline", async () => {
@@ -110,18 +115,22 @@ test("publishes a visitor-first community front door", async () => {
 });
 
 test("publishes coherent Apache-2.0 licensing metadata", async () => {
-  const [license, packageJson, cargoManifest, citation, contributing] = await Promise.all([
+  const [license, packageJson, cargoManifest, citation, contributing, ...crateManifests] = await Promise.all([
     readFile(licenseUrl, "utf8"),
     readFile(packageJsonUrl, "utf8"),
     readFile(cargoManifestUrl, "utf8"),
     readFile(citationUrl, "utf8"),
     readFile(contributingUrl, "utf8"),
+    ...crateManifestUrls.map((url) => readFile(url, "utf8")),
   ]);
 
   assert.match(license, /^Apache License\n\s+Version 2\.0, January 2004/);
   assert.match(license, /Grant of Patent License/);
   assert.equal(JSON.parse(packageJson).license, "Apache-2.0");
   assert.match(cargoManifest, /license = "Apache-2\.0"/);
+  for (const crateManifest of crateManifests) {
+    assert.match(crateManifest, /license\.workspace = true/);
+  }
   assert.match(citation, /license: Apache-2\.0/);
   assert.match(contributing, /Under Section 5/i);
 });
