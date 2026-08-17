@@ -44,6 +44,9 @@ export async function createBrowserEnvelope(
   payload: Uint8Array,
   options: BrowserEnvelopeOptions,
 ): Promise<BrowserEnvelope> {
+  if (payload.length === 0) {
+    throw new Error("Choose a non-empty file to send.");
+  }
   if (payload.length > MAX_BROWSER_FILE_BYTES) {
     throw new Error(`This browser milestone supports files up to ${formatBytes(MAX_BROWSER_FILE_BYTES)}.`);
   }

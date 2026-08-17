@@ -1,5 +1,10 @@
 # Milestone 13: measurable capacity ladder
 
+> Historical milestone snapshot. It preserves the QR capacity-ladder design and
+> measurements from that milestone. It is not the current phone test protocol.
+> [Milestone 16](milestone-16.md) is the canonical pre-alpha acquisition report
+> and physical Grid smoke gate as of 2026-08-17.
+
 Milestone 13 replaces a single speed claim with a repeatable search for the
 stable capacity of one laptop/phone pair. It changes rate and density separately,
 reports sender misses, and exports the receiver result as structured JSON.

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { classifyFailure, createDeviceRunFailureReport } from "../src/receiver/device-run-report";
 
@@ -15,11 +16,25 @@ const camera = {
   sourceHeight: 720,
   negotiatedFps: 60,
   cameraSeconds: 8.2,
+  callbackFrames: 980,
   cameraFrames: 490,
+  cameraExposures: 490,
+  duplicateCallbacks: 490,
+  submittedExposures: 472,
   decodeJobs: 472,
   successfulDecodeJobs: 0,
   emptyDecodeJobs: 472,
   throttledFrames: 18,
+  rateLimitedExposures: 12,
+  captureCopyP50Ms: 1.4,
+  captureCopyP95Ms: 2.8,
+  workerRoundTripP50Ms: 5.2,
+  workerRoundTripP95Ms: 9.8,
+  rgbaBytesPerSecond: 123_456_789,
+  sameFrameReacquisitions: 6,
+  sameFrameReacquisitionSuccesses: 4,
+  sameFrameReacquisitionP50Ms: 8.4,
+  sameFrameReacquisitionP95Ms: 12.7,
   gridOutcome: "markers-not-found" as const,
   gridContrast: 22.4,
   gridScreenFillRatio: 0.31,
@@ -37,6 +52,7 @@ describe("physical device failure reports", () => {
       targetSymbolRate: 30,
       transferSession: "01020304",
       reason: "The Grid markers were not acquired.",
+      sourceMode: "camera",
       progress: {
         rank: 0,
         required: 0,
@@ -52,6 +68,7 @@ describe("physical device failure reports", () => {
       schema: "glassbridge-device-run/1",
       run_id: "run-test-1",
       outcome: "failed",
+      source_mode: "camera",
       failure_class: "operator-or-environment-error",
       profile: {
         id: "grid",
@@ -60,6 +77,10 @@ describe("physical device failure reports", () => {
       },
       camera: {
         exposures: 490,
+        callback_frames: 980,
+        camera_exposures: 490,
+        duplicate_callbacks: 490,
+        submitted_exposures: 472,
         decode_jobs: 472,
         empty_decode_jobs: 472,
         optical_acquisition_percent: 0,
@@ -67,7 +88,17 @@ describe("physical device failure reports", () => {
         height: 540,
         source_width: 1_280,
         source_height: 720,
-        rate_limited_exposures: 18,
+        rate_limited_exposures: 12,
+        capture_copy_p50_ms: 1.4,
+        capture_copy_p95_ms: 2.8,
+        worker_round_trip_p50_ms: 5.2,
+        worker_round_trip_p95_ms: 9.8,
+        rgba_bytes_per_second: 123_456_789,
+        same_frame_reacquisitions: 6,
+        same_frame_reacquisition_successes: 4,
+        same_frame_reacquisition_p50_ms: 8.4,
+        same_frame_reacquisition_p95_ms: 12.7,
+        sampling_status: "oversampled",
         grid_last_outcome: "markers-not-found",
         grid_contrast: 22.4,
         grid_screen_fill_percent: 31,
@@ -84,15 +115,50 @@ describe("physical device failure reports", () => {
     expect(classifyFailure("paired to a different transfer session")).toBe("session-mismatch");
     expect(classifyFailure("Not enough independent frames: rank 4 of 20")).toBe("rank-incomplete");
     expect(classifyFailure("Signature verification failed")).toBe("verification-or-policy-error");
+    expect(classifyFailure("Operator stopped camera scanning before verification.")).toBe("operator-or-environment-error");
+    expect(classifyFailure("Operator stopped saved-frame decoding before verification.")).toBe("operator-or-environment-error");
   });
 
   it("publishes a machine-readable schema for failed physical runs", async () => {
     const schema = JSON.parse(await readFile(
       new URL("../spec/glassbridge-device-run-1.schema.json", import.meta.url),
       "utf8",
-    )) as { properties: { schema: { const: string } }; required: string[] };
+    )) as {
+      properties: {
+        schema: { const: string };
+        camera: { properties: Record<string, unknown> };
+      };
+      required: string[];
+    };
     expect(schema.properties.schema.const).toBe("glassbridge-device-run/1");
     expect(schema.required).toContain("failure_class");
+    expect(schema.required).toContain("source_mode");
     expect(schema.required).toContain("camera");
+    expect(schema.properties.camera.properties).toHaveProperty("callback_frames");
+    expect(schema.properties.camera.properties).toHaveProperty("worker_round_trip_p95_ms");
+    expect(schema.properties.camera.properties).toHaveProperty("same_frame_reacquisitions");
+
+    const report = createDeviceRunFailureReport({
+      measuredAt: new Date("2026-08-16T20:00:00.000Z"),
+      runId: "run-schema-1",
+      profileId: "grid",
+      targetSymbolRate: 30,
+      transferSession: "01020304",
+      reason: "Operator stopped camera scanning before verification.",
+      sourceMode: "camera",
+      progress: {
+        rank: 0,
+        required: 73,
+        acceptedFrames: 0,
+        duplicateFrames: 0,
+        rejectedFrames: 0,
+      },
+      camera,
+      device: "test-phone",
+    });
+    const validate = new Ajv2020({ allErrors: true, strict: true, validateFormats: false })
+      .compile(schema);
+    expect(validate(JSON.parse(JSON.stringify(report))), JSON.stringify(validate.errors, null, 2))
+      .toBe(true);
   });
 });

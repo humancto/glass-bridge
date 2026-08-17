@@ -1,6 +1,6 @@
-# A File Crossed an Air Gap. The Trust Boundary Came With It.
+# What If a File Crossing an Air Gap Carried Its Trust Contract?
 
-*Draft launch article for GlassBridge / AGX — 2026-08-04*
+*Draft launch article for GlassBridge / AGX — 2026-08-17*
 
 The obvious demo is almost too simple: choose a file on a laptop, point a phone camera at two moving QR codes, and save the reconstructed file.
 
@@ -32,7 +32,7 @@ So GlassBridge treats every optical frame like a hostile packet and treats “ai
 
 This project exists because prior work moved the baseline.
 
-[Decimen Optical Transfer](https://github.com/bashalarmistalt/decimen-optical-transfer) already provides a polished browser experience for one-way fountain-coded QR transfer, works offline after the first visit, verifies SHA-256, supports files up to 64 MB, and reports a larger experiment reaching 128 KB/s phone-to-phone.
+[Decimen Optical Transfer v0.4.0](https://github.com/bashalarmistalt/decimen-optical-transfer/tree/v0.4.0) already provides a polished browser experience for one-way fountain-coded QR transfer, works offline after the first visit, and verifies SHA-256. Its README reports 418.5 KB/s sustained and 601.5 KB/s peak for desktop-to-phone, plus 199.2 KB/s sustained and 340.8 KB/s peak for phone-to-phone. These are Decimen's published numbers, not GlassBridge measurements, and a fair comparison still requires aligned payloads, devices, conditions, and timing windows. Decimen v0.4.0 and later are AGPL-3.0-or-later; GlassBridge's adapted fountain code is pinned to the MIT-licensed v0.3.0 commit identified in the [third-party notices](../THIRD_PARTY_NOTICES.md), and no post-v0.3.0 Decimen source is incorporated.
 
 [QRFerry](https://github.com/deedy/qr-data-transfer) pushes browser transport with raw QR bytes, RaptorQ, refresh-stable dual lanes, dense laboratory profiles, and detailed decoder telemetry. [TXQR](https://github.com/divan/txqr), [qram](https://github.com/digitalbazaar/qram), and [libcimbar](https://github.com/sz3/libcimbar) establish even more of the animated-fountain and custom-code landscape.
 
@@ -84,17 +84,17 @@ This is a defensible systems contribution, not yet a claim of being the first sy
 
 ## The live result—and the honest speed story
 
-The public pre-alpha currently supports one file up to 256 KiB. Its default Burst mode shows two QR lanes and uses sparse LT repair. Milestones 13 and 14 added controlled 30/60/90/120 combined-code steps, a dense Ceiling Lab profile, bounded adaptive gzip, and lane-parallel decoding. Milestone 15 added a registered binary Grid v0. Milestone 16 fixes the first live acquisition bottlenecks: Grid-only fullscreen, integer cell scaling, a valid acquisition preamble, persistent registration, bounded latest-frame scheduling, acquisition and absolute session limits that preserve valid LT rank plateaus, and exported lock-quality diagnostics.
+The public pre-alpha currently supports one file up to 256 KiB. Its default Burst mode shows two QR lanes and uses sparse LT repair. Milestones 13 and 14 added controlled 30/60/90/120 combined-code steps, a dense Ceiling Lab profile, bounded adaptive gzip, and lane-parallel decoding. Milestone 15 added a registered binary Grid v0. Milestone 16 addresses several acquisition hypotheses—sender controls sharing the raster, fractional cell scaling, cold-start exposure and registration, repeated full-frame work, and ambiguous stalled runs—with Grid-only fullscreen, integer cell scaling, an acquisition preamble, registration reuse with transport-valid reacquisition, bounded latest-frame scheduling, explicit session limits, and exported lock-quality diagnostics. It does not yet track the screen quadrilateral locally between global registration attempts. Only undiscarded physical runs can show whether these paths were the real bottlenecks.
 
 The implemented Ceiling Lab channel budget reaches 348,000 useful symbol bytes per second, or 339.8 KiB/s, before camera loss and protocol overhead. That is a capacity bound, not physical goodput.
 
 For structured files, effective file goodput can rise without increasing the optical symbol rate. A deterministic 144 KiB structured-CSV development sample required 23,907 optical bytes after packing, a 6.17× reduction. Already-compressed and encrypted inputs do not receive that benefit. On ideal 1280×720 rasters, lane-level acquisition approximately halved QR decode latency; only the phone-camera tests can show whether that CPU headroom becomes completed-file goodput.
 
-The phone now reports the number that matters after a successful run: verified payload bytes per second. It also preserves the last 20 comparable results locally and exports a versioned JSON record, so a fast-looking best run cannot silently replace the distribution.
+After a successful run, the phone reports diagnostic verified payload bytes per second and exports a versioned JSON record. It retains the last 20 comparable records in resettable browser storage, matched by browser user agent, visual PHY, target rate, and exact payload. That history helps same-setup iteration but does not identify physical hardware and cannot prevent an operator from clearing storage, restarting a series, or selectively publishing results. Publication discipline therefore comes from a preregistered run set and the release of every raw success, failure, abort, and timeout.
 
-We have ideal-raster tests and a deterministic camera-raster simulator with perspective, fractional resampling, moiré, brightness loss, colored distractors, blur, and rolling-shutter transition tears. Its 144 KiB Grid30 gate recovers 73/73 stable source epochs byte-for-byte at about 7.4 ms p95 decode on the development Mac, while transport CRC rejects every mixed transition epoch in the run. The modeled source floor is 2.43 seconds and the expected LT window is 3.4 seconds. These numbers still do not measure a phone camera. The next public result must include every run, every failure, device metadata, visual PHY, target rate, payload size, and raw JSON.
+We have ideal-raster tests and a deterministic camera-raster simulator with perspective, fractional resampling, moiré, brightness loss, colored distractors, blur, and rolling-shutter transition tears. Its 144 KiB Grid30 gate recovers 73/73 stable source epochs byte-for-byte at about 7.4 ms p95 decode on the development Mac, while transport CRC rejects every mixed transition epoch in the run. The modeled source floor is 2.43 seconds and the expected LT window is 3.4 seconds. These numbers still do not measure a phone camera. The next public result must predeclare one exact sender/receiver pair and build, run three consecutive smoke attempts without discarding warm-ups, failures, or aborts, and publish every result with the visual PHY, target rate, payload size, setup, and raw JSON. The Grid first-accepted-to-last-accepted diagnostic may include the one-second symbol-zero acquisition preamble. Camera-open and first-accepted windows are useful diagnosis, not speed headlines; publication comparisons require a synchronized optical start marker.
 
-If GlassBridge beats 128 KB/s on some pairs, that is interesting. If it does not, the diagnostic pipeline should tell us whether the limit is display scheduling, rolling shutter, camera delivery, QR acquisition, worker pressure, erasures, or fountain overhead. Either outcome advances the work.
+Grid v0 carries 2,032 useful bytes per symbol, so its one-lane ceiling is 59.5 KiB/s at 30 symbols/s and 119.1 KiB/s at 60 symbols/s before any loss or fountain overhead. It cannot match Decimen's current 199.2 KB/s phone-to-phone or 418.5 KB/s desktop-to-phone sustained figures on incompressible data by scheduling alone. Reaching that class requires more independently recoverable visual capacity—a multi-lane or denser PHY, temporal/rolling-shutter recovery, suitable compression, or a combination—plus physical evidence. The diagnostic pipeline should tell us whether each failed gain is limited by display scheduling, rolling shutter, camera delivery, acquisition, worker pressure, erasures, or fountain overhead.
 
 ## Why one-way can work
 
@@ -124,9 +124,9 @@ The hard problems are not hidden: trust provisioning, protected replay state, ma
 
 ## Try it, measure it, break it
 
-Open [GlassBridge Send](https://humancto.github.io/glass-bridge/send.html) on a laptop, select the 144 KiB capacity file and Grid 30 lab, and prepare the transfer. Scan the stationary pairing QR with a phone, confirm the fingerprint, open the phone camera, and turn the phone landscape. Only then press **Fullscreen & start** once on the laptop and keep all four colored Grid corners visible. Repeat 30/s three times before attempting 60/s. A rate change forces re-pairing because the receiver must bind the exact channel being measured.
+Open [GlassBridge Send](https://humancto.github.io/glass-bridge/send.html) on a laptop, select the 144 KiB capacity file and Grid 30 lab, and prepare the transfer. Scan the stationary pairing QR with a phone, confirm the fingerprint, open the phone camera, and turn the phone landscape. Only then press **Fullscreen & start** once on the laptop and keep all four colored Grid corners visible. Name the exact sender/receiver pair and build before starting a three-attempt smoke set. A rate change forces re-pairing because the receiver must bind the exact channel being measured.
 
-After verification, save the benchmark JSON. Repeat the exact condition three times before increasing one capacity step. Synthetic test data only: this is pre-alpha research, not a production security control.
+Save the success or failure JSON after every attempt, including the first attempt, warm-ups, aborts, and timeouts; do not restart the set to remove an unfavorable run. Pass the smoke gate only if all three consecutive Grid 30 attempts verify. Treat camera-open-to-verified as a diagnostic. Do not publish a comparative speed result until sender optical start and receiver timing share a synchronized marker. Synthetic test data only: this is pre-alpha research, not a production security control.
 
 The source, protocol snapshots, tests, milestone reports, and limitations are in [humancto/glass-bridge](https://github.com/humancto/glass-bridge). The most useful contributions right now are:
 
@@ -142,9 +142,13 @@ The project is available under the Apache License 2.0. The license permits comme
 
 ### Headline
 
-**Show HN: GlassBridge — signed, policy-gated air-gap transfer through light**
+**Show HN: GlassBridge — a signed, policy-gated optical crossing experiment**
 
-### 40-second demo sequence
+### Short explanatory demo sequence
+
+This edited sequence explains the workflow; it is not benchmark evidence. Pair
+it with an uncut, synchronized-start run and raw JSON when physical results are
+ready.
 
 1. Show Wi-Fi disabled on the receiving device only if it really is disabled.
 2. Choose the 144 KiB test file on the laptop.

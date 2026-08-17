@@ -7,7 +7,7 @@
 <p align="center"><strong>Move trusted data through light.</strong></p>
 
 <p align="center">
-  A fast, verifiable optical gateway for controlled file exchange across disconnected and air-gapped boundaries.
+  A runnable pre-alpha for verifiable optical file exchange across controlled, disconnected boundaries.
 </p>
 
 <p align="center">
@@ -29,9 +29,12 @@
 > [!WARNING]
 > GlassBridge is a runnable research prototype, not a certified data diode, malware scanner, or production cross-domain solution. Open-source availability does not make the prototype suitable for production security enforcement.
 
-## See it work in about a minute
+## Try the browser flow
 
-You need a laptop and a phone. Nothing is installed, and the application has no upload endpoint.
+You need a laptop and a phone. The live path runs in two browsers and has no
+application upload endpoint. The web applications are provisioned separately
+over HTTPS; the demo does not make an ordinary phone an air-gapped or
+receive-only device.
 
 1. Open the [sender](https://humancto.github.io/glass-bridge/send.html) on the laptop.
 2. Select **Load demo sample** or choose one file up to 256 KiB.
@@ -40,7 +43,7 @@ You need a laptop and a phone. Nothing is installed, and the application has no 
 5. For the compatibility baseline, hold the phone landscape with both QR codes inside the guide, then start the stream on the laptop. For **Grid 30 lab**, turn the phone landscape first, then tap **Fullscreen & start** on the laptop once and keep all four colored corner markers visible. Escape exits fullscreen and pauses.
 6. Review the verified object in quarantine, approve release, then save the file and signed receipt.
 
-For a performance run, choose **Load 144 KiB test payload** and **Grid 30 lab** before preparing. Open the paired receiver and camera before pressing **Fullscreen & start**. Repeat 30/s three times before trying 60/s. Changing the target rate intentionally requires re-pairing because pairing v4 binds the visual PHY and rate. Export **Save / share benchmark JSON** after each receive; the phone compares only the same device, PHY, rate, exact payload, and measurement window.
+For a performance run, click **Load 144 KiB test payload**; this only queues the file. Select **Grid 30 lab**, then click **Prepare secure transfer**. Open the paired receiver and camera before pressing **Fullscreen & start**. Predeclare one exact laptop/phone pair and run three consecutive 30/s attempts without discarding warm-ups, failures, aborts, or timeouts; try 60/s only after all three verify. Changing the target rate intentionally requires re-pairing because pairing v4 binds the visual PHY and rate. Export the success or failure JSON after every attempt. Camera-open timing is diagnostic; publication comparisons require a synchronized sender optical-start marker.
 
 ## Why this project exists
 
@@ -75,7 +78,7 @@ The strict one-way profile requires no acknowledgment or return signal. Pairing 
 
 ## Speed without fiction
 
-The parallel performance audit found that QR generation, LT reconstruction, cryptography, and ideal-raster decoding are not the current limit. The bottleneck was acquisition: the sender used fractional display scaling and fullscreened its entire control panel, while the receiver copied and globally re-registered a full camera raster on every exposure. Milestone 16 makes the Grid itself fullscreen at integer cell sizes, holds a valid acquisition preamble, reuses registration, bounds decode cadence, and separates camera, PHY, CRC-accepted, duplicate, and rank-growth telemetry.
+Instrumentation on the development setup points to screen-camera acquisition as the leading bottleneck hypothesis; repeated physical runs are still required to establish the bottleneck and measured benefit. The audit found concrete acquisition-path defects: the sender used fractional display scaling and fullscreened its entire control panel, while the receiver copied and globally re-registered a full camera raster on every exposure. Milestone 16 addresses those paths with Grid-only fullscreen at integer cell sizes, a valid acquisition preamble, registration reuse with bounded transport-valid reacquisition, bounded decode cadence, and separate camera-exposure, decode-job, transport-valid, duplicate, and rank-growth telemetry. It does not yet track the screen quadrilateral locally between global registration attempts.
 
 | Profile | Useful payload | Nominal budget | Intended role |
 | --- | ---: | ---: | ---: |
@@ -85,7 +88,17 @@ The parallel performance audit found that QR generation, LT reconstruction, cryp
 
 These are pre-loss channel budgets, not phone-camera results. Display refresh, camera exposure, rolling shutter, focus, moiré, and operator motion determine physical goodput. A higher selected code rate can be slower if it produces more rejected frames.
 
-The deterministic camera-raster gate projects the Grid through fractional perspective, bilinear resampling, moiré, brightness loss, colored distractors, and a high-fill blur probe. On the development Mac it reconstructed a 144 KiB payload from all 73 stable source epochs byte-for-byte with zero inner corrections and about 7.4 ms p95 decode; 72 mixed rolling-shutter epochs were rejected by transport CRC. The modeled Grid30 source floor is 2.43 seconds and the expected 102-frame LT window is 3.4 seconds. These are synthetic acquisition results—not phone-camera goodput. A structured 144 KiB CSV development sample packed to 23,907 optical bytes, while already-compressed or encrypted files usually remain on the identity path.
+The [Decimen v0.4.0 README](https://github.com/bashalarmistalt/decimen-optical-transfer/blob/v0.4.0/README.md)
+README reports 418.5 KB/s sustained and 601.5 KB/s peak for desktop-to-phone,
+plus 199.2 KB/s sustained and 340.8 KB/s peak for phone-to-phone. Those are the
+current public prior-art numbers, not GlassBridge results, and are not directly
+comparable until the payload, device, setup, and timing window are aligned.
+Grid v0's one-lane 60/s nominal ceiling is 119.1 KiB/s before loss, so matching
+those results requires a different PHY, more independently recoverable visual
+capacity, compression on suitable inputs, or some combination—not a scheduler
+label.
+
+The deterministic camera-raster gate projects the Grid through fractional perspective, bilinear resampling, moiré, brightness loss, colored distractors, and a high-fill blur probe. On the development Mac it reconstructed a 144 KiB payload from all 73 stable source epochs byte-for-byte with zero inner corrections and about 7.4 ms p95 decode; 72 mixed rolling-shutter epochs were rejected by transport CRC. The modeled Grid30 source floor is 2.43 seconds and the expected 102-frame LT window is 3.4 seconds. These are synthetic acquisition results—not phone-camera goodput. A structured 144 KiB CSV development sample packed to 23,907 optical bytes, while already-compressed or encrypted files usually remain on the identity path. Grid's first-accepted-to-last-accepted diagnostic can include its one-second symbol-zero acquisition preamble; it is intentionally not the publication timing window.
 
 Read the complete methodology and stop rules in [Milestone 13](docs/milestone-13.md), [Milestone 14](docs/milestone-14.md), [Milestone 15](docs/milestone-15.md), [Milestone 16](docs/milestone-16.md), [AGX-PHY-GRID-0001](spec/AGX-PHY-GRID-0001.md), and [BENCH-0001](spec/BENCH-0001.md).
 
@@ -101,7 +114,7 @@ Read the complete methodology and stop rules in [Milestone 13](docs/milestone-13
 - lane-parallel ZXing-C++ WASM decoding
 - default-deny browser policy and in-memory quarantine
 - replay reservation and receiver-signed release evidence
-- `glassbridge-capacity/5` success analytics and schema-backed `glassbridge-device-run/1` failure diagnostics, including camera-open-to-verified goodput, first-valid latency, unique/duplicate rates, Grid lock quality, throttling, empty jobs, and like-for-like device/PHY/rate comparisons
+- schema-backed `glassbridge-capacity/5` success analytics and `glassbridge-device-run/1` failure diagnostics, including camera-open-to-verified diagnostics, first-valid latency, unique/duplicate rates, Grid lock quality, throttling, empty jobs, and comparisons matched by browser user agent, visual PHY, target rate, and exact payload; this is not a hardware identity guarantee
 - Rust CLI, deterministic browser/Rust vectors, real PNG and H.264 loopbacks
 
 Still research work: organizational trust roots, large-file transport, production FEC, adaptive feedback, protected monotonic replay state, encryption, malware scanning/CDR, native applications, dedicated receive-only hardware, and certification.
@@ -143,12 +156,14 @@ Run the deterministic trust-path demo:
 cargo run --locked -p glassbridge-cli -- demo
 ```
 
-Build a self-contained screen-to-phone demo bundle:
+Build the legacy CLI screen-demo fixture:
 
 ```bash
-cargo run --locked -p glassbridge-cli -- screen-demo
-open work/phone-demo/player.html
+cargo run --locked -p glassbridge-cli -- screen-demo --output-dir work/phone-demo-run-001
+open work/phone-demo-run-001/player.html
 ```
+
+Pass a new empty `--output-dir` (for example, `work/phone-demo-run-001`) for each screen-demo run. On non-macOS systems, open the generated `player.html` in a browser instead of using `open`. The generated player and frame assets are local, but the live phone receiver is a separately provisioned HTTPS page unless you explicitly host it yourself; this command is not a self-contained high-assurance receiver or proof of an end-to-end air gap.
 
 Useful performance commands:
 
@@ -159,6 +174,7 @@ npm run benchmark:burst-decode
 npm run benchmark:turbo-decode
 npm run benchmark:grid
 npm run benchmark:grid-acquisition
+npm run benchmark:grid-recovery
 ```
 
 ## Repository map
@@ -185,8 +201,9 @@ research/                    self-contained GlassBridge / AGX PRD
 - [Launch article](docs/launch-article.md)
 - [Open-source readiness review](docs/open-source-readiness.md)
 - [Browser security audit](docs/open-source-security-audit.md)
+- [Successful-run JSON schema](spec/glassbridge-capacity-5.schema.json) and [failed-run JSON schema](spec/glassbridge-device-run-1.schema.json)
 - [AGX envelope](spec/AGX-0001.md), [optical transport](spec/AGX-OT-0001.md), [policy](spec/POLICY-0001.md), [reception evidence](spec/RECEPTION-0001.md), and [browser receipts](spec/BROWSER-RECEIPT-0001.md)
-- [Third-party notices and prior-art attribution](THIRD_PARTY_NOTICES.md)
+- [Third-party notices and prior-art attribution](THIRD_PARTY_NOTICES.md) and the generated [dependency license inventory](THIRD_PARTY_LICENSES.md)
 
 ## Contributing and research results
 
@@ -198,4 +215,4 @@ Before participating, read [CONTRIBUTING.md](CONTRIBUTING.md), [GOVERNANCE.md](G
 
 GlassBridge is a public pre-alpha research preview. It is not ready for production security enforcement, and physical multi-device results remain the acceptance gate for performance claims.
 
-Project-authored GlassBridge code and materials are licensed under the [Apache License 2.0](LICENSE). It permits use, modification, distribution, and commercial use subject to the license terms, including preservation of required notices. The copyright holders retain ownership; publishing under Apache-2.0 does not prevent commercial products, services, investment, or a future acquisition. Copyright permissions already granted for released versions are irrevocable, while Section 3 defines a patent-litigation termination condition. Bundled and adapted components retain their own licenses and notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Project-authored GlassBridge code and materials are licensed under the [Apache License 2.0](LICENSE). It permits use, modification, distribution, and commercial use subject to the license terms, including preservation of required notices. The copyright holders retain ownership; publishing under Apache-2.0 does not prevent commercial products, services, investment, or a future acquisition. Copyright permissions already granted for released versions are irrevocable, while Section 3 defines a patent-litigation termination condition. Bundled and adapted components retain their own licenses and notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the generated [dependency license inventory](THIRD_PARTY_LICENSES.md) is additional review evidence, not a legal opinion or a guarantee of completeness.

@@ -2,9 +2,11 @@
  * Sparse LT fountain primitives for the AGF2 optical wire format.
  *
  * The robust-soliton construction and deterministic logarithm are adapted from
- * Decimen Optical Transfer's MIT-licensed fountain implementation. GlassBridge
- * adds a systematic prefix and derives the seed from its 128-bit session ID.
- * See THIRD_PARTY_NOTICES.md.
+ * Decimen Optical Transfer v0.3.0's MIT-licensed shared/fountain.ts and
+ * shared/protocol.ts at commit 29cba8fa25dd160c8b6aa18fe3b48fbc5bde2e36.
+ * No post-v0.3.0 Decimen source is incorporated. GlassBridge adds a systematic
+ * prefix and derives the seed from its 128-bit session ID. See
+ * THIRD_PARTY_NOTICES.md.
  */
 
 const LN2 = 0.6931471805599453;

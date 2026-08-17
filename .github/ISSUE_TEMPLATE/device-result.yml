@@ -9,13 +9,15 @@ body:
     attributes:
       value: >-
         Thank you for measuring the physical channel. Use synthetic payloads,
-        repeat one unchanged condition at least three times, and include failed
-        runs. A best run by itself is not a benchmark.
+        predeclare one named sender/receiver pair and one unchanged condition,
+        then run three consecutive attempts. Include warm-ups, failures, aborts,
+        and timeouts; do not restart the set to remove a result. A best run by
+        itself is not a benchmark.
   - type: input
     id: build
     attributes:
       label: GlassBridge build
-      placeholder: Commit SHA
+      placeholder: Full 40-character SHA from the reviewed clean checkout
     validations:
       required: true
   - type: textarea
@@ -33,17 +35,35 @@ body:
     validations:
       required: true
   - type: input
+    id: pair_name
+    attributes:
+      label: Named device pair
+      description: Record the pair once here. Current JSON stores a browser user-agent, not a unique hardware or pair identity; map attachments by run_id/measured_at.
+      placeholder: MacBook Pro 14-inch (2024) → iPhone 15 Pro
+    validations:
+      required: true
+  - type: input
     id: profile
     attributes:
       label: Profile and payload
-      placeholder: Burst 60/s Stable, 147456 bytes
+      placeholder: Grid 30 lab, 147456 bytes
     validations:
       required: true
   - type: textarea
     id: runs
     attributes:
       label: All repeated runs
-      description: Attach or paste each exported `glassbridge-capacity/4` JSON record. Also describe every failed or aborted attempt until structured failure export lands; a best run alone is not a benchmark.
+      description: Attach or paste all three consecutive attempts plus any preceding warm-up. Include each `glassbridge-capacity/5` success and every `glassbridge-device-run/1` failure, abort, or timeout; none may be discarded. Physical datasets must use `source_mode: camera`; saved-frame diagnostics are not phone-camera runs.
+    validations:
+      required: true
+  - type: dropdown
+    id: timing_basis
+    attributes:
+      label: Timing basis
+      description: Camera-open-to-verified is diagnostic only. A publication comparison requires a synchronized sender optical-start marker.
+      options:
+        - Synchronized optical start marker
+        - Camera-open diagnostic only (not publication eligible)
     validations:
       required: true
   - type: textarea

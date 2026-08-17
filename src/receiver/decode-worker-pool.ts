@@ -23,26 +23,31 @@ export type DecodeWorkerResponse = {
     outcome: GridDecodeOutcome;
     markersFound: boolean;
     registrationReused: boolean;
+    transportValid?: boolean;
     correctedCodewords?: number;
     contrast?: number;
     screenFillRatio?: number;
+    reacquiredSameFrame?: boolean;
   };
   error?: string;
 };
 
 export type DecodeResult = Omit<DecodeWorkerResponse, "codes"> & {
   codes?: Array<{ bytes?: Uint8Array; text?: string }>;
+  roundTripMs?: number;
 };
 
 type WorkerSlot = {
   worker: Worker;
   busy: boolean;
+  submittedAt?: number;
 };
 
 type WorkerFactory = () => Worker;
+type MonotonicClock = () => number;
 
 export class DecodeWorkerPool {
-  private readonly slots: WorkerSlot[];
+  private readonly slots: WorkerSlot[] = [];
   private nextId = 0;
   private active = true;
 
@@ -50,36 +55,51 @@ export class DecodeWorkerPool {
     size: number,
     private readonly onResult: (result: DecodeResult) => void,
     workerFactory: WorkerFactory = createDecodeWorker,
+    private readonly clock: MonotonicClock = () => performance.now(),
   ) {
     if (!Number.isSafeInteger(size) || size < 1 || size > 8) {
       throw new Error("Decode worker count must be between one and eight.");
     }
-    this.slots = Array.from({ length: size }, () => {
-      const worker = workerFactory();
-      const slot: WorkerSlot = { worker, busy: false };
-      worker.onmessage = (event: MessageEvent<DecodeWorkerResponse>) => {
-        if (!this.active) return;
-        slot.busy = false;
-        const result = event.data;
-        this.onResult({
-          ...result,
-          codes: result.codes?.map((code) => ({
-            ...code,
-            bytes: code.bytes ? new Uint8Array(code.bytes) : undefined,
-          })),
-        });
-      };
-      worker.onerror = (event) => {
-        if (!this.active) return;
-        slot.busy = false;
-        this.onResult({
-          id: -1,
-          decodeMs: 0,
-          error: event.message || "Optical decode worker failed.",
-        });
-      };
-      return slot;
-    });
+    try {
+      for (let index = 0; index < size; index += 1) {
+        const worker = workerFactory();
+        const slot: WorkerSlot = { worker, busy: false };
+        // Register ownership before assigning handlers so even an exotic
+        // Worker implementation with a throwing event setter is cleaned up.
+        this.slots.push(slot);
+        worker.onmessage = (event: MessageEvent<DecodeWorkerResponse>) => {
+          if (!this.active) return;
+          const roundTripMs = this.elapsedSince(slot.submittedAt);
+          slot.busy = false;
+          slot.submittedAt = undefined;
+          const result = event.data;
+          this.onResult({
+            ...result,
+            roundTripMs,
+            codes: result.codes?.map((code) => ({
+              ...code,
+              bytes: code.bytes ? new Uint8Array(code.bytes) : undefined,
+            })),
+          });
+        };
+        worker.onerror = (event) => {
+          if (!this.active) return;
+          const roundTripMs = this.elapsedSince(slot.submittedAt);
+          slot.busy = false;
+          slot.submittedAt = undefined;
+          this.onResult({
+            id: -1,
+            decodeMs: 0,
+            roundTripMs,
+            error: event.message || "Optical decode worker failed.",
+          });
+        };
+      }
+    } catch (error) {
+      for (const slot of this.slots) slot.worker.terminate();
+      this.active = false;
+      throw error;
+    }
   }
 
   get size(): number {
@@ -99,6 +119,7 @@ export class DecodeWorkerPool {
     const slot = this.slots.find((candidate) => !candidate.busy);
     if (!slot) return false;
     slot.busy = true;
+    slot.submittedAt = this.clock();
     const request: DecodeWorkerRequest = {
       id: this.nextId,
       width: imageData.width,
@@ -108,7 +129,13 @@ export class DecodeWorkerPool {
       visualPhy,
     };
     this.nextId += 1;
-    slot.worker.postMessage(request, [request.pixels]);
+    try {
+      slot.worker.postMessage(request, [request.pixels]);
+    } catch (error) {
+      slot.busy = false;
+      slot.submittedAt = undefined;
+      throw error;
+    }
     return true;
   }
 
@@ -116,6 +143,31 @@ export class DecodeWorkerPool {
     if (!this.active) return;
     this.active = false;
     for (const slot of this.slots) slot.worker.terminate();
+  }
+
+  private elapsedSince(startedAt: number | undefined): number | undefined {
+    if (startedAt === undefined) return undefined;
+    const elapsed = this.clock() - startedAt;
+    return Number.isFinite(elapsed) ? Math.max(0, elapsed) : undefined;
+  }
+}
+
+/**
+ * Retires the old geometry-bound worker pool before constructing its
+ * replacement. Construction failures are surfaced to the receiver's single
+ * fail-closed path so an active camera stream cannot be left behind.
+ */
+export function replaceDecodeWorkerPool(
+  current: DecodeWorkerPool,
+  create: () => DecodeWorkerPool,
+  onFailure: (error: unknown) => void,
+): DecodeWorkerPool | undefined {
+  current.stop();
+  try {
+    return create();
+  } catch (error) {
+    onFailure(error);
+    return undefined;
   }
 }
 

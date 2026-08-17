@@ -39,6 +39,12 @@ dark and light percentiles, applies inner correction, and returns only a frame
 with structural AGF1/AGF2 magic. The existing transport parser still performs
 bounded length checks and CRC verification.
 
+Before normal scheduling, the sender holds valid symbol zero for one second as
+an acquisition preamble. If the receiver accepts that symbol during the hold,
+its first-accepted-to-last-accepted diagnostic includes preamble time and is not
+a steady-state rate. Publication comparisons require a synchronized sender
+optical-start marker through receiver verification.
+
 ## Security and limitations
 
 Every camera frame and decoded bit remains hostile input. Inner correction does
@@ -46,7 +52,8 @@ not authenticate content and does not replace the AGF CRC or AGX signature.
 Hamming(12,8) can miscorrect multiple errors; the outer CRC must reject those
 frames. The colored fiducials are acquisition metadata, not trust anchors.
 
-The implementation does not yet provide persistent tracking, soft decisions,
+The implementation reuses registration and performs bounded global
+reacquisition; it does not yet provide local quadrilateral tracking, soft decisions,
 Reed–Solomon stripes, transition-band recovery, controlled exposure/focus, or a
 native luma path. It is not an AIRCODE reproduction and uses no audio channel.
 The strict GlassBridge profile remains light-only.

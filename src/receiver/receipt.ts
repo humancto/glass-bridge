@@ -69,6 +69,15 @@ export async function createBrowserReleaseReceipt(
   if (signature.length !== 64) {
     throw new Error("The receiver produced an invalid Ed25519 receipt signature.");
   }
+  const signatureValid = await crypto.subtle.verify(
+    { name: "Ed25519" },
+    keys.publicKey,
+    signature,
+    signatureMessage,
+  );
+  if (!signatureValid) {
+    throw new Error("The stored receiver receipt keys do not form a valid Ed25519 pair.");
+  }
   const cose = encode([
     protectedBytes,
     new Map<number, never>(),
