@@ -2,7 +2,7 @@
 
 **Review date:** 2026-08-17
 
-**Reviewed commit:** `FINAL_IMPLEMENTATION_SHA` — replace this token with the exact clean implementation commit used for publication review; this draft does not claim that the current working tree passed.
+**Reviewed commit:** `09e69409dcf2f344d421d1c644224f5b7a0a6dda` — exact clean implementation commit used for publication review and benchmark evidence.
 
 **Decision:** publish as an Apache-2.0 open-source research preview while keeping production and performance claims gated on physical evidence and security hardening.
 

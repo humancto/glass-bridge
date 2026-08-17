@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-08-17
 
-**Baseline:** publication candidate at `FINAL_IMPLEMENTATION_SHA`; this token must be replaced with the exact reviewed implementation commit before publication
+**Baseline:** publication candidate at `09e69409dcf2f344d421d1c644224f5b7a0a6dda`; exact reviewed implementation commit
 
 **Scope:** public React/TypeScript sender and receiver, untrusted optical and saved-image inputs, HTML shells, browser storage, service worker, dependency lockfiles, and CI/Pages workflows. The Rust workspace was built, tested, linted, and dependency-audited; this is not a line-by-line Rust security review.
 

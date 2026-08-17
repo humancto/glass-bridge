@@ -1,0 +1,137 @@
+{
+  "schema": "glassbridge-grid-acquisition-benchmark/2",
+  "recorded_at_utc": "2026-08-17T22:04:37.628Z",
+  "evidence_classification": {
+    "kind": "deterministic-synthetic-camera-simulation",
+    "physical_camera_path_exercised": false,
+    "suitable_for": [
+      "byte-exact decoder regression detection",
+      "synthetic acquisition and transition-tear regression detection",
+      "host-specific decoder timing comparison when the environment is held constant"
+    ],
+    "not_evidence_of": [
+      "phone-camera goodput",
+      "display-to-camera reliability",
+      "physical transfer completion time",
+      "performance superiority over another optical transport"
+    ]
+  },
+  "invocation": {
+    "command": "npm run benchmark:grid-acquisition -- --output benchmarks/grid-acquisition-reference.json",
+    "output_path": "benchmarks/grid-acquisition-reference.json"
+  },
+  "build_identity": {
+    "git_commit": "09e69409dcf2f344d421d1c644224f5b7a0a6dda",
+    "git_worktree_dirty": false,
+    "git_worktree_scope": "tracked files before writing the output artifact; untracked files excluded",
+    "benchmark_sources_dirty": false,
+    "benchmark_sources_sha256": "9fc4490fb5a6fb860c2f23bb683eb49ace6f05ef64279f60bd7b70671368a9a7",
+    "benchmark_sources": [
+      "package.json",
+      "package-lock.json",
+      "scripts/benchmark-grid-acquisition.mjs",
+      "src/phy/grid/grid-codec.ts",
+      "src/protocol/lt-codec.ts",
+      "src/protocol/optical-profile.ts",
+      "src/receiver/transport.ts",
+      "src/sender/transport.ts",
+      "tests/fixtures/grid-camera-sim.ts"
+    ],
+    "note": "The source fingerprint identifies the exact benchmark-relevant bytes even when the Git worktree is dirty."
+  },
+  "host_environment": {
+    "node": "v25.9.0",
+    "v8": "14.1.146.11-node.25",
+    "platform": "darwin",
+    "os_release": "25.3.0",
+    "architecture": "x64",
+    "logical_cpu_count": 16,
+    "available_parallelism": 16,
+    "cpu_model": "Apple M4 Max",
+    "total_memory_bytes": 137438953472,
+    "hostname_recorded": false
+  },
+  "scope": "deterministic 144 KiB Grid30 camera simulation; fractional perspective, bilinear resampling, mild moire, colored UI distractors, one transition tear per stable epoch, plus a high-fill blur probe",
+  "workload": {
+    "payload_bytes": 147456,
+    "payload_generator": "xorshift32 seed 0x6d2b79f5",
+    "session_id_generator": "byte[index] = (index * 19 + 7) & 0xff for 16 bytes",
+    "profile": {
+      "id": "grid",
+      "codec": "lt-v2",
+      "visual_phy": "mono-grid-v0",
+      "symbol_bytes": 2032,
+      "modeled_symbols_per_second": 30
+    },
+    "stable_camera_simulation": {
+      "raster_width": 960,
+      "raster_height": 540,
+      "brightness": 0.9,
+      "moire_amplitude": "3 on every third source symbol; otherwise 0",
+      "fractional_perspective": true,
+      "bilinear_resampling": true,
+      "colored_ui_distractors": true
+    },
+    "transition_tear": {
+      "one_per_stable_epoch_after_first": true,
+      "row_split_ratio": 0.47
+    },
+    "high_fill_blur_probe": {
+      "source_symbol_id": 41,
+      "raster_width": 1280,
+      "raster_height": 720,
+      "brightness": 0.86,
+      "moire_amplitude": 5,
+      "box_blur_radius": 1
+    }
+  },
+  "source_symbols": 73,
+  "expected_lt_frames": 102,
+  "grid30_source_floor_seconds": 2.433,
+  "grid30_expected_solve_seconds": 3.4,
+  "camera_exposures": 145,
+  "stable_decoded": 73,
+  "torn_decoded": 72,
+  "decode_outcomes": {
+    "stable:decoded": 73,
+    "torn:decoded": 72
+  },
+  "stable_corrected_codewords_p95": 0,
+  "stable_corrected_codewords_max": 0,
+  "stress_probes": {
+    "high_fill_blur": {
+      "outcome": "decoded",
+      "byte_exact": true,
+      "corrected_codewords": 0,
+      "contrast": 181,
+      "screen_fill_ratio": 0.5391542480969369,
+      "decode_ms": 4.037
+    }
+  },
+  "accepted_unique_frames": 73,
+  "duplicate_frames": 0,
+  "rejected_frames": 72,
+  "recovered_rank": 73,
+  "required_rank": 73,
+  "correctness_gates": {
+    "stable_decode_percent": 100,
+    "transfer_reconstructed": true,
+    "payload_byte_exact": true,
+    "high_fill_blur_probe_byte_exact": true
+  },
+  "synthetic_model_gates": {
+    "expected_solve_window_below_3_5_seconds": true
+  },
+  "host_timing_observations": {
+    "advisory_only": true,
+    "affects_process_exit": false,
+    "decode_p50_ms": 5.379,
+    "decode_p95_ms": 6.627,
+    "single_worker_60fps_budget_ms": 16.667,
+    "p95_below_single_worker_60fps_budget": true,
+    "note": "Host timing is not a correctness gate and is comparable only across materially identical environments."
+  },
+  "correctness_passed": true,
+  "synthetic_model_passed": true,
+  "passed": true
+}
