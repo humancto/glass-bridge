@@ -566,7 +566,9 @@ export default function SenderApp() {
               <div className="burst-label">{prepared.profile.label.toUpperCase()} · HOLD PHONE LANDSCAPE</div>
             )}
             {phase !== "pair" && prepared.profile.visualPhy === "mono-grid-v0" && (
-              <div className="burst-label">GRID LAB · HOLD EACH SYMBOL FOR TWO DISPLAY REFRESHES</div>
+              <div className="burst-label">
+                GRID LAB · {fps <= 30 ? "TWO-REFRESH ROBUST DWELL" : "ONE-REFRESH CEILING EXPERIMENT"}
+              </div>
             )}
           </div>
 
