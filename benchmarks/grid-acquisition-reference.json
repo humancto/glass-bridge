@@ -1,6 +1,6 @@
 {
   "schema": "glassbridge-grid-acquisition-benchmark/2",
-  "recorded_at_utc": "2026-08-17T22:04:37.628Z",
+  "recorded_at_utc": "2026-08-17T22:14:58.960Z",
   "evidence_classification": {
     "kind": "deterministic-synthetic-camera-simulation",
     "physical_camera_path_exercised": false,
@@ -21,11 +21,11 @@
     "output_path": "benchmarks/grid-acquisition-reference.json"
   },
   "build_identity": {
-    "git_commit": "09e69409dcf2f344d421d1c644224f5b7a0a6dda",
+    "git_commit": "e22728505227f21c2af291e6ed9d0c738c52101f",
     "git_worktree_dirty": false,
     "git_worktree_scope": "tracked files before writing the output artifact; untracked files excluded",
     "benchmark_sources_dirty": false,
-    "benchmark_sources_sha256": "9fc4490fb5a6fb860c2f23bb683eb49ace6f05ef64279f60bd7b70671368a9a7",
+    "benchmark_sources_sha256": "c633f65f6bac653a0041a8705934b00be21c9ef8bd2cbb35a82a2ab8c639fdf8",
     "benchmark_sources": [
       "package.json",
       "package-lock.json",
@@ -105,7 +105,7 @@
       "corrected_codewords": 0,
       "contrast": 181,
       "screen_fill_ratio": 0.5391542480969369,
-      "decode_ms": 4.037
+      "decode_ms": 4.586
     }
   },
   "accepted_unique_frames": 73,
@@ -125,8 +125,8 @@
   "host_timing_observations": {
     "advisory_only": true,
     "affects_process_exit": false,
-    "decode_p50_ms": 5.379,
-    "decode_p95_ms": 6.627,
+    "decode_p50_ms": 6.005,
+    "decode_p95_ms": 7.086,
     "single_worker_60fps_budget_ms": 16.667,
     "p95_below_single_worker_60fps_budget": true,
     "note": "Host timing is not a correctness gate and is comparable only across materially identical environments."

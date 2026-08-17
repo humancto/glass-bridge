@@ -2,7 +2,7 @@
 
 **Review date:** 2026-08-17
 
-**Reviewed commit:** `09e69409dcf2f344d421d1c644224f5b7a0a6dda` — exact clean implementation commit used for publication review and benchmark evidence.
+**Reviewed commit:** `e22728505227f21c2af291e6ed9d0c738c52101f` — exact clean release-candidate commit used for publication review and benchmark evidence.
 
 **Decision:** publish as an Apache-2.0 open-source research preview while keeping production and performance claims gated on physical evidence and security hardening.
 

@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-08-17
 
-**Baseline:** core implementation candidate at `09e69409dcf2f344d421d1c644224f5b7a0a6dda`; subsequent evidence and CI-compatibility commits do not change browser or Rust product code
+**Baseline:** release candidate at `e22728505227f21c2af291e6ed9d0c738c52101f`; exact reviewed implementation, benchmark harness, and CI configuration
 
 **Scope:** public React/TypeScript sender and receiver, untrusted optical and saved-image inputs, HTML shells, browser storage, service worker, dependency lockfiles, and CI/Pages workflows. The Rust workspace was built, tested, linted, and dependency-audited; this is not a line-by-line Rust security review.
 
