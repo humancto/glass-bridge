@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-08-17
 
-**Baseline:** publication candidate at `09e69409dcf2f344d421d1c644224f5b7a0a6dda`; exact reviewed implementation commit
+**Baseline:** core implementation candidate at `09e69409dcf2f344d421d1c644224f5b7a0a6dda`; subsequent evidence and CI-compatibility commits do not change browser or Rust product code
 
 **Scope:** public React/TypeScript sender and receiver, untrusted optical and saved-image inputs, HTML shells, browser storage, service worker, dependency lockfiles, and CI/Pages workflows. The Rust workspace was built, tested, linted, and dependency-audited; this is not a line-by-line Rust security review.
 
@@ -105,7 +105,7 @@ accepted low-severity limitation.
 ### GB-SUPPLY-001 — Advisory scanning and immutable action pinning were missing — resolved
 
 - **Former severity:** Low supply-chain hardening gap
-- **Fix:** CI and Pages pin every action to an official full commit SHA, disable persisted checkout credentials, use least-privilege job permissions, run `npm audit --audit-level=high`, and use SHA-pinned `rustsec/audit-check`. Both build paths verify the deterministic production npm license inventory in [THIRD_PARTY_LICENSES.md](../THIRD_PARTY_LICENSES.md), while the site build publishes the canonical success/failure JSON schemas. Dependabot covers npm, Cargo, and GitHub Actions.
+- **Fix:** CI and Pages pin every action to an official full commit SHA, disable persisted checkout credentials, use least-privilege job permissions, and run `npm audit --audit-level=high`. Rust CI installs the exact `cargo-audit` 0.22.2 release with its published lockfile before running the advisory scan; this avoids unbounded dependency drift in the audit tool itself. Both build paths verify the deterministic production npm license inventory in [THIRD_PARTY_LICENSES.md](../THIRD_PARTY_LICENSES.md), while the site build publishes the canonical success/failure JSON schemas. Dependabot covers npm, Cargo, and GitHub Actions.
 - **Evidence:** manual release-candidate audits reported zero npm vulnerabilities and zero RustSec advisories across 92 locked Rust dependencies.
 - **Residual risk:** advisory databases and third-party build infrastructure are not proof of absence; reproducible builds, SBOMs, signed provenance, and clean-room release reproduction remain future gates.
 
