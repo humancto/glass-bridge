@@ -142,7 +142,7 @@ The project is available under the Apache License 2.0. The license permits comme
 
 ### Headline
 
-**Show HN: GlassBridge — a signed, policy-gated file transfer through animated QR**
+**Show HN: GlassBridge — signed, policy-gated air-gap transfer through light**
 
 ### 40-second demo sequence
 
