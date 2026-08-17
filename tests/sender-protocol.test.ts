@@ -40,6 +40,15 @@ describe("browser sender AGX interoperability", () => {
 
   it("enforces the bounded browser-file profile", async () => {
     await expect(createBrowserEnvelope(
+      new Uint8Array(),
+      {
+        filename: "empty.bin",
+        mediaType: "application/octet-stream",
+        boundary: "demo/phone-laptop",
+      },
+    )).rejects.toThrow("non-empty");
+
+    await expect(createBrowserEnvelope(
       new Uint8Array(MAX_BROWSER_FILE_BYTES + 1),
       {
         filename: "too-large.bin",

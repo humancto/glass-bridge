@@ -30,20 +30,24 @@ export async function reserveTransferRelease(
   transfer: VerifiedTransfer,
   releasedUnix: number,
   storage: ReplayStorage = window.localStorage,
+  useNavigatorLock = true,
 ): Promise<void> {
   const commit = (): void => {
     const ledger = readLedger(storage);
     if (ledger.entries.some((entry) => entry.envelopeId === transfer.envelopeId)) {
       throw new Error("GB-DENY-REPLAY: this signed envelope was already released on this receiver.");
     }
+    if (ledger.entries.length >= MAX_REPLAY_ENTRIES) {
+      throw new Error("GB-DENY-STATE-FULL: the replay ledger is full; refusing to forget an older release silently.");
+    }
     const entries = [
       ...ledger.entries,
       { envelopeId: transfer.envelopeId, signerKeyId: transfer.signerKeyId, releasedUnix },
-    ].slice(-MAX_REPLAY_ENTRIES);
+    ];
     storage.setItem(REPLAY_LEDGER_KEY, JSON.stringify({ version: 1, entries } satisfies ReplayLedger));
   };
 
-  if (navigator.locks) {
+  if (useNavigatorLock && navigator.locks) {
     await navigator.locks.request(REPLAY_LEDGER_KEY, { mode: "exclusive" }, commit);
   } else {
     commit();

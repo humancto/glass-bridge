@@ -1,9 +1,14 @@
 # Milestone 11: Turbo optical engine
 
-Milestone 11 creates an experimental high-throughput browser path aimed at the
-published 128 KiB/s class of single-QR optical transfer. It does **not** claim
-that physical goodput target yet. It provides the channel budget, pipeline, and
-on-device measurements needed to test the claim honestly.
+> Historical milestone snapshot. This document records the Turbo design and
+> its original internal gate; it is not the current prior-art baseline or the
+> canonical physical test protocol. Use [Milestone 16](milestone-16.md) for the
+> current acquisition evidence and physical smoke gate.
+
+Milestone 11 created an experimental high-throughput browser path aimed at the
+128 KiB/s class used for its original internal challenge. It did **not** measure
+that physical goodput target. The gate remains useful history, but it is no
+longer a competitive-current-baseline claim.
 
 ## Why milestone 10 could not compete
 
@@ -12,12 +17,15 @@ ceiling was 18 KiB/s. Cryptographic signing, policy, and quarantine were not the
 bottleneck; the profile was nearly an order of magnitude too small before the
 camera saw a frame.
 
-Decimen demonstrates the relevant baseline: dense QR v40-L frames near 2,953
-bytes, a 60 FPS display schedule, sparse LT fountain repair, video-frame-synced
-capture, and parallel ZXing-WASM decoding. Its repository reports results in the
-128–186 KB/s range under favorable conditions. GlassBridge now adopts that
-transport class while retaining its distinct signed-envelope and controlled
-release architecture. See [third-party notices](../THIRD_PARTY_NOTICES.md).
+Decimen demonstrates the relevant transport class: dense QR frames, a high-rate
+display schedule, sparse LT fountain repair, video-frame-synced capture, and
+parallel ZXing-WASM decoding. The [Decimen v0.4.0 README](https://github.com/bashalarmistalt/decimen-optical-transfer/blob/v0.4.0/README.md) reports 418.5
+KB/s sustained / 601.5 KB/s peak desktop-to-phone and 199.2 / 340.8 KB/s
+phone-to-phone. Those are Decimen's published results, not GlassBridge
+measurements, and require aligned payloads, devices, conditions, and timing for
+a fair comparison. GlassBridge's adapted LT source is pinned to the
+MIT-licensed Decimen v0.3.0 commit; current Decimen v0.4.0+ is
+AGPL-3.0-or-later. See [third-party notices](../THIRD_PARTY_NOTICES.md).
 
 ## Implemented Turbo profile
 
@@ -116,8 +124,9 @@ brightness, distance/angle, file and envelope sizes, sender achieved FPS, valid
 decode FPS, p50/p95 decode latency, busy drops, accepted/duplicate/rejected frames,
 time to verified quarantine, verified payload goodput, retry count, and thermals.
 
-- **Challenge gate:** median verified goodput at least 128 KiB/s for 144 KiB and
-  256 KiB payloads in the supported stationary setup.
+- **Historical internal challenge gate:** median verified goodput at least 128
+  KiB/s for 144 KiB and 256 KiB payloads in the supported stationary setup.
+  Passing this would not establish parity with current Decimen results.
 - **Stretch gate:** at least 200 KiB/s requires multiple visual lanes, a 120 Hz
   path, or a non-QR codec; a single 2,900-byte QR at 60 FPS cannot supply that raw
   budget.

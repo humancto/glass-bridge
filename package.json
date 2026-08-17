@@ -2,7 +2,7 @@
   "name": "glassbridge-agx",
   "version": "0.1.0",
   "private": true,
-  "description": "Fast, verifiable optical file transfer for controlled crossings into air-gapped systems",
+  "description": "Performance-instrumented, verifiable optical file transfer research for controlled air-gap crossings",
   "homepage": "https://humancto.github.io/glass-bridge/",
   "repository": {
     "type": "git",
@@ -25,9 +25,12 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && npm run build:sw && npm run build:research",
+    "build": "tsc --noEmit && vite build && npm run build:sw && npm run build:research && npm run build:schemas",
     "build:research": "node scripts/build-research-document.mjs",
+    "build:schemas": "node scripts/publish-json-schemas.mjs",
     "build:sw": "node scripts/build-receiver-service-worker.mjs",
+    "licenses:generate": "node scripts/generate-third-party-licenses.mjs --write",
+    "licenses:check": "node scripts/generate-third-party-licenses.mjs --check",
     "generate:browser-fast-fixture": "node scripts/generate-browser-fast-frame-fixture.mjs",
     "benchmark:turbo-qr": "node scripts/benchmark-turbo-qr.mjs",
     "benchmark:turbo-decode": "node scripts/benchmark-turbo-decode.mjs",
@@ -36,6 +39,8 @@
     "benchmark:parallel-decode": "node scripts/benchmark-lane-parallelism.mjs",
     "benchmark:grid": "vitest bench --run tests/grid-phy.bench.ts",
     "benchmark:grid-acquisition": "node scripts/benchmark-grid-acquisition.mjs",
+    "benchmark:grid-recovery": "GLASSBRIDGE_REPORT_TIMING=1 vitest run --no-file-parallelism --maxWorkers=1 tests/decode-worker-pool.test.ts tests/grid-registration.test.ts",
+    "benchmark:grid-recovery:strict": "GLASSBRIDGE_REPORT_TIMING=1 GLASSBRIDGE_ENFORCE_TIMING=1 vitest run --no-file-parallelism --maxWorkers=1 tests/decode-worker-pool.test.ts tests/grid-registration.test.ts",
     "start": "vite preview",
     "test:unit": "vitest run",
     "test": "npm run build && npm run test:unit && node --test tests/design-baseline.test.mjs"
@@ -56,6 +61,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
+    "ajv": "8.20.0",
     "typescript": "5.9.3",
     "vite": "8.2.0",
     "vitest": "4.1.10"

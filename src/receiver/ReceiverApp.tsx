@@ -8,11 +8,16 @@ import {
 } from "./agx";
 import { evaluateBrowserPolicy, type LocalPolicyDecision } from "./policy";
 import { ingestDecodedQr } from "./qr-result";
-import { DecodeWorkerPool, type DecodeResult } from "./decode-worker-pool";
 import {
-  dualLaneCaptureRegions,
-  fitCaptureDimensions,
-  fitGridCaptureDimensions,
+  DecodeWorkerPool,
+  replaceDecodeWorkerPool,
+  type DecodeResult,
+} from "./decode-worker-pool";
+import {
+  CameraStartGuard,
+  captureLayoutsEqual,
+  createCaptureLayout,
+  stopMediaStream,
 } from "./camera-capture";
 import { OPTICAL_PROFILES } from "../protocol/optical-profile";
 import type { GridDecodeOutcome } from "../phy/grid/grid-codec";
@@ -34,6 +39,7 @@ import { createDeviceRunFailureReport } from "./device-run-report";
 import { unpackOpticalPayload } from "../protocol/optical-payload";
 import {
   CAPACITY_HISTORY_LIMIT,
+  assessCameraSampling,
   compareCapacityReport,
   createCapacityReport,
   readCapacityHistory,
@@ -48,10 +54,12 @@ import {
 import { assertFreshTransfer, reserveTransferRelease } from "./replay";
 import {
   base64UrlDecode,
-  base64UrlEncode,
   OpticalTransferDecoder,
   type TransferProgress,
 } from "./transport";
+import { parseStoredPairing, serializeStoredPairing } from "./pairing-storage";
+import { SavedFrameRunGuard, validateSavedFrameSelection } from "./saved-frame-policy";
+import { classifyOpticalCodeCandidate, didTransportAcceptFrame } from "./decode-metrics";
 
 type Stage = "unpaired" | "paired" | "scanning" | "verifying" | "quarantined" | "releasing" | "released" | "error";
 type SourceMode = "camera" | "files";
@@ -72,11 +80,28 @@ type LiveMetrics = {
   sourceHeight: number;
   negotiatedFps: number;
   cameraSeconds: number;
+  callbackFrames: number;
+  cameraExposures: number;
+  duplicateCallbacks: number;
+  submittedExposures: number;
+  rateLimitedExposures: number;
   cameraFrames: number;
   decodeJobs: number;
   successfulDecodeJobs: number;
   emptyDecodeJobs: number;
   throttledFrames: number;
+  captureCopyP50Ms: number;
+  captureCopyP95Ms: number;
+  workerRoundTripP50Ms: number;
+  workerRoundTripP95Ms: number;
+  rgbaBytesPerSecond: number;
+  sameFrameReacquisitions: number;
+  sameFrameReacquisitionSuccesses: number;
+  sameFrameReacquisitionP50Ms: number;
+  sameFrameReacquisitionP95Ms: number;
+  samplingRatio?: number;
+  samplingStatus: "oversampled" | "single-sampled" | "undersampled" | "unknown";
+  samplingWarning?: string;
   gridOutcome?: GridDecodeOutcome;
   gridContrast?: number;
   gridScreenFillRatio?: number;
@@ -85,7 +110,7 @@ type LiveMetrics = {
   timeToFirstValidMs?: number;
 };
 
-const SESSION_TRUST_KEY = "glassbridge-demo-trust-v2";
+const SESSION_TRUST_KEY = "glassbridge-demo-trust-v3";
 const INVALID_FRAME_LIMIT = 180;
 const EMPTY_PROGRESS: TransferProgress = {
   rank: 0,
@@ -114,12 +139,50 @@ const EMPTY_METRICS: LiveMetrics = {
   sourceHeight: 0,
   negotiatedFps: 0,
   cameraSeconds: 0,
+  callbackFrames: 0,
+  cameraExposures: 0,
+  duplicateCallbacks: 0,
+  submittedExposures: 0,
+  rateLimitedExposures: 0,
   cameraFrames: 0,
   decodeJobs: 0,
   successfulDecodeJobs: 0,
   emptyDecodeJobs: 0,
   throttledFrames: 0,
+  captureCopyP50Ms: 0,
+  captureCopyP95Ms: 0,
+  workerRoundTripP50Ms: 0,
+  workerRoundTripP95Ms: 0,
+  rgbaBytesPerSecond: 0,
+  sameFrameReacquisitions: 0,
+  sameFrameReacquisitionSuccesses: 0,
+  sameFrameReacquisitionP50Ms: 0,
+  sameFrameReacquisitionP95Ms: 0,
+  samplingStatus: "unknown",
 };
+
+/**
+ * Counts real camera exposures rather than browser callback invocations.
+ * Safari/Chromium may invoke a callback more often than the camera advances;
+ * mediaTime/currentTime is the source of truth for a new exposure.
+ */
+export class CameraExposureTracker {
+  callbackFrames = 0;
+  cameraExposures = 0;
+  duplicateCallbacks = 0;
+  private lastMediaTime = Number.NEGATIVE_INFINITY;
+
+  observe(mediaTime: number): boolean {
+    this.callbackFrames += 1;
+    if (!Number.isFinite(mediaTime) || mediaTime <= this.lastMediaTime + 1e-6) {
+      this.duplicateCallbacks += 1;
+      return false;
+    }
+    this.lastMediaTime = mediaTime;
+    this.cameraExposures += 1;
+    return true;
+  }
+}
 
 function readTrust(): { trust?: BootstrapTrust; error?: string } {
   try {
@@ -127,15 +190,7 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
       const trust = parseBootstrapHash(window.location.hash);
       window.sessionStorage.setItem(
         SESSION_TRUST_KEY,
-        JSON.stringify({
-          key: base64UrlEncode(trust.publicKey),
-          boundary: trust.boundary,
-          session: trust.sessionId ? base64UrlEncode(trust.sessionId) : undefined,
-          profile: trust.profileId,
-          packing: trust.packing,
-          phy: trust.visualPhy,
-          rate: trust.targetSymbolRate,
-        }),
+        serializeStoredPairing(trust),
       );
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
       return { trust };
@@ -144,41 +199,18 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
     if (!stored) {
       return {};
     }
-    const value = JSON.parse(stored) as {
-      key?: unknown;
-      boundary?: unknown;
-      session?: unknown;
-      profile?: unknown;
-      packing?: unknown;
-      phy?: unknown;
-      rate?: unknown;
-    };
-    if (typeof value.key !== "string" || typeof value.boundary !== "string") {
-      throw new Error("Stored pairing is invalid.");
-    }
-    const hasSession = typeof value.session === "string" && typeof value.profile === "string";
-    const hasPacking = value.packing === "identity" || value.packing === "gzip";
-    const hasPhy = typeof value.phy === "string" && Number.isSafeInteger(value.rate);
-    const params = new URLSearchParams({
-      v: hasPacking && hasPhy ? "4" : hasPacking ? "3" : hasSession ? "2" : "1",
-      key: value.key,
-      boundary: value.boundary,
-    });
-    if (hasSession) {
-      params.set("session", value.session as string);
-      params.set("profile", value.profile as string);
-    }
-    if (hasPacking) params.set("packing", value.packing as string);
-    if (hasPhy) {
-      params.set("phy", value.phy as string);
-      params.set("rate", String(value.rate));
-    }
-    return {
-      trust: parseBootstrapHash(`#${params.toString()}`),
-    };
+    return { trust: parseStoredPairing(stored) };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Pairing failed." };
   }
+}
+
+function createPairedOpticalDecoder(trust?: BootstrapTrust): OpticalTransferDecoder {
+  const profile = trust?.profileId ? OPTICAL_PROFILES[trust.profileId] : undefined;
+  return new OpticalTransferDecoder(trust?.sessionId, {
+    codec: profile?.codec,
+    symbolSize: profile?.symbolSize,
+  });
 }
 
 export default function ReceiverApp() {
@@ -202,11 +234,14 @@ export default function ReceiverApp() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const controlsRef = useRef<ScannerControls | undefined>(undefined);
-  const decoderRef = useRef(new OpticalTransferDecoder(initial.trust?.sessionId));
+  const cameraStartGuardRef = useRef(new CameraStartGuard());
+  const savedFrameRunGuardRef = useRef(new SavedFrameRunGuard());
+  const decoderRef = useRef(createPairedOpticalDecoder(initial.trust));
   const verifyingRef = useRef(false);
   const releasingRef = useRef(false);
   const lastProgressPaintRef = useRef(0);
   const transferStartedAtRef = useRef<number | undefined>(undefined);
+  const lastAcceptedAtRef = useRef<number | undefined>(undefined);
   const cameraStartedAtRef = useRef<number | undefined>(undefined);
   const liveMetricsRef = useRef<LiveMetrics>(EMPTY_METRICS);
 
@@ -219,7 +254,16 @@ export default function ReceiverApp() {
       .catch(() => setFingerprint("unavailable"));
   }, [trust]);
 
-  useEffect(() => () => controlsRef.current?.stop(), []);
+  useEffect(() => () => cancelCameraActivity(), []);
+
+  function cancelCameraActivity(): void {
+    cameraStartGuardRef.current.cancel();
+    savedFrameRunGuardRef.current.cancel();
+    controlsRef.current?.stop();
+    controlsRef.current = undefined;
+    const video = videoRef.current;
+    if (video) video.srcObject = null;
+  }
 
   function publishProgress(next: TransferProgress, force = false): void {
     const now = performance.now();
@@ -233,6 +277,7 @@ export default function ReceiverApp() {
     envelope: Uint8Array,
     callbackControls?: ScannerControls,
     completion?: TransferProgress,
+    shouldContinue: () => boolean = () => true,
   ): Promise<void> {
     if (!trust || verifyingRef.current) {
       return;
@@ -242,8 +287,20 @@ export default function ReceiverApp() {
     setStage("verifying");
     try {
       const opticalPayload = await unpackOpticalPayload(envelope, trust.packing ?? "identity");
+      if (!shouldContinue()) {
+        verifyingRef.current = false;
+        return;
+      }
       const transfer = await verifyAgxEnvelope(opticalPayload.bytes, trust);
+      if (!shouldContinue()) {
+        verifyingRef.current = false;
+        return;
+      }
       const decision = await evaluateBrowserPolicy(transfer);
+      if (!shouldContinue()) {
+        verifyingRef.current = false;
+        return;
+      }
       if (!decision.allowed) {
         throw new Error(`${decision.code}: ${decision.reason}`);
       }
@@ -253,37 +310,55 @@ export default function ReceiverApp() {
       setPolicyDecision(decision);
       const startedAt = transferStartedAtRef.current;
       if (startedAt !== undefined && completion && completion.acceptedFrames > 0) {
-        const seconds = Math.max(0.001, (verifiedAtMs - startedAt) / 1_000);
-        const nextMeasurement = measureTransport(transfer.payload.length, seconds, completion);
-        const nextReport = createCapacityReport({
-          profileId: trust.profileId,
-          targetSymbolRate: trust.targetSymbolRate,
-          transferSession: trust.sessionId ? formatSession(trust.sessionId) : undefined,
-          fileBytes: transfer.payload.length,
-          payloadSha256: transfer.payloadSha256,
-          measurement: nextMeasurement,
-          opticalPayload,
-          camera: liveMetricsRef.current,
-          cameraToVerifiedSeconds: cameraStartedAtRef.current === undefined
-            ? undefined
-            : Math.max(0.001, (verifiedAtMs - cameraStartedAtRef.current) / 1_000),
-          device: navigator.userAgent,
-        });
-        let previousReports: CapacityReport[] = [];
-        let historySaved = false;
         try {
-          previousReports = readCapacityHistory(window.localStorage);
-          storeCapacityReport(window.localStorage, nextReport);
-          historySaved = true;
+          const seconds = Math.max(0.001, (verifiedAtMs - startedAt) / 1_000);
+          const nextMeasurement = measureTransport(transfer.payload.length, seconds, completion);
+          const nextReport = createCapacityReport({
+            profileId: trust.profileId,
+            targetSymbolRate: trust.targetSymbolRate,
+            transferSession: trust.sessionId ? formatSession(trust.sessionId) : undefined,
+            fileBytes: transfer.payload.length,
+            payloadSha256: transfer.payloadSha256,
+            measurement: nextMeasurement,
+            opticalPayload,
+            camera: liveMetricsRef.current,
+            cameraToVerifiedSeconds: cameraStartedAtRef.current === undefined
+              ? undefined
+              : Math.max(0.001, (verifiedAtMs - cameraStartedAtRef.current) / 1_000),
+            opticalFrameWindowSeconds: lastAcceptedAtRef.current === undefined ||
+                completion.acceptedFrames < 2 || lastAcceptedAtRef.current <= startedAt
+              ? undefined
+              : (lastAcceptedAtRef.current - startedAt) / 1_000,
+            device: navigator.userAgent,
+          });
+          let previousReports: CapacityReport[] = [];
+          let historySaved = false;
+          try {
+            previousReports = readCapacityHistory(window.localStorage);
+            storeCapacityReport(window.localStorage, nextReport);
+            historySaved = true;
+          } catch {
+            // Private browsing or a full storage quota must not fail the transfer.
+          }
+          setCapacityReport(nextReport);
+          setCapacityComparison(compareCapacityReport(nextReport, previousReports));
+          setCapacityHistorySaved(historySaved);
         } catch {
-          // Private browsing or a full storage quota must not fail the transfer.
+          // Diagnostics are optional evidence. A telemetry regression must not
+          // invalidate an object that passed signature, digest, policy, and replay checks.
+          setMeasurementStatus("Verified transfer; benchmark analytics were unavailable for this run.");
         }
-        setCapacityReport(nextReport);
-        setCapacityComparison(compareCapacityReport(nextReport, previousReports));
-        setCapacityHistorySaved(historySaved);
+      }
+      if (!shouldContinue()) {
+        verifyingRef.current = false;
+        return;
       }
       setStage("quarantined");
     } catch (verificationError) {
+      if (!shouldContinue()) {
+        verifyingRef.current = false;
+        return;
+      }
       setError(
         verificationError instanceof Error
           ? verificationError.message
@@ -303,7 +378,8 @@ export default function ReceiverApp() {
       return;
     }
 
-    controlsRef.current?.stop();
+    cancelCameraActivity();
+    const cameraGeneration = cameraStartGuardRef.current.begin();
     decoderRef.current.reset();
     verifyingRef.current = false;
     releasingRef.current = false;
@@ -322,6 +398,7 @@ export default function ReceiverApp() {
     setMeasurementStatus("");
     setMustRepair(false);
     transferStartedAtRef.current = undefined;
+    lastAcceptedAtRef.current = undefined;
     cameraStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("scanning");
@@ -329,28 +406,40 @@ export default function ReceiverApp() {
     let stream: MediaStream | undefined;
     try {
       stream = await openCameraStream();
+      if (!cameraStartGuardRef.current.trackStream(cameraGeneration, stream)) return;
       const video = videoRef.current;
+      if (!video) {
+        cameraStartGuardRef.current.cancelIfCurrent(cameraGeneration);
+        return;
+      }
       video.srcObject = stream;
       await video.play();
+      if (cameraStartGuardRef.current.disposeIfStale(cameraGeneration, stream)) {
+        if (video.srcObject === stream) video.srcObject = null;
+        return;
+      }
+      if (!cameraStartGuardRef.current.activate(cameraGeneration)) {
+        stopMediaStream(stream);
+        if (video.srcObject === stream) video.srcObject = null;
+        return;
+      }
 
       const trackSettings = stream.getVideoTracks()[0]?.getSettings();
-      const sourceWidth = video.videoWidth || trackSettings?.width || 1_280;
-      const sourceHeight = video.videoHeight || trackSettings?.height || 720;
       const opticalProfile = trust.profileId ? OPTICAL_PROFILES[trust.profileId] : undefined;
       const opticalLanes = opticalProfile?.lanes ?? 1;
       const visualPhy = opticalProfile?.visualPhy ?? "qr-model2-v1";
-      const { width: captureWidth, height: captureHeight } = visualPhy === "mono-grid-v0"
-        ? fitGridCaptureDimensions(sourceWidth, sourceHeight)
-        : fitCaptureDimensions(sourceWidth, sourceHeight);
+      const hasIntrinsicSize = video.videoWidth > 0 && video.videoHeight > 0;
+      let captureLayout = createCaptureLayout(
+        hasIntrinsicSize ? video.videoWidth : trackSettings?.width || 1_280,
+        hasIntrinsicSize ? video.videoHeight : trackSettings?.height || 720,
+        visualPhy === "mono-grid-v0" ? "grid" : "qr",
+        opticalLanes,
+      );
       const captureCanvas = document.createElement("canvas");
-      captureCanvas.width = captureWidth;
-      captureCanvas.height = captureHeight;
+      captureCanvas.width = captureLayout.width;
+      captureCanvas.height = captureLayout.height;
       const captureContext = captureCanvas.getContext("2d", { willReadFrequently: true });
       if (!captureContext) throw new Error("The camera capture surface is unavailable.");
-
-      const laneRegions = visualPhy === "qr-model2-v1" && opticalLanes === 2
-        ? dualLaneCaptureRegions(captureWidth, captureHeight)
-        : undefined;
       const workerCount = visualPhy === "mono-grid-v0"
         ? 1
         : Math.min(4, Math.max(2, Math.floor((navigator.hardwareConcurrency || 4) / 2)));
@@ -360,18 +449,23 @@ export default function ReceiverApp() {
       const captureIntervalMs = 1_000 / targetDecodeFps;
       let active = true;
       let callbackId = 0;
-      let cameraFrames = 0;
+      const exposureTracker = new CameraExposureTracker();
       let decodedFrames = 0;
       let decodeJobs = 0;
       let successfulDecodeJobs = 0;
       let emptyDecodeJobs = 0;
       let busyDrops = 0;
-      let throttledFrames = 0;
+      let submittedExposures = 0;
+      let rateLimitedExposures = 0;
+      let rgbaBytesCopied = 0;
+      let sameFrameReacquisitions = 0;
+      let sameFrameReacquisitionSuccesses = 0;
       let consecutiveNonProgressGridJobs = 0;
       let lastGridProgressAt = performance.now();
       let hasAcceptedGridFrame = false;
+      let lastQrProgressAt = performance.now();
+      let hasAcceptedQrFrame = false;
       let lastCaptureSubmittedAt = Number.NEGATIVE_INFINITY;
-      let lastMediaTime = Number.NEGATIVE_INFINITY;
       let acquisitionWatchdogId = 0;
       let sessionWatchdogId = 0;
       let gridOutcome: GridDecodeOutcome | undefined;
@@ -383,17 +477,32 @@ export default function ReceiverApp() {
       let timeToFirstValidMs: number | undefined;
       const cameraStartedAt = performance.now();
       cameraStartedAtRef.current = cameraStartedAt;
+      const hasVideoFrameTimestamps = "requestVideoFrameCallback" in video;
       let lastMetricsPaint = cameraStartedAt;
       const decodeTimes: number[] = [];
+      const captureCopyTimes: number[] = [];
+      const workerRoundTripTimes: number[] = [];
+      const sameFrameReacquisitionTimes: number[] = [];
 
       const updateMetrics = (force = false) => {
         const now = performance.now();
         if (!force && now - lastMetricsPaint < 500) return;
         const seconds = Math.max(0.001, (now - cameraStartedAt) / 1_000);
         const sorted = [...decodeTimes].sort((left, right) => left - right);
+        const sortedCaptureCopy = [...captureCopyTimes].sort((left, right) => left - right);
+        const sortedWorkerRoundTrips = [...workerRoundTripTimes].sort((left, right) => left - right);
+        const sortedSameFrameRoundTrips = [...sameFrameReacquisitionTimes]
+          .sort((left, right) => left - right);
         const decoderSnapshot = decoderRef.current.snapshot();
+        const cameraFps = exposureTracker.cameraExposures / seconds;
+        const sampling = hasVideoFrameTimestamps
+          ? assessCameraSampling(cameraFps, trust.targetSymbolRate, opticalLanes)
+          : {
+              status: "unknown" as const,
+              warning: "This browser exposes animation callbacks but not video-frame metadata; exposure FPS is estimated from video.currentTime and is not publication-grade.",
+            };
         const nextMetrics: LiveMetrics = {
-          cameraFps: cameraFrames / seconds,
+          cameraFps,
           decodeFps: decodedFrames / seconds,
           uniqueFps: decoderSnapshot.acceptedFrames / seconds,
           duplicateFps: decoderSnapshot.duplicateFrames / seconds,
@@ -401,17 +510,35 @@ export default function ReceiverApp() {
           p95DecodeMs: percentile(sorted, 0.95),
           busyDrops,
           workers: workerCount,
-          width: captureWidth,
-          height: captureHeight,
-          sourceWidth,
-          sourceHeight,
+          width: captureLayout.width,
+          height: captureLayout.height,
+          sourceWidth: captureLayout.sourceWidth,
+          sourceHeight: captureLayout.sourceHeight,
           negotiatedFps: trackSettings?.frameRate ?? 0,
           cameraSeconds: seconds,
-          cameraFrames,
+          callbackFrames: exposureTracker.callbackFrames,
+          cameraExposures: exposureTracker.cameraExposures,
+          duplicateCallbacks: exposureTracker.duplicateCallbacks,
+          submittedExposures,
+          rateLimitedExposures,
+          // Legacy aliases remain populated for old local history readers.
+          cameraFrames: exposureTracker.cameraExposures,
           decodeJobs,
           successfulDecodeJobs,
           emptyDecodeJobs,
-          throttledFrames,
+          throttledFrames: rateLimitedExposures,
+          captureCopyP50Ms: percentile(sortedCaptureCopy, 0.5),
+          captureCopyP95Ms: percentile(sortedCaptureCopy, 0.95),
+          workerRoundTripP50Ms: percentile(sortedWorkerRoundTrips, 0.5),
+          workerRoundTripP95Ms: percentile(sortedWorkerRoundTrips, 0.95),
+          rgbaBytesPerSecond: rgbaBytesCopied / seconds,
+          sameFrameReacquisitions,
+          sameFrameReacquisitionSuccesses,
+          sameFrameReacquisitionP50Ms: percentile(sortedSameFrameRoundTrips, 0.5),
+          sameFrameReacquisitionP95Ms: percentile(sortedSameFrameRoundTrips, 0.95),
+          samplingRatio: sampling.ratio,
+          samplingStatus: sampling.status,
+          samplingWarning: sampling.warning,
           gridOutcome,
           gridContrast,
           gridScreenFillRatio,
@@ -427,6 +554,17 @@ export default function ReceiverApp() {
       };
 
       let controls: ScannerControls;
+      const failDecoder = (failure: unknown) => {
+        if (!active) return;
+        updateMetrics(true);
+        const message = failure instanceof Error
+          ? failure.message
+          : typeof failure === "string" ? failure : "Optical decode pipeline failed.";
+        controls.stop();
+        controlsRef.current = undefined;
+        setError(`Optical decoder unavailable: ${message}`);
+        setStage("error");
+      };
       const failGridAcquisition = () => {
         if (!active || visualPhy !== "mono-grid-v0") return;
         updateMetrics(true);
@@ -455,6 +593,36 @@ export default function ReceiverApp() {
           armGridAcquisitionWatchdog();
         }, Math.max(1, timeout - elapsed));
       };
+      const failQrAcquisition = () => {
+        if (!active || visualPhy === "mono-grid-v0") return;
+        updateMetrics(true);
+        controls.stop();
+        controlsRef.current = undefined;
+        setError(hasAcceptedQrFrame
+          ? "Scanning stopped after ten seconds without a new intact QR transport symbol. Restart at 30/s, keep every code fully inside the guide, and move closer until the modules are sharp."
+          : "No intact GlassBridge QR transport symbol arrived within twenty seconds. Keep every code fully inside the guide, improve focus/lighting, and restart at 30/s.");
+        setStage("error");
+      };
+      const armQrAcquisitionWatchdog = () => {
+        if (visualPhy === "mono-grid-v0") return;
+        window.clearTimeout(acquisitionWatchdogId);
+        const timeout = hasAcceptedQrFrame
+          ? GRID_TRANSFER_STALL_MS
+          : GRID_INITIAL_ACQUISITION_TIMEOUT_MS;
+        const elapsed = performance.now() - lastQrProgressAt;
+        acquisitionWatchdogId = window.setTimeout(() => {
+          if (!active) return;
+          const stalledFor = performance.now() - lastQrProgressAt;
+          const currentTimeout = hasAcceptedQrFrame
+            ? GRID_TRANSFER_STALL_MS
+            : GRID_INITIAL_ACQUISITION_TIMEOUT_MS;
+          if (stalledFor >= currentTimeout) {
+            failQrAcquisition();
+            return;
+          }
+          armQrAcquisitionWatchdog();
+        }, Math.max(1, timeout - elapsed));
+      };
       const failGridSession = () => {
         if (!active || visualPhy !== "mono-grid-v0") return;
         updateMetrics(true);
@@ -476,18 +644,22 @@ export default function ReceiverApp() {
           armGridSessionWatchdog();
         }, Math.max(1, GRID_CAMERA_SESSION_LIMIT_MS - elapsed));
       };
-      const pool = new DecodeWorkerPool(workerCount, (result: DecodeResult) => {
+      const handleDecodeResult = (result: DecodeResult) => {
         if (!active || verifyingRef.current) return;
+        const resultReceivedAt = performance.now();
         decodeTimes.push(result.decodeMs);
         if (decodeTimes.length > 240) decodeTimes.splice(0, decodeTimes.length - 240);
+        if (result.roundTripMs !== undefined) {
+          workerRoundTripTimes.push(result.roundTripMs);
+          if (workerRoundTripTimes.length > 240) {
+            workerRoundTripTimes.splice(0, workerRoundTripTimes.length - 240);
+          }
+        }
         if (result.error) {
-          updateMetrics(true);
-          controls.stop();
-          controlsRef.current = undefined;
-          setError(`Optical decoder unavailable: ${result.error}`);
-          setStage("error");
+          failDecoder(result.error);
           return;
         }
+        const codes = result.codes ?? [];
         if (result.grid) {
           gridOutcome = result.grid.outcome;
           gridContrast = result.grid.contrast;
@@ -495,8 +667,20 @@ export default function ReceiverApp() {
           gridCorrectedCodewords = result.grid.correctedCodewords;
           gridRegistrationJobs += 1;
           gridRegistrationReuseJobs += Number(result.grid.registrationReused);
+          if (result.grid.reacquiredSameFrame) {
+            sameFrameReacquisitions += 1;
+            sameFrameReacquisitionSuccesses += Number(result.grid.transportValid === true);
+            if (result.roundTripMs !== undefined) {
+              sameFrameReacquisitionTimes.push(result.roundTripMs);
+              if (sameFrameReacquisitionTimes.length > 120) {
+                sameFrameReacquisitionTimes.splice(
+                  0,
+                  sameFrameReacquisitionTimes.length - 120,
+                );
+              }
+            }
+          }
         }
-        const codes = result.codes ?? [];
         decodeJobs += 1;
         if (codes.length === 0) {
           emptyDecodeJobs += 1;
@@ -516,15 +700,18 @@ export default function ReceiverApp() {
           updateMetrics();
           return;
         }
-        successfulDecodeJobs += 1;
-        decodedFrames += codes.length;
+        let transportValidCodeCount = 0;
         let gridJobAccepted = false;
         for (const code of codes) {
           const decoder = decoderRef.current;
           const before = decoder.snapshot();
-          const next = code.bytes && isOpticalFrame(code.bytes)
-            ? decoder.ingestFrame(code.bytes)
-            : decoder.ingestText(code.text ?? "");
+          const candidate = classifyOpticalCodeCandidate(code.bytes, code.text);
+          const next = candidate?.kind === "binary"
+            ? decoder.ingestFrame(candidate.value)
+            : candidate?.kind === "text"
+              ? decoder.ingestText(candidate.value)
+              : undefined;
+          if (!next) continue;
           if (next.rejectionReason === "wrong-session") {
             updateMetrics(true);
             controls.stop();
@@ -533,6 +720,14 @@ export default function ReceiverApp() {
             setError("This phone is paired to a different transfer session. Scan the stationary pairing QR currently shown on the laptop, then try again.");
             setStage("error");
             return;
+          }
+          if (didTransportAcceptFrame(before, next)) {
+            transportValidCodeCount += 1;
+          }
+          if (visualPhy !== "mono-grid-v0" && next.acceptedFrames > before.acceptedFrames) {
+            hasAcceptedQrFrame = true;
+            lastQrProgressAt = performance.now();
+            armQrAcquisitionWatchdog();
           }
           const transportAdvanced = didGridTransportAdvance(before, next);
           if (visualPhy === "mono-grid-v0" && transportAdvanced) {
@@ -545,8 +740,12 @@ export default function ReceiverApp() {
           if (transportAdvanced && timeToFirstValidMs === undefined) {
             timeToFirstValidMs = performance.now() - cameraStartedAt;
           }
-          if (next.acceptedFrames > before.acceptedFrames && transferStartedAtRef.current === undefined) {
-            transferStartedAtRef.current = performance.now();
+          if (next.acceptedFrames > before.acceptedFrames) {
+            const acceptedAt = resultReceivedAt;
+            if (transferStartedAtRef.current === undefined) {
+              transferStartedAtRef.current = acceptedAt;
+            }
+            lastAcceptedAtRef.current = acceptedAt;
           }
           publishProgress(next, next.complete);
           if (next.acceptedFrames === 0 && next.rejectedFrames >= INVALID_FRAME_LIMIT) {
@@ -565,102 +764,188 @@ export default function ReceiverApp() {
             break;
           }
         }
+        if (transportValidCodeCount > 0) {
+          successfulDecodeJobs += 1;
+          decodedFrames += transportValidCodeCount;
+        } else {
+          // Preserve decoded bytes for transport rejection accounting, but do
+          // not label barcode-valid/CRC-invalid data as a valid optical code.
+          emptyDecodeJobs += 1;
+        }
         if (visualPhy === "mono-grid-v0" && !gridJobAccepted) {
           consecutiveNonProgressGridJobs += 1;
         }
         if (!verifyingRef.current) updateMetrics();
+      };
+      const createWorkerPool = () => new DecodeWorkerPool(workerCount, (result) => {
+        try {
+          handleDecodeResult(result);
+        } catch (resultError) {
+          failDecoder(resultError);
+        }
       });
+      let pool = createWorkerPool();
+      const refreshCaptureLayout = (): boolean => {
+        const hasCurrentIntrinsicSize = video.videoWidth > 0 && video.videoHeight > 0;
+        const nextLayout = createCaptureLayout(
+          hasCurrentIntrinsicSize ? video.videoWidth : captureLayout.sourceWidth,
+          hasCurrentIntrinsicSize ? video.videoHeight : captureLayout.sourceHeight,
+          visualPhy === "mono-grid-v0" ? "grid" : "qr",
+          opticalLanes,
+        );
+        if (captureLayoutsEqual(captureLayout, nextLayout)) return true;
+
+        // Retire the old workers before resizing the canvas. Grid registration
+        // is worker-local, so no job or homography from the previous geometry
+        // can be applied to the first frame in the new orientation.
+        const replacement = replaceDecodeWorkerPool(pool, createWorkerPool, failDecoder);
+        if (!replacement) return false;
+        pool = replacement;
+        captureLayout = nextLayout;
+        captureCanvas.width = nextLayout.width;
+        captureCanvas.height = nextLayout.height;
+        lastCaptureSubmittedAt = Number.NEGATIVE_INFINITY;
+        gridOutcome = undefined;
+        gridContrast = undefined;
+        gridScreenFillRatio = undefined;
+        gridCorrectedCodewords = undefined;
+        return true;
+      };
 
       const stop = () => {
         if (!active) return;
+        updateMetrics(true);
         active = false;
+        cameraStartGuardRef.current.cancelIfCurrent(cameraGeneration);
         window.clearTimeout(acquisitionWatchdogId);
         window.clearTimeout(sessionWatchdogId);
         if ("cancelVideoFrameCallback" in video) video.cancelVideoFrameCallback(callbackId);
         else window.cancelAnimationFrame(callbackId);
         pool.stop();
-        for (const track of stream?.getTracks() ?? []) track.stop();
-        video.srcObject = null;
+        stopMediaStream(stream);
+        if (video.srcObject === stream) video.srcObject = null;
+        if (controlsRef.current === controls) controlsRef.current = undefined;
       };
       controls = { stop };
       controlsRef.current = controls;
       armGridAcquisitionWatchdog();
+      armQrAcquisitionWatchdog();
       armGridSessionWatchdog();
 
-      const captureFrame = (now: number, mediaTime?: number) => {
+      const captureFrame = (now: number, mediaTime: number) => {
         if (!active || verifyingRef.current) return;
-        cameraFrames += 1;
+        if (!exposureTracker.observe(mediaTime)) {
+          updateMetrics();
+          return;
+        }
+        if (!refreshCaptureLayout()) return;
         if (visualPhy === "mono-grid-v0") {
-          if (mediaTime !== undefined && mediaTime <= lastMediaTime + 1e-6) {
-            throttledFrames += 1;
-            updateMetrics();
-            return;
-          }
           if (now - lastCaptureSubmittedAt < captureIntervalMs * 0.8) {
-            throttledFrames += 1;
-            lastMediaTime = mediaTime ?? lastMediaTime;
+            rateLimitedExposures += 1;
             updateMetrics();
             return;
           }
         }
         if (pool.busyCount === pool.size) {
           busyDrops += 1;
-          lastMediaTime = mediaTime ?? lastMediaTime;
           updateMetrics();
           return;
         }
+        const frameLayout = captureLayout;
+        const captureCopyStartedAt = performance.now();
         captureContext.drawImage(
           video,
           0,
           0,
-          sourceWidth,
-          sourceHeight,
+          frameLayout.sourceWidth,
+          frameLayout.sourceHeight,
           0,
           0,
-          captureWidth,
-          captureHeight,
+          frameLayout.width,
+          frameLayout.height,
         );
-        let submitted = false;
-        if (laneRegions && cameraFrames % 15 !== 0) {
+        const jobs: Array<{ image: ImageData; maxSymbols: 1 | 2 }> = [];
+        if (frameLayout.laneRegions && exposureTracker.cameraExposures % 15 !== 0) {
           // Alternate submission priority so a saturated worker pool cannot
           // repeatedly favor the left lane and starve the right lane.
-          const orderedRegions = cameraFrames % 2 === 0
-            ? laneRegions
-            : [laneRegions[1], laneRegions[0]];
+          const orderedRegions = exposureTracker.cameraExposures % 2 === 0
+            ? frameLayout.laneRegions
+            : [frameLayout.laneRegions[1], frameLayout.laneRegions[0]];
           for (const region of orderedRegions) {
-            const image = captureContext.getImageData(region.x, region.y, region.width, region.height);
-            if (pool.submit(image, 1, visualPhy)) submitted = true;
-            else busyDrops += 1;
+            jobs.push({
+              image: captureContext.getImageData(region.x, region.y, region.width, region.height),
+              maxSymbols: 1,
+            });
           }
         } else {
           // Periodic full-frame acquisition lets the operator recover when the
           // display is not perfectly centered across the two lane regions.
-          const image = captureContext.getImageData(0, 0, captureWidth, captureHeight);
-          if (pool.submit(image, opticalLanes, visualPhy)) submitted = true;
+          jobs.push({
+            image: captureContext.getImageData(0, 0, frameLayout.width, frameLayout.height),
+            maxSymbols: opticalLanes,
+          });
+        }
+        rgbaBytesCopied += jobs.reduce((bytes, job) => bytes + job.image.data.byteLength, 0);
+        captureCopyTimes.push(performance.now() - captureCopyStartedAt);
+        if (captureCopyTimes.length > 240) {
+          captureCopyTimes.splice(0, captureCopyTimes.length - 240);
+        }
+        let submitted = false;
+        for (const job of jobs) {
+          if (pool.submit(job.image, job.maxSymbols, visualPhy)) submitted = true;
           else busyDrops += 1;
         }
-        if (submitted) lastCaptureSubmittedAt = now;
-        lastMediaTime = mediaTime ?? lastMediaTime;
+        if (submitted) {
+          submittedExposures += 1;
+          lastCaptureSubmittedAt = now;
+        }
         updateMetrics();
       };
 
-      if ("requestVideoFrameCallback" in video) {
+      const captureSafely = (now: number, mediaTime: number) => {
+        try {
+          captureFrame(now, mediaTime);
+        } catch (captureError) {
+          failDecoder(captureError);
+        }
+      };
+
+      if (hasVideoFrameTimestamps) {
         const onVideoFrame: VideoFrameRequestCallback = (now, metadata) => {
-          captureFrame(now, metadata.mediaTime);
-          if (active) callbackId = video.requestVideoFrameCallback(onVideoFrame);
+          captureSafely(now, metadata.mediaTime);
+          if (active) {
+            try {
+              callbackId = video.requestVideoFrameCallback(onVideoFrame);
+            } catch (callbackError) {
+              failDecoder(callbackError);
+            }
+          }
         };
         callbackId = video.requestVideoFrameCallback(onVideoFrame);
       } else {
         const onAnimationFrame = () => {
-          captureFrame(performance.now(), (video as HTMLVideoElement).currentTime);
-          if (active) callbackId = window.requestAnimationFrame(onAnimationFrame);
+          captureSafely(performance.now(), (video as HTMLVideoElement).currentTime);
+          if (active) {
+            try {
+              callbackId = window.requestAnimationFrame(onAnimationFrame);
+            } catch (callbackError) {
+              failDecoder(callbackError);
+            }
+          }
         };
         callbackId = window.requestAnimationFrame(onAnimationFrame);
       }
     } catch (cameraError) {
-      controlsRef.current?.stop();
-      controlsRef.current = undefined;
-      for (const track of stream?.getTracks() ?? []) track.stop();
+      const wasCurrent = cameraStartGuardRef.current.isCurrent(cameraGeneration);
+      if (wasCurrent) {
+        if (controlsRef.current) controlsRef.current.stop();
+        else cameraStartGuardRef.current.cancelIfCurrent(cameraGeneration);
+        controlsRef.current = undefined;
+      }
+      stopMediaStream(stream);
+      const currentVideo = videoRef.current;
+      if (currentVideo?.srcObject === stream) currentVideo.srcObject = null;
+      if (!wasCurrent) return;
       setError(
         cameraError instanceof Error
           ? `Camera unavailable: ${cameraError.message}`
@@ -674,12 +959,9 @@ export default function ReceiverApp() {
     if (!trust || !files || files.length === 0) {
       return;
     }
-    if (files.length > 600) {
-      setError("Select no more than 600 QR images in one diagnostic run.");
-      setStage("error");
-      return;
-    }
-    controlsRef.current?.stop();
+    cancelCameraActivity();
+    const savedFrameGeneration = savedFrameRunGuardRef.current.begin();
+    const runIsCurrent = () => savedFrameRunGuardRef.current.isCurrent(savedFrameGeneration);
     decoderRef.current.reset();
     verifyingRef.current = false;
     setVerified(undefined);
@@ -692,43 +974,60 @@ export default function ReceiverApp() {
     setStage("scanning");
 
     try {
+      const savedFrames = await validateSavedFrameSelection(Array.from(files), runIsCurrent);
+      if (!runIsCurrent()) return;
       const { BrowserQRCodeReader } = await import("@zxing/browser");
+      if (!runIsCurrent()) return;
       const reader = new BrowserQRCodeReader();
-      for (const file of Array.from(files)) {
+      for (const { file } of savedFrames) {
+        if (!runIsCurrent()) return;
         const url = URL.createObjectURL(file);
         try {
           const result = await reader.decodeFromImageUrl(url);
+          if (!runIsCurrent()) return;
           const next = ingestDecodedQr(result, decoderRef.current);
           publishProgress(next, next.complete);
           if (next.envelope) {
-            await finishEnvelope(next.envelope);
+            await finishEnvelope(next.envelope, undefined, undefined, runIsCurrent);
             return;
           }
         } catch {
+          if (!runIsCurrent()) return;
           publishProgress(decoderRef.current.ingestText("invalid-frame"));
         } finally {
           URL.revokeObjectURL(url);
         }
       }
+      if (!runIsCurrent()) return;
       const finalProgress = decoderRef.current.snapshot();
       setError(`Not enough independent frames: rank ${finalProgress.rank} of ${finalProgress.required || "unknown"}.`);
       setStage("error");
+    } catch (savedFrameError) {
+      if (!runIsCurrent()) return;
+      setError(
+        savedFrameError instanceof Error
+          ? savedFrameError.message
+          : "The saved QR frames could not be validated or decoded.",
+      );
+      setStage("error");
     } finally {
-      if (fileInputRef.current) {
+      if (runIsCurrent() && fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     }
   }
 
   function stopCamera(): void {
-    controlsRef.current?.stop();
-    controlsRef.current = undefined;
-    setStage("paired");
+    cancelCameraActivity();
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setError(sourceMode === "files"
+      ? "Operator stopped saved-frame decoding before verification."
+      : "Operator stopped camera scanning before verification.");
+    setStage("error");
   }
 
   function resetToPaired(): void {
-    controlsRef.current?.stop();
-    controlsRef.current = undefined;
+    cancelCameraActivity();
     decoderRef.current.reset();
     verifyingRef.current = false;
     releasingRef.current = false;
@@ -746,13 +1045,14 @@ export default function ReceiverApp() {
     setMeasurementStatus("");
     setMustRepair(false);
     transferStartedAtRef.current = undefined;
+    lastAcceptedAtRef.current = undefined;
     cameraStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("paired");
   }
 
   function clearPairing(): void {
-    controlsRef.current?.stop();
+    cancelCameraActivity();
     window.sessionStorage.removeItem(SESSION_TRUST_KEY);
     window.location.reload();
   }
@@ -772,8 +1072,8 @@ export default function ReceiverApp() {
     const sharedGoodput = capacityReport.camera_to_verified_payload_bytes_per_second ??
       capacityReport.verified_payload_bytes_per_second;
     const sharedWindow = capacityReport.camera_to_verified_payload_bytes_per_second === undefined
-      ? "first accepted → verified"
-      : "camera open → verified";
+      ? "legacy first accepted → verification complete"
+      : "camera-open diagnostic → verified";
     const file = new File(
       [JSON.stringify(capacityReport, null, 2)],
       `glassbridge-benchmark-${capacityReport.measured_at.replaceAll(":", "-")}.json`,
@@ -783,7 +1083,7 @@ export default function ReceiverApp() {
       if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
         await navigator.share({
           title: "GlassBridge transfer benchmark",
-          text: `${formatRate(sharedGoodput)} verified goodput · ${sharedWindow}`,
+          text: `${formatRate(sharedGoodput)} diagnostic verified rate · ${sharedWindow} · not synchronized-start benchmark timing`,
           files: [file],
         });
         setMeasurementStatus("Benchmark JSON shared.");
@@ -808,6 +1108,7 @@ export default function ReceiverApp() {
       targetSymbolRate: trust.targetSymbolRate,
       transferSession: trust.sessionId ? formatSession(trust.sessionId) : undefined,
       reason: error || "The receiver stopped before verification.",
+      sourceMode: sourceMode === "files" ? "saved-frames" : "camera",
       progress: snapshot,
       camera: liveMetricsRef.current,
       device: navigator.userAgent,
@@ -975,7 +1276,9 @@ export default function ReceiverApp() {
                 <span>CAMERA</span>
                 <strong>{liveMetrics.cameraFps.toFixed(1)} FPS</strong>
                 <small>decode {liveMetrics.width}×{liveMetrics.height} · source {liveMetrics.sourceWidth}×{liveMetrics.sourceHeight} @ {liveMetrics.negotiatedFps.toFixed(0) || "—"}</small>
+                <small>{liveMetrics.cameraExposures} exposures · {liveMetrics.callbackFrames} callbacks · {liveMetrics.duplicateCallbacks} duplicate callbacks</small>
                 {liveMetrics.timeToFirstValidMs !== undefined && <small>first valid {(liveMetrics.timeToFirstValidMs / 1_000).toFixed(2)} s</small>}
+                {liveMetrics.samplingWarning && <small role="status">{liveMetrics.samplingWarning}</small>}
               </div>
               <div>
                 <span>ACQUIRED SYMBOLS</span>
@@ -984,9 +1287,10 @@ export default function ReceiverApp() {
               </div>
               <div>
                 <span>PRESSURE</span>
-                <strong>{liveMetrics.busyDrops} busy · {liveMetrics.throttledFrames} limited</strong>
+                <strong>{liveMetrics.busyDrops} busy · {liveMetrics.rateLimitedExposures} limited</strong>
                 <small>
-                  p50 {liveMetrics.medianDecodeMs.toFixed(0)} / p95 {liveMetrics.p95DecodeMs.toFixed(0)} ms
+                  decode p50 {liveMetrics.medianDecodeMs.toFixed(0)} / p95 {liveMetrics.p95DecodeMs.toFixed(0)} ms
+                  {` · round trip p95 ${liveMetrics.workerRoundTripP95Ms.toFixed(0)} ms`}
                   {liveMetrics.gridOutcome ? ` · ${liveMetrics.gridOutcome}` : ""}
                   {liveMetrics.gridContrast !== undefined ? ` · contrast ${liveMetrics.gridContrast}` : ""}
                 </small>
@@ -1011,7 +1315,7 @@ export default function ReceiverApp() {
                 ref={fileInputRef}
                 className="hidden-input"
                 type="file"
-                accept="image/png,image/jpeg,image/webp"
+                accept="image/png,image/jpeg"
                 multiple
                 onChange={(event) => void receiveSavedFrames(event.currentTarget.files)}
               />
@@ -1153,6 +1457,10 @@ export function CapacityScorecard({
     report.verified_payload_bytes_per_second;
   const headlineSeconds = report.camera_to_verified_seconds ?? report.transfer_seconds;
   const includesAcquisition = report.camera_to_verified_seconds !== undefined;
+  const opticalCodeRate = report.optical_accepted_codes_per_second ??
+    report.accepted_codes_per_second;
+  const opticalSymbolRate = report.optical_accepted_symbol_bytes_per_second ??
+    report.accepted_symbol_bytes_per_second;
   const previousDelta = comparison.changeFromPrevious;
   const deltaClass = previousDelta === undefined || Math.abs(previousDelta) < 0.005
     ? "neutral"
@@ -1162,20 +1470,23 @@ export function CapacityScorecard({
       <div className="capacity-scorecard-heading">
         <div>
           <span>POST-RECEIVE ANALYTICS</span>
-          <strong>Verified goodput</strong>
+          <strong>Diagnostic verified transfer rate</strong>
         </div>
         <b className={comparison.isNewBest ? "new-best" : "run-number"}>
-          {comparison.isNewBest && comparison.runNumber > 1 ? "NEW BEST" : `RUN ${comparison.runNumber}`}
+          {comparison.isNewBest && comparison.runNumber > 1 ? "NEW BROWSER BASELINE" : `RUN ${comparison.runNumber}`}
         </b>
       </div>
       <div className="capacity-hero">
         <strong>{formatRate(headlineGoodput)}</strong>
-        <span>{formatBytes(report.file_bytes)} cryptographically verified in {headlineSeconds.toFixed(2)} sec · {includesAcquisition ? "camera open → verified" : "first accepted → verified"}</span>
+        <span>{formatBytes(report.file_bytes)} cryptographically verified in {headlineSeconds.toFixed(2)} sec · {includesAcquisition ? "camera open → verified" : "legacy first accepted → verification complete"}</span>
       </div>
+      <p className="capacity-history-note">
+        Receiver diagnostic only: sender optical start is not synchronized, so this rate is useful for same-setup iteration but is not a publication-grade speed benchmark.
+      </p>
       <div className="capacity-comparison">
         {comparison.previousGoodput === undefined ? (
           <div className="capacity-baseline">
-            <span>DEVICE BASELINE</span>
+            <span>BROWSER BASELINE</span>
             <strong>First {report.profile.label} result saved</strong>
             <small>Repeat this profile and payload size to see the change.</small>
           </div>
@@ -1195,10 +1506,10 @@ export function CapacityScorecard({
         )}
       </div>
       <div className="capacity-metric-grid">
-        <div><span>END TO END</span><strong>{headlineSeconds.toFixed(2)} s</strong><small>{includesAcquisition ? "camera open → verified" : "first accepted code → verified"}</small></div>
-        <div><span>CODE RATE</span><strong>{report.accepted_codes_per_second.toFixed(1)}/s</strong><small>{report.accepted_codes} accepted codes</small></div>
+        <div><span>END TO END</span><strong>{headlineSeconds.toFixed(2)} s</strong><small>{includesAcquisition ? "camera open → verified" : "legacy first accepted code → verification complete"}</small></div>
+        <div><span>CODE RATE</span><strong>{opticalCodeRate.toFixed(1)}/s</strong><small>{report.accepted_codes} accepted codes · {report.optical_accepted_codes_per_second === undefined ? "legacy verification window" : "optical frame window"}</small></div>
         <div><span>ACCEPTANCE</span><strong>{report.decoded_acceptance_percent.toFixed(1)}%</strong><small>accepted ÷ all decoded codes</small></div>
-        <div><span>PAYLOAD EFFICIENCY</span><strong>{report.payload_efficiency_percent.toFixed(1)}%</strong><small>file bytes ÷ accepted symbol bytes</small></div>
+        <div><span>EFFECTIVE PAYLOAD EFFICIENCY</span><strong>{report.payload_efficiency_percent.toFixed(1)}%</strong><small>file bytes ÷ accepted symbol bytes · compression may exceed 100%</small></div>
       </div>
       <details className="capacity-diagnostics">
         <summary>Pipeline diagnostics</summary>
@@ -1206,18 +1517,21 @@ export function CapacityScorecard({
           <div><dt>Profile</dt><dd>{report.profile.label} · {report.profile.lanes || "—"} lane{report.profile.lanes === 1 ? "" : "s"}{report.profile.qr_version ? ` · QR v${report.profile.qr_version}` : ""}</dd></div>
           <div><dt>Accepted / required</dt><dd>{report.accepted_codes} / {report.required_codes} codes</dd></div>
           <div><dt>Rejected / duplicate</dt><dd>{report.rejected_codes} / {report.duplicate_codes} codes</dd></div>
-          <div><dt>Accepted optical rate</dt><dd>{formatRate(report.accepted_symbol_bytes_per_second)}</dd></div>
-          {includesAcquisition && <div><dt>Transport-only goodput</dt><dd>{formatRate(report.verified_payload_bytes_per_second)} · {report.transfer_seconds.toFixed(2)} s from first accepted code</dd></div>}
+          <div><dt>{report.optical_accepted_symbol_bytes_per_second === undefined ? "Legacy accepted symbol rate" : "Accepted optical rate"}</dt><dd>{formatRate(opticalSymbolRate)}</dd></div>
+          {report.optical_frame_window_seconds !== undefined && <div><dt>Optical frame window</dt><dd>{report.optical_frame_window_seconds.toFixed(3)} s from first accepted unique frame → last accepted unique frame · {(report.optical_accepted_codes_per_second ?? 0).toFixed(1)} codes/s · Grid includes its valid acquisition preamble</dd></div>}
+          {includesAcquisition && <div><dt>Legacy verification-window goodput</dt><dd>{formatRate(report.verified_payload_bytes_per_second)} · {report.transfer_seconds.toFixed(2)} s from first accepted code → verification complete</dd></div>}
           <div><dt>Fountain overhead</dt><dd>{report.fountain_overhead_percent.toFixed(1)}%</dd></div>
           {report.transport && <div><dt>Optical packing</dt><dd>{report.transport.encoding} · {formatBytes(report.transport.optical_object_bytes)} transmitted · {report.transport.optical_reduction_percent.toFixed(1)}% reduction</dd></div>}
-          <div><dt>Camera</dt><dd>{report.camera.width}×{report.camera.height} decode{report.camera.source_width ? ` · ${report.camera.source_width}×${report.camera.source_height} source` : ""} · {report.camera.observed_fps.toFixed(1)} observed / {report.camera.negotiated_fps.toFixed(0)} negotiated FPS · {report.camera.camera_exposures ?? "—"} exposures</dd></div>
+          <div><dt>Camera</dt><dd>{report.camera.width}×{report.camera.height} decode{report.camera.source_width ? ` · ${report.camera.source_width}×${report.camera.source_height} source` : ""} · {report.camera.observed_fps.toFixed(1)} observed / {report.camera.negotiated_fps.toFixed(0)} negotiated FPS · {report.camera.camera_exposures ?? "—"} exposures · {report.camera.callback_frames ?? "—"} callbacks · {report.camera.duplicate_callbacks ?? "—"} duplicate</dd></div>
+          {report.camera.sampling_status && <div><dt>Camera sampling</dt><dd>{report.camera.sampling_status} · {report.camera.sampling_ratio?.toFixed(2) ?? "—"}× exposure/target ratio{report.camera.sampling_warning ? ` · ${report.camera.sampling_warning}` : ""}</dd></div>}
           {report.camera.time_to_first_valid_ms !== undefined && <div><dt>First valid symbol</dt><dd>{(report.camera.time_to_first_valid_ms / 1_000).toFixed(2)} s after camera open</dd></div>}
           <div><dt>Decoder</dt><dd>{report.camera.valid_codes_per_second.toFixed(1)} valid codes/s · p50 {report.camera.decode_p50_ms.toFixed(1)} ms · p95 {report.camera.decode_p95_ms.toFixed(1)} ms</dd></div>
           {report.camera.decode_jobs !== undefined && <div><dt>Optical acquisition</dt><dd>{report.camera.optical_acquisition_percent?.toFixed(1)}% · {report.camera.successful_decode_jobs} symbol jobs / {report.camera.decode_jobs} completed jobs · {report.camera.empty_decode_jobs} empty</dd></div>}
           {report.camera.unique_codes_per_second !== undefined && <div><dt>Symbol yield</dt><dd>{report.camera.unique_codes_per_second.toFixed(1)} unique/s · {report.camera.duplicate_codes_per_second?.toFixed(1) ?? "—"} duplicate/s</dd></div>}
           {report.camera.grid_last_outcome && <div><dt>Grid lock</dt><dd>{report.camera.grid_last_outcome} · contrast {report.camera.grid_contrast?.toFixed(0) ?? "—"} · fill {report.camera.grid_screen_fill_percent?.toFixed(1) ?? "—"}% · registration reused {report.camera.grid_registration_reuse_percent?.toFixed(1) ?? "—"}%</dd></div>}
+          {report.camera.same_frame_reacquisitions !== undefined && <div><dt>Same-frame Grid reacquisition</dt><dd>{report.camera.same_frame_reacquisition_successes ?? 0} / {report.camera.same_frame_reacquisitions} successful · p50 {report.camera.same_frame_reacquisition_p50_ms?.toFixed(1) ?? "—"} ms · p95 {report.camera.same_frame_reacquisition_p95_ms?.toFixed(1) ?? "—"} ms</dd></div>}
           {report.profile.visual_phy && <div><dt>Bound channel</dt><dd>{report.profile.visual_phy} · {report.profile.target_symbol_rate ?? "—"} symbols/s target</dd></div>}
-          <div><dt>Pressure</dt><dd>{report.camera.busy_drops} busy drops · {report.camera.rate_limited_exposures ?? 0} rate-limited exposures · {report.camera.workers} workers</dd></div>
+          <div><dt>Pressure</dt><dd>{report.camera.busy_drops} busy drops · {report.camera.rate_limited_exposures ?? 0} rate-limited exposures · {report.camera.submitted_exposures ?? "—"} submitted exposures · {report.camera.workers} workers · copy p95 {report.camera.capture_copy_p95_ms?.toFixed(1) ?? "—"} ms · worker round trip p95 {report.camera.worker_round_trip_p95_ms?.toFixed(1) ?? "—"} ms</dd></div>
         </dl>
       </details>
       <div className="capacity-actions">
@@ -1226,7 +1540,7 @@ export function CapacityScorecard({
       </div>
       <p className="capacity-history-note">
         {historySaved
-          ? `Saved privately on this device · last ${CAPACITY_HISTORY_LIMIT} runs retained · comparisons match device + visual PHY + target rate + exact payload`
+          ? `Saved privately in this browser · last ${CAPACITY_HISTORY_LIMIT} successful runs retained · comparisons match browser user-agent + visual PHY + target rate + exact payload; this is not unique hardware identity`
           : "Device history is unavailable in this browser session. Export the JSON to preserve this run."}
       </p>
       {status && <p className="measurement-status" role="status">{status}</p>}
@@ -1276,14 +1590,6 @@ async function openCameraStream(): Promise<MediaStream> {
       video: { ...baseConstraints, frameRate: { ideal: 60 } },
     });
   }
-}
-
-function isOpticalFrame(bytes: Uint8Array): boolean {
-  return bytes.length >= 44 &&
-    bytes[0] === 0x41 &&
-    bytes[1] === 0x47 &&
-    bytes[2] === 0x46 &&
-    (bytes[3] === 0x31 || bytes[3] === 0x32);
 }
 
 function percentile(sorted: number[], value: number): number {

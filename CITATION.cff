@@ -8,12 +8,14 @@ authors:
   - name: HumanCTO
 repository-code: https://github.com/humancto/glass-bridge
 url: https://humancto.github.io/glass-bridge/
-version: 0.12.0-pre-alpha
+version: 0.1.0-pre-alpha
 license: Apache-2.0
 abstract: >-
-  A research prototype for fast, verifiable optical file exchange across
-  disconnected and air-gapped security boundaries using signed, policy-bound
-  AGX envelopes, receiver-local quarantine, and auditable release evidence.
+  A pre-alpha research prototype for verifiable optical file exchange across
+  controlled, disconnected boundaries using signed, policy-bound AGX envelopes,
+  receiver-local quarantine, and auditable release evidence. Physical
+  phone-camera performance and high-assurance air-gap deployment remain
+  unproven evaluation targets.
 keywords:
   - air gap
   - optical data transfer

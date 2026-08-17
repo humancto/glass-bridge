@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CapacityScorecard } from "../src/receiver/ReceiverApp";
+import { CameraExposureTracker, CapacityScorecard } from "../src/receiver/ReceiverApp";
 import type { CapacityComparison, CapacityReport } from "../src/receiver/capacity-report";
 
 const report: CapacityReport = {
@@ -22,6 +22,9 @@ const report: CapacityReport = {
   observed_codes: 106,
   accepted_codes_per_second: 40,
   accepted_symbol_bytes_per_second: 67_520,
+  optical_frame_window_seconds: 2,
+  optical_accepted_codes_per_second: 47.5,
+  optical_accepted_symbol_bytes_per_second: 80_180,
   symbol_bytes: 1_688,
   decoded_acceptance_percent: 90.6,
   fountain_overhead_percent: 9.1,
@@ -46,6 +49,15 @@ const report: CapacityReport = {
     successful_decode_jobs: 82,
     empty_decode_jobs: 38,
     optical_acquisition_percent: 68.3,
+    callback_frames: 180,
+    camera_exposures: 90,
+    duplicate_callbacks: 90,
+    submitted_exposures: 82,
+    rate_limited_exposures: 8,
+    capture_copy_p95_ms: 2.7,
+    worker_round_trip_p95_ms: 9.2,
+    sampling_ratio: 1,
+    sampling_status: "single-sampled",
   },
   device: "test-phone",
 };
@@ -72,19 +84,33 @@ describe("post-receive analytics scorecard", () => {
     }));
     expect(html).toContain("Post-receive transfer analytics");
     expect(html).toContain("48.0 KiB/s");
-    expect(html).toContain("NEW BEST");
+    expect(html).toContain("NEW BROWSER BASELINE");
     expect(html).toContain("+11.7%");
     expect(html).toContain("28.4 codes/s");
     expect(html).toContain("camera open → verified");
-    expect(html).toContain("Transport-only goodput");
+    expect(html).toContain("47.5/s");
+    expect(html).toContain("78.3 KiB/s");
+    expect(html).toContain("Optical frame window");
+    expect(html).toContain("Legacy verification-window goodput");
+    expect(html).toContain("not a publication-grade speed benchmark");
     expect(html).toContain("90.6%");
     expect(html).toContain("Pipeline diagnostics");
     expect(html).toContain("68.3%");
     expect(html).toContain("gzip · 31.3 KiB transmitted · 78.4% reduction");
     expect(html).toContain("Copy benchmark JSON");
     expect(html).toContain("Save / share benchmark JSON");
-    expect(html).toContain("last 20 runs retained");
-    expect(html).toContain("comparisons match device + visual PHY + target rate + exact payload");
+    expect(html).toContain("last 20 successful runs retained");
+    expect(html).toContain("comparisons match browser user-agent + visual PHY + target rate + exact payload");
     expect(html).toContain("Benchmark JSON copied.");
+  });
+
+  it("deduplicates a 30 FPS media timeline sampled by 60 callbacks", () => {
+    const tracker = new CameraExposureTracker();
+    for (let callback = 0; callback < 60; callback += 1) {
+      tracker.observe(Math.floor(callback / 2) / 30);
+    }
+    expect(tracker.callbackFrames).toBe(60);
+    expect(tracker.cameraExposures).toBe(30);
+    expect(tracker.duplicateCallbacks).toBe(30);
   });
 });

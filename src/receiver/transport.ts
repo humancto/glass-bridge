@@ -49,8 +49,15 @@ export type IngestResult = TransferProgress & {
   envelope?: Uint8Array;
 };
 
+export type ExpectedOpticalTransport = {
+  codec?: OpticalCodecId;
+  symbolSize?: number;
+};
+
 export class OpticalTransferDecoder {
   private readonly expectedSessionHex?: string;
+  private readonly expectedCodec?: OpticalCodecId;
+  private readonly expectedSymbolSize?: number;
   private sessionId?: Uint8Array;
   private sessionHex?: string;
   private sourceCount = 0;
@@ -67,11 +74,24 @@ export class OpticalTransferDecoder {
   private rejectionReason?: TransferProgress["rejectionReason"];
   private envelope?: Uint8Array;
 
-  constructor(expectedSessionId?: Uint8Array) {
+  constructor(
+    expectedSessionId?: Uint8Array,
+    expectedTransport: ExpectedOpticalTransport = {},
+  ) {
     if (expectedSessionId && expectedSessionId.length !== 16) {
       throw new Error("Expected optical session identifiers must be 16 bytes.");
     }
+    if (
+      expectedTransport.symbolSize !== undefined &&
+      (!Number.isSafeInteger(expectedTransport.symbolSize) ||
+        expectedTransport.symbolSize <= 0 ||
+        expectedTransport.symbolSize > MAX_SYMBOL_BYTES)
+    ) {
+      throw new Error("Expected optical symbol size is outside the supported range.");
+    }
     this.expectedSessionHex = expectedSessionId ? toHex(expectedSessionId) : undefined;
+    this.expectedCodec = expectedTransport.codec;
+    this.expectedSymbolSize = expectedTransport.symbolSize;
   }
 
   ingestText(value: string): IngestResult {
@@ -166,6 +186,12 @@ export class OpticalTransferDecoder {
   }
 
   private initializeOrValidateSession(frame: ParsedFrame): void {
+    if (
+      (this.expectedCodec !== undefined && frame.codec !== this.expectedCodec) ||
+      (this.expectedSymbolSize !== undefined && frame.symbolSize !== this.expectedSymbolSize)
+    ) {
+      throw new Error("The optical frame does not match the paired transport profile.");
+    }
     if (!this.sessionId) {
       this.sessionId = frame.sessionId;
       this.sessionHex = frame.sessionHex;
@@ -346,6 +372,21 @@ export function base64UrlEncode(value: Uint8Array): string {
     binary += String.fromCharCode(byte);
   }
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+}
+
+/**
+ * Validates the complete hostile optical frame without mutating decoder state.
+ * Grid registration reuse must not treat a magic-only PHY decode as success:
+ * a stale homography can preserve AGF1/AGF2 while corrupting bytes covered by
+ * the transport CRC.
+ */
+export function isValidOpticalFrame(bytes: Uint8Array): boolean {
+  try {
+    parseFrame(bytes);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function parseFrame(bytes: Uint8Array): ParsedFrame {

@@ -69,7 +69,7 @@ const backlog = [
   ["GB-032", "P0", "security", "Add malicious envelope suite: bombs, traversal, replay, mix-and-match, and truncation.", "GB-013,015,023"],
   ["GB-033", "P0", "bench", "Define benchmark manifest, run identity, environment fields, and raw result schema.", "GB-001"],
   ["GB-034", "P0", "bench", "Implement reproducible synthetic video channel with blur, glare, skew, and erasures.", "GB-021,033"],
-  ["GB-035", "P0", "bench", "Run and publish Decimen/QRFerry/libcimbar comparison protocol without cherry-picking.", "GB-029,033"],
+  ["GB-035", "P0", "bench", "Preregister the Decimen/QRFerry/libcimbar comparison protocol and publish the complete declared run set.", "GB-029,033"],
   ["GB-036", "P1", "transport", "Add dual-lane refresh-stable QR scheduler and measured render telemetry.", "GB-028,035"],
   ["GB-037", "P1", "transport", "Add duplex control-code profile for capabilities, quality hints, and stop signal.", "GB-022,029"],
   ["GB-038", "P1", "transport", "Implement adaptive controller with frozen static baselines and ablation switches.", "GB-035,037"],
@@ -117,7 +117,7 @@ const sources = [
   ["NIST SP 800-218", "Secure Software Development Framework", "https://doi.org/10.6028/NIST.SP.800-218"],
   ["USENIX Security ’27", "Preliminary call for systems security research", "https://www.usenix.org/conference/usenixsecurity27/call-for-papers"],
   ["USENIX NSDI ’27", "Call for networked systems design and evaluation", "https://www.usenix.org/conference/nsdi27/call-for-papers"],
-  ["ACM MobiCom ’26", "Call for wireless networking and mobile computing research", "https://sigmobile.org/mobicom/2026/cfp.html"],
+  ["ACM MobiCom ’26", "Historical call used for venue-fit planning", "https://sigmobile.org/mobicom/2026/cfp.html"],
   ["NDSS ’27", "Call for network and systems security research", "https://www.ndss-symposium.org/ndss2027/submissions/call-for-papers/"],
   ["GitHub Docs", "Why an explicit license is required for an open-source repository", "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository"],
 ];
@@ -149,13 +149,13 @@ export default function Home({
             <a href="#architecture">Architecture</a>
             <a href="#backlog">Build plan</a>
             <a href={repositoryHref} target="_blank" rel="noreferrer">Source</a>
-            <a className="source-pill" href="#sources">29 sources</a>
+            <a className="source-pill" href="#sources">{sources.length} sources</a>
           </div>
         </nav>
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <div className="status-line"><span></span> Runnable pre-alpha · milestone 16 · v0.14</div>
+            <div className="status-line"><span></span> Runnable pre-alpha · code 0.1.0-pre-alpha · milestone 16 · PRD rev 0.14</div>
             <h1>Move trusted data<br />through <em>light.</em></h1>
             <p className="dek">
               A signed, policy-gated experiment for moving a file through light—without a removable-media payload path, and without pretending that photons alone create trust.
@@ -187,7 +187,7 @@ export default function Home({
             <div className="light-beam"><span>PHOTONS ONLY</span></div>
             <div className="receive-card">
               <span className="receive-dot"></span>
-              <div><small>AIR-GAPPED / RECEIVE</small><strong>Verify before import</strong></div>
+              <div><small>BROWSER DEMO / RECEIVE</small><strong>Verify before release</strong></div>
               <b>QUARANTINED</b>
             </div>
           </div>
@@ -210,8 +210,8 @@ export default function Home({
             <li><a href="#agx"><span>06</span> AGX envelope</a></li>
             <li><a href="#workflow"><span>07</span> Policy & quarantine</a></li>
             <li><a href="#transport"><span>08</span> Optical transport</a></li>
-            <li><a href="#implementation"><span>09</span> Rust + macOS</a></li>
-            <li><a href="#api"><span>10</span> SDK / CLI / API</a></li>
+            <li><a href="#implementation"><span>09</span> Target native build</a></li>
+            <li><a href="#api"><span>10</span> Current CLI + target API</a></li>
             <li><a href="#benchmarks"><span>11</span> Benchmarks</a></li>
             <li><a href="#research"><span>12</span> Research plan</a></li>
             <li><a href="#roadmap"><span>13</span> Milestones & risks</a></li>
@@ -244,7 +244,7 @@ export default function Home({
               <div><span>Research</span><strong>Testable claims</strong><p>Evaluate security-aware adaptation and workflow outcomes, not QR novelty.</p></div>
             </div>
             <Callout label="Product thesis">
-              <p>GlassBridge is a high-speed, verifiable optical gateway for controlled data exchange across air-gapped boundaries, designed to reduce dependence on removable media while making every crossing explicit, authenticated, policy-constrained, observable, and auditable.</p>
+              <p>GlassBridge is a research prototype for verifiable optical exchange across controlled boundaries, designed to reduce dependence on removable media while making every crossing explicit, authenticated, policy-constrained, observable, and auditable. Physical speed and high-assurance deployment remain evaluation targets.</p>
             </Callout>
             <Callout label="Runnable milestone 16" tone="blue">
               <p>The public laptop-to-phone demo now gives the binary Grid a true raster-only fullscreen surface with integer cell scaling and an acquisition preamble. The receiver reuses screen registration, bounds camera work, reports unique symbols separately from duplicates, preserves lock quality in exported analytics, and stops failed runs on explicit acquisition and absolute session windows without misclassifying valid fountain-code rank plateaus. The verified path still ends in receiver-local policy, memory quarantine, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. Physical phone goodput remains the proof gate.</p>
@@ -261,7 +261,7 @@ export default function Home({
                 <li>All parsers and resource use are bounded against hostile input.</li>
               </ul>
               <ul>
-                <li>Median verified goodput reaches ≥100 KB/s propped in the parity phase.</li>
+                <li>Median verified goodput reaches ≥100 KB/s with a propped receiver in the parity phase.</li>
                 <li>The same AGX envelope moves over QR, dense color codes, or future codecs.</li>
                 <li>Every accept/reject decision produces independently verifiable evidence.</li>
                 <li>Results, failures, hardware, code, and datasets are reproducible.</li>
@@ -302,7 +302,7 @@ export default function Home({
             </p>
             <div className="evidence-cards">
               <a href="https://github.com/deedy/qr-data-transfer" target="_blank" rel="noreferrer"><span>Inspiration / fast-moving baseline</span><strong>deedy / QRFerry</strong><p>Browser transfer, RaptorQ, raw QR bytes, dual refresh-stable lanes, decoder telemetry, and an opt-in laboratory profile advertising 1.40 Mbps nominal optical payload before camera loss.</p><b>Lesson → transport engineering is already sophisticated.</b></a>
-              <a href="https://github.com/bashalarmistalt/decimen-optical-transfer" target="_blank" rel="noreferrer"><span>Closest practical baseline</span><strong>Decimen Optical Transfer</strong><p>One-way fountain-coded QR, self-describing frames, no handshake, adaptive compression, SHA-256 verification, 128 KB/s handheld and approximately 186 KB/s propped in its parent experiment.</p><b>Lesson → useful commodity-device speed is demonstrated.</b></a>
+              <a href="https://github.com/bashalarmistalt/decimen-optical-transfer/tree/v0.4.0" target="_blank" rel="noreferrer"><span>Closest practical baseline</span><strong>Decimen Optical Transfer</strong><p>One-way fountain-coded QR, self-describing frames, no handshake, adaptive compression, and SHA-256 verification. Its v0.4.0 README reports 418.5 KB/s sustained / 601.5 KB/s peak desktop-to-phone and 199.2 / 340.8 KB/s phone-to-phone. These are Decimen's published figures, not a like-for-like GlassBridge benchmark.</p><b>Lesson → the commodity-device transport baseline is already high.</b></a>
               <a href="https://github.com/divan/txqr" target="_blank" rel="noreferrer"><span>Foundational open-source prior art</span><strong>TXQR / qram</strong><p>TXQR described animated QR transfer with fountain codes in 2018; qram decouples its LT-code stream from the delivery mechanism.</p><b>Lesson → fountain-coded animated QR is not novel.</b></a>
               <a href="https://github.com/sz3/libcimbar" target="_blank" rel="noreferrer"><span>Beyond QR</span><strong>libcimbar</strong><p>An experimental color-icon-matrix barcode with Reed–Solomon plus fountain coding, zstd compression, and a reported 850 kbit/s / ~106 KB/s link.</p><b>Lesson → codec abstraction must include custom dense codes.</b></a>
               <a href="https://www.usenix.org/conference/nsdi21/presentation/qian" target="_blank" rel="noreferrer"><span>Screen-camera systems baseline</span><strong>AIRCODE · NSDI ’21</strong><p>Reports a 1.069 Mbit/s raw PHY, but 159.4 Kbit/s average and 182 Kbit/s best adaptive goodput using registration, channel coding, temporal design, and an inaudible control channel.</p><b>Lesson → raw bitrate is not completed-file goodput, and the PHY must be designed around the camera.</b></a>
@@ -344,6 +344,7 @@ export default function Home({
               <div><span>Adversaries</span><strong>Malicious sender, nearby camera/light source, compromised artifact, careless operator, stolen signing key</strong></div>
             </div>
             <p>A camera is an input device and a display is an output device. Research such as aIR-Jumper shows that cameras and infrared can support air-gap infiltration and exfiltration. GlassBridge therefore treats optical frames as hostile packets and does not market commodity hardware as a certified diode.</p>
+            <p className="fineprint"><strong>Control status:</strong> the table is the target high-assurance control set. The browser pre-alpha implements only the subset described in the milestone callout; provisioned roots, role/quorum authorization, sealed envelopes, CDR, protected rollback state, safe filesystem import, and evaluated receive-only hardware remain planned.</p>
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Threat</th><th>Primary controls</th><th>Residual risk / truth</th></tr></thead>
@@ -367,7 +368,10 @@ export default function Home({
             </details>
           </Section>
 
-          <Section id="architecture" eyebrow="05 / Security architecture" title="Authenticate intent early. Expose bytes late.">
+          <Section id="architecture" eyebrow="05 / Target security architecture" title="Authenticate intent early. Expose bytes late.">
+            <Callout label="Target architecture—not current assurance" tone="amber">
+              <p>The diagrams and invariants below define the high-assurance destination. Today’s browser pre-alpha implements session-bound signatures, bounded reconstruction, receiver-local policy, memory quarantine, explicit release, and typed receipts. Provisioned organizational roots, signed trust bundles, durable protected replay state, CDR, crash-safe atomic import, and evaluated receive-only hardware are planned controls.</p>
+            </Callout>
             <div className="architecture-diagram" role="img" aria-label="GlassBridge end-to-end architecture">
               <div className="zone zone-connected">
                 <span>CONNECTED SIDE</span>
@@ -466,6 +470,7 @@ export default function Home({
           </Section>
 
           <Section id="workflow" eyebrow="07 / Policy & quarantine" title="Receiving bytes is not importing them.">
+            <p className="fineprint"><strong>Current versus target:</strong> the browser pre-alpha verifies, applies a pinned receiver-local policy, holds bytes in memory, and requires explicit release. The full state machine, organizational policy bundles, content inspection/CDR, crash-safe journaling, operator quorum, and atomic destination import are target architecture.</p>
             <div className="state-machine" aria-label="Quarantine state machine">
               <div><span>01</span><strong>Detected</strong></div><i>→</i>
               <div><span>02</span><strong>Manifest verified</strong></div><i>→</i>
@@ -550,14 +555,14 @@ import:
             <Callout label="Important correction" tone="amber">
               <p>True channel-adaptive transmission requires feedback. In strict one-way mode the receiver can adapt its own capture/decoder pipeline, but the sender cannot infer camera loss without a return path. Claims and benchmarks must keep U0 and D1 separate.</p>
             </Callout>
-            <h3>Speed roadmap</h3>
+            <h3>Target speed roadmap—not measured results</h3>
             <div className="speed-roadmap">
               <div><span>0</span><strong>Correctness</strong><b>≥15 KB/s handheld</b><p>Single QR lane, 10 MB max, complete verification, stable receive UX.</p></div>
-              <div><span>1</span><strong>Parity</strong><b>≥100 KB/s propped</b><p>Refresh synchronization, raw bytes, efficient native decode, parallel pipeline, compression.</p></div>
-              <div><span>2</span><strong>Beat baseline</strong><b>≥200 KB/s propped</b><p>Dual stable lanes, tuned density/FEC, zero-copy buffers, GPU-assisted regions.</p></div>
+              <div><span>1</span><strong>Parity</strong><b>≥100 KB/s · propped receiver</b><p>Refresh synchronization, raw bytes, efficient native decode, parallel pipeline, compression.</p></div>
+              <div><span>2</span><strong>Post-QR target</strong><b>≥200 KB/s · propped receiver</b><p>Dual stable lanes, tuned density/FEC, zero-copy buffers, GPU-assisted regions.</p></div>
               <div><span>3</span><strong>Research stretch</strong><b>≥500 KB/s</b><p>Custom dense codec and 120 Hz-class hardware; a hypothesis, not a product promise.</p></div>
             </div>
-            <p className="fineprint">All targets are <strong>verified goodput</strong>: original application bytes divided by wall-clock time from accepted manifest detection through complete cryptographic verification. Report nominal optical payload, decoded symbols, reconstructed bytes, and imported bytes separately. Compression gains are reported both on and off.</p>
+            <p className="fineprint">These are research targets, not current phone-camera results. Grid v0's one-lane ceiling is 119.1 KiB/s at 60 symbols/s before loss, so it cannot match Decimen's current 199.2 KB/s phone-to-phone or 418.5 KB/s desktop-to-phone sustained figures on incompressible data through scheduling alone. Publication-grade <strong>verified goodput</strong> is original application bytes divided by wall-clock time from a synchronized sender optical-start marker through complete receiver verification. Camera-open and first-accepted-frame windows remain pipeline diagnostics; Grid's first-accepted window can include its one-second symbol-zero acquisition preamble. Report nominal optical payload, decoded symbols, reconstructed bytes, and imported bytes separately. Compression gains are reported both on and off.</p>
             <h3>Optimization order</h3>
             <ol className="optimization-list">
               <li><span>01</span><div><strong>Measure the pipeline</strong><p>Render cadence, capture fps, exposure stability, decode p50/p95, unique symbols/s, FEC cost, verify cost.</p></div></li>
@@ -568,9 +573,12 @@ import:
             </ol>
           </Section>
 
-          <Section id="implementation" eyebrow="09 / Rust-first implementation" title="A small trusted core, a native macOS shell, and replaceable edges.">
+          <Section id="implementation" eyebrow="09 / Target native implementation" title="A small trusted core, a native macOS shell, and replaceable edges.">
+            <Callout label="Current artifact versus target layout" tone="amber">
+              <p>The current repository contains a Rust core, Rust CLI, browser sender/receiver, protocol fixtures, and benchmark tooling. The repository tree, native macOS shell, isolated CDR workers, FFI, SDKs, fuzzing package, and release structure below are the proposed high-assurance layout, not a description of what ships today.</p>
+            </Callout>
             <div className="implementation-grid">
-              <div className="repo-tree"><pre><code>{`glassbridge/
+              <div className="repo-tree"><span>Target repository layout</span><pre><code>{`glassbridge/
 ├── Cargo.toml
 ├── crates/
 │   ├── agx-types/       # protocol types + limits
@@ -620,9 +628,10 @@ import:
             </ul>
           </Section>
 
-          <Section id="api" eyebrow="10 / SDK, CLI & API" title="The protocol is the durable product surface.">
+          <Section id="api" eyebrow="10 / Current CLI + target SDK/API" title="The protocol is the durable product surface.">
+            <p className="fineprint">The Rust and Swift snippets describe the intended SDK shape; those APIs do not exist in the current pre-alpha. The command list below is the implemented Rust CLI surface.</p>
             <div className="api-grid">
-              <div><span>Rust</span><pre><code>{`let env = AgxBuilder::new(policy)
+              <div><span>Target Rust SDK</span><pre><code>{`let env = AgxBuilder::new(policy)
   .purpose("firmware-update")
   .boundary("plant-7/firmware-in")
   .add_path("controller.bin")?
@@ -630,7 +639,7 @@ import:
   .finalize()?;
 
 sender.send(env, OpticalProfile::StrictOneWay)?;`}</code></pre></div>
-              <div><span>Swift</span><pre><code>{`let session = try GlassBridge.receive(
+              <div><span>Target Swift SDK</span><pre><code>{`let session = try GlassBridge.receive(
   policy: .named("firmware-in/v3"),
   mode: .strictOneWay
 )
@@ -639,7 +648,7 @@ for await event in session.events {
   model.apply(event)
 }`}</code></pre></div>
             </div>
-            <div className="cli-block"><span>CLI surface</span><code>gb envelope create</code><code>gb envelope inspect</code><code>gb sign</code><code>gb verify</code><code>gb send --mode u0</code><code>gb receive --quarantine</code><code>gb policy check</code><code>gb trust import</code><code>gb receipt verify</code><code>gb bench run</code></div>
+            <div className="cli-block"><span>Current Rust CLI surface</span><code>glassbridge demo</code><code>glassbridge screen-demo</code><code>glassbridge keygen</code><code>glassbridge pack</code><code>glassbridge verify</code><code>glassbridge receipt-verify</code><code>glassbridge loopback</code><code>glassbridge qr-export</code><code>glassbridge qr-decode</code><code>glassbridge qr-loopback</code><code>glassbridge video-loopback</code><code>glassbridge video-receive</code><code>glassbridge receive</code></div>
             <h3>Stable domain types</h3>
             <div className="type-grid">
               <div><code>EnvelopeId</code><p>128+ bits of random identity; never a filename or authorization token.</p></div>
@@ -654,7 +663,7 @@ for await event in session.events {
           </Section>
 
           <Section id="benchmarks" eyebrow="11 / Benchmark & validation plan" title="Measure the boundary, not the animation.">
-            <div className="metric-banner"><div><span>Primary metric</span><strong>Verified goodput</strong><p>Original application bytes divided by a declared timing window. The current receiver exports first-accepted-to-verified plus camera-active acquisition evidence; a synchronized optical start marker remains required for publication comparisons.</p></div><div><span>Reliability</span><strong>Completion probability</strong><p>Successful verified transfers within the policy time budget, with structured failed runs retained.</p></div><div><span>Security UX</span><strong>Unsafe-action rate</strong><p>Incorrect approvals/imports in controlled workflow tasks.</p></div></div>
+            <div className="metric-banner"><div><span>Publication metric</span><strong>Synchronized-start verified goodput</strong><p>Original application bytes divided by sender optical-start to receiver verification time. Camera-open-to-verified remains a receiver diagnostic and is not eligible as a performance headline; publication comparisons require a synchronized optical start marker.</p></div><div><span>Reliability</span><strong>Completion probability</strong><p>Successful verified transfers within the policy time budget, with structured failed runs retained.</p></div><div><span>Security UX</span><strong>Unsafe-action rate</strong><p>Incorrect approvals/imports in controlled workflow tasks.</p></div></div>
             <h3>Reference device matrix</h3>
             <div className="table-wrap">
               <table>
@@ -709,7 +718,7 @@ for await event in session.events {
             <h3>Paper package</h3>
             <div className="paper-grid">
               <div><span>Contribution 1</span><strong>AGX design</strong><p>Boundary-scoped signed envelope, offline trust, deterministic policy, quarantine state, and honest receipt semantics.</p></div>
-              <div><span>Contribution 2</span><strong>System</strong><p>Open Rust implementation and macOS reference receiver with strict one-way and duplex research profiles.</p></div>
+              <div><span>Target contribution 2</span><strong>System</strong><p>Extend the current open Rust/browser artifact into a native macOS reference receiver with separately evaluated strict one-way and duplex research profiles.</p></div>
               <div><span>Contribution 3</span><strong>Evaluation</strong><p>Repeatable end-to-end goodput, reliability, security, and operator-workflow study across commodity devices.</p></div>
               <div><span>Artifact</span><strong>Reproducibility</strong><p>Protocol vectors, benchmark harness, raw results, device metadata, failure videos, analysis notebooks, and threat corpus.</p></div>
             </div>
@@ -717,7 +726,7 @@ for await event in session.events {
             <div className="venue-list">
               <a href="https://www.usenix.org/conference/usenixsecurity27/call-for-papers" target="_blank" rel="noreferrer"><span>Security-first result</span><strong>USENIX Security ’27 / NDSS ’27</strong><p>Best if the contribution is a boundary security architecture with strong attacks, formalized semantics, a real implementation, and compelling evaluation.</p></a>
               <a href="https://www.usenix.org/conference/nsdi27/call-for-papers" target="_blank" rel="noreferrer"><span>Systems / transport result</span><strong>NSDI ’27</strong><p>Ambitious; requires a broadly meaningful networked-systems result and deep practical evaluation beyond one application.</p></a>
-              <a href="https://sigmobile.org/mobicom/2026/cfp.html" target="_blank" rel="noreferrer"><span>Mobile optical result</span><strong>ACM MobiCom / MobiSys family</strong><p>Best if adaptive optical transport, heterogeneous device performance, energy, and channel behavior are the central contribution.</p></a>
+              <a href="https://sigmobile.org/mobicom/2026/cfp.html" target="_blank" rel="noreferrer"><span>Historical venue-fit reference</span><strong>ACM MobiCom ’26 CFP</strong><p>The 2026 call is retained as planning context, not presented as an open submission opportunity. Future MobiCom/MobiSys cycles fit only if adaptive optical transport, heterogeneous-device behavior, and energy become the central contribution.</p></a>
               <div><span>Early feedback</span><strong>Workshop + open RFC</strong><p>Publish AGX-0001, baseline code, and replication dataset first; seek systems/security workshop feedback before a full-paper claim.</p></div>
             </div>
             <Callout label="Publication rule" tone="blue"><p>Freeze the paper’s claims only after the artifact and ablations are complete. A negative result—such as adaptation failing to beat robust static scheduling—can still be valuable if the dataset and explanation are rigorous.</p></Callout>
@@ -725,14 +734,14 @@ for await event in session.events {
 
           <Section id="roadmap" eyebrow="13 / Milestones, risks & licensing" title="A 22-week path to an evidence-backed alpha.">
             <Callout label="Actual status · milestone 16" tone="blue">
-              <p>The repository has already crossed the original specification and loopback phases: AGX/1, Rust core/CLI, browser sender/receiver, bounded adaptive optical packing, QR video boundaries, sparse LT repair, dual-lane scheduling, pairing-bound rate and visual-PHY negotiation, a persistently registered monochrome Grid v0, camera-open-to-verified analytics, and failed-run diagnostics are runnable. The immediate speed gate is repeated Grid 30 testing on the same physical pair; the next PHY gate is cropped luma-only rectification, rolling-shutter band recovery, and a shared Rust/WASM grid core.</p>
+              <p>The current artifact includes AGX/1, the Rust core and CLI, browser sender/receiver, bounded adaptive optical packing, QR video tooling, sparse LT repair, dual-lane scheduling, pairing-bound rate and visual-PHY negotiation, a registered monochrome Grid v0 path, camera-open diagnostics, and structured failed-run export. These changes address plausible acquisition paths; they do not prove a physical bottleneck was fixed. The immediate evidence gate is a predeclared set of three undiscarded Grid 30 smoke attempts on one named device pair, with every success and failure published. Camera-open timing stays diagnostic; any publication comparison must use a synchronized optical start marker.</p>
             </Callout>
             <div className="timeline">
               <div><span>M0 · W1–2</span><strong>Threats + AGX draft</strong><p>CDDL, trust model, golden vectors, benchmark preregistration draft.</p><b>Exit: independent parser can reject all negative vectors.</b></div>
               <div><span>M1 · W3–5</span><strong>Secure core</strong><p>Encoding, signing, trust, policy, quarantine, receipt, loopback.</p><b>Exit: signed object round-trip + fuzz harness.</b></div>
               <div><span>M2 · W6–8</span><strong>QR baseline</strong><p>LT FEC, QR codec, synthetic camera, video-file transfer, metrics.</p><b>Exit: 10 MB verified with 30% simulated erasure.</b></div>
               <div><span>M3 · W9–12</span><strong>macOS MVP</strong><p>Live sender/receiver, approval UI, atomic import, strict one-way.</p><b>Exit: ≥15 KB/s handheld; ≥95% core completion.</b></div>
-              <div><span>M4 · W13–16</span><strong>Parity + hardening</strong><p>Dual lanes, native optimizations, security suite, signed policy bundles.</p><b>Exit: ≥100 KB/s propped median on reference pair.</b></div>
+              <div><span>M4 · W13–16</span><strong>Parity + hardening</strong><p>Dual lanes, native optimizations, security suite, signed policy bundles.</p><b>Exit: ≥100 KB/s median with a propped receiver on the reference pair.</b></div>
               <div><span>M5 · W17–19</span><strong>Adaptive research</strong><p>Duplex control, controller, ablations, device matrix.</p><b>Exit: preregistered H1–H4 data frozen.</b></div>
               <div><span>M6 · W20–22</span><strong>Alpha + paper kit</strong><p>SDK, reproducible release, dataset, RFC, first paper draft.</p><b>Exit: public artifact passes clean-room reproduction.</b></div>
             </div>
@@ -748,7 +757,7 @@ for await event in session.events {
             <h3>Licensing and prior-art notes</h3>
             <div className="legal-note">
               <div><strong>Project license</strong><p>Project-authored GlassBridge code and materials are licensed under Apache-2.0, providing a permissive copyright grant and explicit patent terms. Apache-2.0 copyright licenses already granted for released versions are irrevocable; the patent license is separately subject to the Section 3 termination condition for specified patent litigation. Third-party components retain their own terms. Review contributor agreements with counsel before pursuing any future exclusive dual-license model.</p></div>
-              <div><strong>Dependency isolation</strong><p>Track every codec/FEC dependency and license in an automated inventory. libcimbar is MPL-2.0; TXQR and Decimen identify MIT; qram identifies BSD-3-Clause. Reuse only under compatible terms and preserve notices.</p></div>
+              <div><strong>Dependency isolation</strong><p>Track every codec/FEC dependency and license in an automated inventory. libcimbar is MPL-2.0 and qram identifies BSD-3-Clause. Current Decimen v0.4.0+ is AGPL-3.0-or-later; GlassBridge pins its adapted <code>shared/fountain.ts</code> and <code>shared/protocol.ts</code> source to MIT-licensed v0.3.0 commit <code>29cba8fa25dd160c8b6aa18fe3b48fbc5bde2e36</code> and incorporates no post-v0.3.0 Decimen code. Preserve exact provenance and notices for every reuse.</p></div>
               <div><strong>RaptorQ caution</strong><p>RFC 6330 is an IETF standard and has associated IETF IPR disclosures, including Qualcomm #1958. An RFC is not a blanket patent license. Keep FEC pluggable, use LT for the clean baseline, and obtain qualified legal review before shipping or marketing a RaptorQ implementation.</p></div>
               <div><strong>No legal conclusion here</strong><p>This document is a technical planning artifact, not a patent landscape, license opinion, or freedom-to-operate analysis. Search claims, jurisdictions, expiration, continuations, and current license text with counsel before commercial release.</p></div>
             </div>
@@ -772,7 +781,7 @@ for await event in session.events {
             <h3>Next open-source wave</h3>
             <div className="wave-grid">
               <div><span>Track A · legal + community</span><strong>License and community ready</strong><p>Apache-2.0, repository metadata, contribution terms, issue templates, Dependabot, and private vulnerability reporting are now in place.</p></div>
-              <div><span>Track B · evidence</span><strong>Five-pair device matrix</strong><p>Three repetitions per condition, raw JSON and failures, no fastest-ever headline from one run.</p></div>
+              <div><span>Track B · evidence</span><strong>Named-pair physical matrix</strong><p>Begin with three predeclared, undiscarded smoke attempts on one named pair; retain every success, failure, and abort. Expand to five pairs only after synchronized-start timing is captured.</p></div>
               <div><span>Track C · trust</span><strong>Organization-bound provenance</strong><p>Provisioned roots, release roles, signed policy bundle, rotation, revocation, negative vectors.</p></div>
               <div><span>Track D · assurance</span><strong>Fuzz + provenance + managed edge</strong><p>Continuous hostile-input testing, SBOM, signed build evidence, reproducibility, response headers.</p></div>
             </div>
@@ -785,8 +794,8 @@ for await event in session.events {
             </div>
             <div className="closing-card">
               <p>Recommended next move</p>
-              <h2>Measure it on five device pairs. Publish the failures too.</h2>
-              <span>The protocol, open-source license, and live vertical slice exist. Physical evidence and organizational trust now determine whether this becomes a credible security project.</span>
+              <h2>Measure one named pair honestly. Publish the failures too.</h2>
+              <span>The protocol, open-source license, and live vertical slice exist. Start with the canonical three-attempt smoke gate, then expand the device matrix only after synchronized-start timing exists. Physical evidence and organizational trust now determine whether this becomes a credible security project.</span>
               <a className="button button-primary" href={launchArticleHref} target="_blank" rel="noreferrer">Open the launch article</a>
             </div>
           </Section>
@@ -795,7 +804,7 @@ for await event in session.events {
 
       <footer>
         <div className="brand"><span className="brand-mark">GB</span><span>GlassBridge <b>/ AGX</b></span></div>
-        <p>Product & Research Definition · v0.14 · Research cut {researchDate}</p>
+        <p>Product & Research Definition · PRD rev 0.14 · code 0.1.0-pre-alpha · Research cut {researchDate}</p>
         <a href="#top">Back to top ↑</a>
       </footer>
     </main>

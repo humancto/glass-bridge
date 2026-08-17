@@ -31,6 +31,7 @@ const assets = files.map((file) => `${base}${relative(dist, file).split(sep).joi
 
 const source = `const CACHE_NAME = ${JSON.stringify(cacheName)};
 const PRECACHE = ${JSON.stringify(assets, null, 2)};
+const PRECACHE_URLS = new Set(PRECACHE.map((path) => new URL(path, self.location.origin).href));
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting()));
@@ -44,29 +45,25 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-async function fetchAndCache(request) {
-  const response = await fetch(request);
-  if (response.ok && response.status !== 206) {
-    try {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.put(request, response.clone());
-    } catch {
-      // A quota or storage failure must not replace a valid network response.
-    }
-  }
-  return response;
+function precacheUrl(request) {
+  const url = new URL(request.url);
+  url.search = "";
+  url.hash = "";
+  return PRECACHE_URLS.has(url.href) ? url.href : undefined;
 }
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET" || new URL(event.request.url).origin !== self.location.origin) return;
+  const cachedUrl = precacheUrl(event.request);
+  if (!cachedUrl) return;
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetchAndCache(event.request).catch(() => caches.match(event.request).then((cached) => cached || Response.error())),
+      fetch(event.request).catch(() => caches.match(cachedUrl).then((cached) => cached || Response.error())),
     );
     return;
   }
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetchAndCache(event.request)),
+    caches.match(cachedUrl).then((cached) => cached || fetch(event.request)),
   );
 });
 `;

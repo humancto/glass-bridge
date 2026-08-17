@@ -35,7 +35,7 @@ describe("phone receiver AGX verification", () => {
   it("fails closed for tampering, wrong boundaries, and malformed pairing", async () => {
     const tampered = await readHex("test-vectors/agx1/tampered-payload.hex");
     const publicKey = await readHex("test-vectors/agx1/sender-public.hex");
-    const trust = { publicKey, boundary: "golden-lab/firmware-in" };
+    const trust = { pairingVersion: "1" as const, publicKey, boundary: "golden-lab/firmware-in" };
 
     await expect(verifyAgxEnvelope(tampered, trust)).rejects.toThrow("digest");
     await expect(
@@ -62,6 +62,7 @@ describe("phone receiver AGX verification", () => {
     );
 
     expect(trust.publicKey).toEqual(publicKey);
+    expect(trust.pairingVersion).toBe("2");
     expect(trust.sessionId).toEqual(sessionId);
     expect(trust.profileId).toBe("burst");
   });
@@ -73,6 +74,7 @@ describe("phone receiver AGX verification", () => {
       `#v=3&key=${base64UrlEncode(publicKey)}&boundary=demo&session=${base64UrlEncode(sessionId)}&profile=ceiling&packing=gzip`,
     );
     expect(trust.profileId).toBe("ceiling");
+    expect(trust.pairingVersion).toBe("3");
     expect(trust.packing).toBe("gzip");
     expect(() => parseBootstrapHash(
       `#v=3&key=${base64UrlEncode(publicKey)}&boundary=demo&session=${base64UrlEncode(sessionId)}&profile=ceiling&packing=brotli`,
@@ -87,6 +89,7 @@ describe("phone receiver AGX verification", () => {
       `${prefix}&profile=grid&packing=identity&phy=mono-grid-v0&rate=30`,
     );
     expect(trust.visualPhy).toBe("mono-grid-v0");
+    expect(trust.pairingVersion).toBe("4");
     expect(trust.targetSymbolRate).toBe(30);
     expect(() => parseBootstrapHash(
       `${prefix}&profile=grid&packing=identity&phy=qr-model2-v1&rate=30`,
@@ -116,6 +119,32 @@ describe("phone receiver optical reconstruction", () => {
     );
     expect(correct.rejectionReason).toBeUndefined();
     expect(correct.acceptedFrames).toBe(1);
+  });
+
+  it("rejects a first frame that does not match the paired codec or symbol size", () => {
+    const session = new Uint8Array(16).fill(3);
+    const payload = new TextEncoder().encode("paired transport profile");
+    const frame = makeRawFrame(payload, session, 16, 0);
+
+    const wrongCodec = new OpticalTransferDecoder(session, {
+      codec: "lt-v2",
+      symbolSize: 16,
+    }).ingestFrame(frame);
+    expect(wrongCodec.acceptedFrames).toBe(0);
+    expect(wrongCodec.rejectedFrames).toBe(1);
+
+    const wrongSize = new OpticalTransferDecoder(session, {
+      codec: "dense-v1",
+      symbolSize: 32,
+    }).ingestFrame(frame);
+    expect(wrongSize.acceptedFrames).toBe(0);
+    expect(wrongSize.rejectedFrames).toBe(1);
+
+    const matched = new OpticalTransferDecoder(session, {
+      codec: "dense-v1",
+      symbolSize: 16,
+    }).ingestFrame(frame);
+    expect(matched.acceptedFrames).toBe(1);
   });
 
   it("reconstructs a committed Rust-generated browser transport fixture", async () => {

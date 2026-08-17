@@ -28,7 +28,10 @@ run, including failures, and use synthetic non-sensitive data.
 - Do not implement new cryptographic primitives.
 - Do not include private data, internal conversations, credentials, or proprietary artifacts.
 - Treat physical throughput, security, and novelty as claims that require reproducible evidence.
-- For a device result, attach every exported `glassbridge-capacity/5` success and `glassbridge-device-run/1` failure. Version 5 adds camera-open-to-verified goodput while retaining transport-only goodput as a diagnostic.
+- For a device result, attach every exported `glassbridge-capacity/5` success and `glassbridge-device-run/1` failure. Version 5 records camera-open-to-verified and transport-only values for diagnosis; neither is the publication timing window.
+- Validate exported records against [`spec/glassbridge-capacity-5.schema.json`](spec/glassbridge-capacity-5.schema.json) and [`spec/glassbridge-device-run-1.schema.json`](spec/glassbridge-device-run-1.schema.json).
+- Predeclare the exact named sender/receiver pair, clean commit, profile (**Grid 30 lab** or a specific **Burst** rate), payload, and setup before a physical smoke set.
+- Run three consecutive attempts without discarding warm-ups, failures, aborts, or timeouts. Camera-open-to-verified is diagnostic; publication comparisons require a synchronized sender optical-start marker.
 
 ## Development setup
 

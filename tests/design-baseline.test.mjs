@@ -34,6 +34,12 @@ const crateManifestUrls = [
   new URL("../crates/glassbridge-cli/Cargo.toml", import.meta.url),
 ];
 const contributingUrl = new URL("../CONTRIBUTING.md", import.meta.url);
+const thirdPartyNoticesUrl = new URL("../THIRD_PARTY_NOTICES.md", import.meta.url);
+const thirdPartyLicensesUrl = new URL("../THIRD_PARTY_LICENSES.md", import.meta.url);
+const capacitySchemaUrl = new URL("../spec/glassbridge-capacity-5.schema.json", import.meta.url);
+const deviceRunSchemaUrl = new URL("../spec/glassbridge-device-run-1.schema.json", import.meta.url);
+const publishedCapacitySchemaUrl = new URL("../dist/spec/glassbridge-capacity-5.schema.json", import.meta.url);
+const publishedDeviceRunSchemaUrl = new URL("../dist/spec/glassbridge-device-run-1.schema.json", import.meta.url);
 
 test("contains the complete public design baseline", async () => {
   const page = await readFile(pageUrl, "utf8");
@@ -65,7 +71,7 @@ test("contains the complete public design baseline", async () => {
   assert.match(page, /Decimen Optical Transfer/);
   assert.match(page, /Runnable milestone 16/);
   assert.match(page, /Open-source status/);
-  assert.match(page, /Measure it on five device pairs/);
+  assert.match(page, /three undiscarded Grid 30 smoke attempts on one named device pair/i);
   assert.doesNotMatch(page, /Runnable milestone 9/);
   assert.doesNotMatch(page, /Runnable milestone 13/);
   assert.doesNotMatch(page, /Write AGX-0001 before optimizing/);
@@ -86,7 +92,7 @@ test("publishes an honest open-source and launch package", async () => {
   assert.match(securityAudit, /GB-WEB-001/);
   assert.match(securityAudit, /GB-TRUST-001/);
   assert.match(launchArticle, /We did not invent animated QR transfer/i);
-  assert.match(launchArticle, /The Trust Boundary Came With It/i);
+  assert.match(launchArticle, /What If a File Crossing an Air Gap Carried Its Trust Contract/i);
   assert.match(launchArticle, /The QR transfer is prior art/i);
 });
 
@@ -103,7 +109,7 @@ test("publishes a visitor-first community front door", async () => {
 
   assert.match(readme, /Move trusted data through light/i);
   assert.match(readme, /glassbridge-social-preview\.png/);
-  assert.match(readme, /See it work in about a minute/i);
+  assert.match(readme, /Try the browser flow/i);
   assert.match(readme, /Speed without fiction/i);
   assert.match(readme, /licensed under the.*Apache License 2\.0/is);
   assert.match(conduct, /technical candor/i);
@@ -111,7 +117,8 @@ test("publishes a visitor-first community front door", async () => {
   assert.match(support, /private vulnerability reporting/i);
   assert.match(citation, /cff-version: 1\.2\.0/);
   assert.match(issueConfig, /security\/advisories\/new/);
-  assert.match(deviceResult, /glassbridge-capacity\/4/);
+  assert.match(deviceResult, /glassbridge-capacity\/5/);
+  assert.match(deviceResult, /glassbridge-device-run\/1/);
 });
 
 test("publishes coherent Apache-2.0 licensing metadata", async () => {
@@ -160,18 +167,16 @@ test("exports a self-contained, sanitized research document", async () => {
 test("uses network-first navigations to avoid mixed service-worker releases", async () => {
   const serviceWorker = await readFile(serviceWorkerUrl, "utf8");
 
+  assert.match(serviceWorker, /const PRECACHE_URLS = new Set/);
+  assert.doesNotMatch(serviceWorker, /cache\.put\(/);
   assert.match(serviceWorker, /event\.request\.mode === "navigate"/);
-  assert.match(serviceWorker, /fetchAndCache\(event\.request\)\.catch/);
-  assert.match(
-    serviceWorker,
-    /caches\.match\(event\.request\)\.then\(\(cached\) => cached \|\| fetchAndCache\(event\.request\)\)/,
-  );
+  assert.match(serviceWorker, /if \(!cachedUrl\) return/);
 
   const network = serviceWorkerHarness(serviceWorker, {
     networkResponse: new Response("network", { status: 200 }),
   });
   assert.equal(await (await network.dispatchNavigation()).text(), "network");
-  assert.deepEqual(network.events, ["fetch", "open", "put"]);
+  assert.deepEqual(network.events, ["fetch"]);
 
   const fallback = serviceWorkerHarness(serviceWorker, {
     networkError: new Error("offline"),
@@ -192,12 +197,44 @@ test("uses network-first navigations to avoid mixed service-worker releases", as
     cachePutError: new Error("quota exceeded"),
   });
   assert.equal(await (await cacheFailure.dispatchNavigation()).text(), "still-valid");
+  assert.deepEqual(cacheFailure.events, ["fetch"]);
 
-  const partial = serviceWorkerHarness(serviceWorker, {
-    networkResponse: new Response("partial", { status: 206 }),
+  const cachedAsset = serviceWorkerHarness(serviceWorker, {
+    cachedResponse: new Response("precache", { status: 200 }),
   });
-  assert.equal(await (await partial.dispatchNavigation()).text(), "partial");
-  assert.deepEqual(partial.events, ["fetch"]);
+  assert.equal(await (await cachedAsset.dispatchAsset()).text(), "precache");
+  assert.deepEqual(cachedAsset.events, ["match"]);
+
+  const unknown = serviceWorkerHarness(serviceWorker, {
+    networkResponse: new Response("must-not-be-runtime-cached", { status: 200 }),
+  });
+  assert.equal(unknown.dispatchUnknown(), undefined);
+  assert.deepEqual(unknown.events, []);
+});
+
+test("publishes current prior-art provenance and canonical measurement schemas", async () => {
+  const [page, readme, launchArticle, notices, licenses, capacitySchema, deviceRunSchema, publishedCapacity, publishedDeviceRun] = await Promise.all([
+    readFile(pageUrl, "utf8"),
+    readFile(readmeUrl, "utf8"),
+    readFile(launchArticleUrl, "utf8"),
+    readFile(thirdPartyNoticesUrl, "utf8"),
+    readFile(thirdPartyLicensesUrl, "utf8"),
+    readFile(capacitySchemaUrl, "utf8"),
+    readFile(deviceRunSchemaUrl, "utf8"),
+    readFile(publishedCapacitySchemaUrl, "utf8"),
+    readFile(publishedDeviceRunSchemaUrl, "utf8"),
+  ]);
+  const publicClaims = `${page}\n${readme}\n${launchArticle}`;
+
+  assert.match(publicClaims, /418\.5 KB\/s/);
+  assert.match(publicClaims, /199\.2 KB\/s/);
+  assert.match(publicClaims, /AGPL-3\.0-or-later/);
+  assert.match(notices, /29cba8fa25dd160c8b6aa18fe3b48fbc5bde2e36/);
+  assert.match(notices, /Copyright \(c\) 2026 Evan Crawley \(Bash Alarmist\)/);
+  assert.match(readme, /THIRD_PARTY_LICENSES\.md/);
+  assert.match(licenses, /# Production npm dependency licenses/);
+  assert.equal(publishedCapacity, capacitySchema);
+  assert.equal(publishedDeviceRun, deviceRunSchema);
 });
 
 test("keeps status labels outside QR quiet zones", async () => {
@@ -228,6 +265,22 @@ test("keeps transfer controls hidden when no payload is queued", async () => {
   assert.match(css, /\.empty-send-state \{/);
 });
 
+test("queues built-in samples before profile selection and preparation", async () => {
+  const senderSource = await readFile(new URL("../src/sender/SenderApp.tsx", import.meta.url), "utf8");
+  const demoHandler = extractFunctionBody(senderSource, "function useSample(): void");
+  const capacityHandler = extractFunctionBody(senderSource, "function useCapacitySample(): void");
+
+  assert.match(senderSource, /MILESTONE 16 OPTICAL LAB/);
+  for (const handler of [demoHandler, capacityHandler]) {
+    assert.match(handler, /selectFile\(sample\);/);
+    assert.equal(handler.match(/selectFile\(sample\);/g)?.length, 1);
+    assert.doesNotMatch(handler, /\bprepareTransfer\s*\(/);
+  }
+  assert.match(senderSource, /onClick=\{useSample\}/);
+  assert.match(senderSource, /onClick=\{useCapacitySample\}/);
+  assert.match(senderSource, /Grid 30 is the registered post-QR lab path/);
+});
+
 test("never blocks camera startup using unreliable phone orientation metadata", async () => {
   const receiver = await readFile(receiverAppUrl, "utf8");
   const capture = await readFile(cameraCaptureUrl, "utf8");
@@ -245,8 +298,10 @@ test("keeps comparable post-receive analytics visible through release", async ()
   assert.match(receiver, /POST-RECEIVE ANALYTICS/);
   assert.match(receiver, /Copy benchmark JSON/);
   assert.match(receiver, /Save \/ share benchmark JSON/);
-  assert.match(report, /glassbridge-capacity\/3/);
-  assert.match(report, /report\.profile\.id === current\.profile\.id &&[\s\S]+report\.payload_sha256 === current\.payload_sha256/);
+  assert.match(report, /glassbridge-capacity\/5/);
+  assert.match(report, /run_id/);
+  assert.match(report, /source_mode/);
+  assert.match(report, /report\.profile\.id === current\.profile\.id &&[\s\S]+report\.device === current\.device &&[\s\S]+report\.payload_sha256 === current\.payload_sha256/);
   assert.match(report, /CAPACITY_HISTORY_LIMIT = 20/);
 });
 
@@ -256,6 +311,9 @@ function serviceWorkerHarness(
 ) {
   const events = [];
   let fetchHandler;
+  const origin = "https://glassbridge.test";
+  const sendUrl = new URL(precachePath(source, "send.html"), origin).href;
+  const receiveUrl = new URL(precachePath(source, "receive.html"), origin).href;
   const context = {
     URL,
     Response,
@@ -282,7 +340,7 @@ function serviceWorkerHarness(
       delete: async () => true,
     },
     self: {
-      location: { origin: "https://glassbridge.test" },
+      location: { origin },
       clients: { claim: async () => undefined },
       skipWaiting: async () => undefined,
       addEventListener: (type, handler) => {
@@ -301,12 +359,60 @@ function serviceWorkerHarness(
         request: {
           method: "GET",
           mode: "navigate",
-          url: "https://glassbridge.test/send.html",
+          url: sendUrl,
         },
         respondWith: (value) => { responsePromise = value; },
       });
       assert.ok(responsePromise);
       return responsePromise;
     },
+    dispatchAsset: () => {
+      let responsePromise;
+      fetchHandler({
+        request: {
+          method: "GET",
+          mode: "same-origin",
+          url: receiveUrl,
+        },
+        respondWith: (value) => { responsePromise = value; },
+      });
+      assert.ok(responsePromise);
+      return responsePromise;
+    },
+    dispatchUnknown: () => {
+      let responsePromise;
+      fetchHandler({
+        request: {
+          method: "GET",
+          mode: "same-origin",
+          url: new URL("./not-in-the-release.txt", sendUrl).href,
+        },
+        respondWith: (value) => { responsePromise = value; },
+      });
+      return responsePromise;
+    },
   };
+}
+
+function precachePath(source, filename) {
+  const escaped = filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`\"([^\"]*\\/${escaped})\"`));
+  assert.ok(match, `missing precached ${filename}`);
+  return match[1];
+}
+
+function extractFunctionBody(source, signature) {
+  const signatureStart = source.indexOf(signature);
+  assert.notEqual(signatureStart, -1, `missing ${signature}`);
+  const bodyStart = source.indexOf("{", signatureStart + signature.length);
+  assert.notEqual(bodyStart, -1, `missing body for ${signature}`);
+
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] !== "}") continue;
+    depth -= 1;
+    if (depth === 0) return source.slice(bodyStart + 1, index);
+  }
+  assert.fail(`unterminated body for ${signature}`);
 }

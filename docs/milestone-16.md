@@ -1,8 +1,14 @@
-# Milestone 16: acquisition-first Grid transport
+# Milestone 16: acquisition-path changes for Grid transport
 
-Milestone 16 fixes the gap between a fast ideal decoder and a slow phone-camera transfer. It does not change the AGX envelope, pairing trust, AGF2 transport frame, LT solver, or one-way security model.
+**Updated:** 2026-08-17
 
-## Root cause
+**Canonical test status:** this is the current pre-alpha acquisition report and
+physical Grid smoke protocol. Milestone 13 remains a historical QR-ladder
+snapshot.
+
+Milestone 16 addresses acquisition paths that could explain the gap between a fast ideal decoder and a slow phone-camera transfer. Deterministic raster results validate those paths in simulation; they do not establish physical causality or phone-camera goodput. The milestone does not change the AGX envelope, pairing trust, AGF2 transport frame, LT solver, or one-way security model.
+
+## Acquisition hypotheses
 
 The earlier benchmark started with an already framed, integer-scaled Grid. The live path did substantially more work and gave the camera worse pixels:
 
@@ -26,7 +32,7 @@ The earlier benchmark started with an already framed, integer-scaled Grid. The l
 - Geometry is validated before cell sampling.
 - Luma thresholds use a fixed histogram rather than allocating and sorting 25,088 samples.
 - Sampling radius is derived from observed cell pitch and stays at one center pixel near three pixels per module.
-- One Grid worker retains registration, refreshes it periodically, and reacquires after decode failures.
+- One Grid worker reuses its last successful registration, periodically performs a global reacquisition, and can perform a bounded same-exposure fresh reacquisition after a transport-invalid decode. This is reuse plus reacquisition, not local quadrilateral tracking.
 - Camera submissions are media-time aware and target-rate bounded; stale or duplicate callbacks are not decoded.
 - Grid uses a full-field 960×540 decode raster instead of 1280×720, reducing RGBA readback from about 221 MB/s to 124 MB/s at 60 exposures/s.
 - The receiver allows 20 seconds for initial aiming, then stops after ten seconds without a new CRC-valid unique symbol.
@@ -38,15 +44,22 @@ The earlier benchmark started with an already framed, integer-scaled Grid. The l
 Live and exported reports now distinguish:
 
 - camera exposures per second;
-- PHY-decoded frames per second;
+- completed, successful transport-valid, and empty decode jobs;
 - accepted unique symbols per second;
 - duplicate symbols per second;
 - busy drops and rate-limited exposures;
 - last Grid outcome, contrast, screen fill, corrected codewords, and registration reuse;
 - reconstruction rank and required rank.
-- time to first valid symbol and camera-open-to-verified goodput, with transport-only goodput retained as a diagnostic.
+- time to first valid symbol, camera-open-to-verified diagnostic goodput, and the legacy first-accepted-to-verified diagnostic window.
 
 This separation is necessary because raw detections are not file goodput.
+
+The one-second preamble is a valid repeated symbol-zero frame. The receiver may
+accept its first unique symbol during that hold, so the
+first-accepted-to-last-accepted optical frame window can include some or all of
+the preamble and therefore understate steady-state channel rate. That field is
+a same-setup diagnostic. It is not a synchronized optical-start measurement or
+a publication-grade goodput window.
 
 ## Deterministic acquisition gate
 
@@ -76,16 +89,17 @@ These are deterministic camera-raster results, not a physical iPhone benchmark.
 
 ## Physical acceptance gate
 
-For the current laptop/iPhone pair, the next acceptance target is:
+The physical gate begins with one exact, named laptop/phone pair. Record the full sender and receiver models, OS/browser versions, reviewed commit, display/camera settings, mounting, distance, angle, lighting, and brightness before the first attempt.
 
-1. built-in 144 KiB payload;
-2. Grid 30, sender raster fullscreen, phone landscape;
-3. three consecutive verified transfers;
-4. median camera-open-to-verified completion under five seconds;
-5. no silent run longer than the bounded startup/stall windows and no Grid camera session beyond the absolute lab ceiling;
-6. exported success JSON for every completion and failure JSON for every stopped run.
+1. Use the built-in 144 KiB payload with **Grid 30 lab**, sender raster fullscreen, and phone landscape.
+2. Predeclare a three-attempt smoke set and run all three consecutively under one unchanged condition.
+3. Retain and publish every attempt—including warm-ups, failures, aborts, and timeouts. Do not restart the set to discard an unfavorable run.
+4. Pass the smoke gate only when all three attempts verify and no run exceeds the bounded startup, stall, or absolute session windows.
+5. Export `glassbridge-capacity/5` JSON for every completion and `glassbridge-device-run/1` JSON for every stopped run.
+6. Record camera-open-to-verified as a receiver diagnostic, not the headline timing window.
+7. Require a synchronized optical start marker before publishing completion-time or goodput comparisons; measure from sender optical start to receiver verification.
 
-Only physical runs can establish camera goodput. A 60-symbol/s or 1 Mbps-class claim remains blocked until Grid30 is reliable and the same device matrix passes the higher temporal rate.
+Only physical runs can establish camera goodput, and physical proof is still pending. A 60-symbol/s or 1 Mbps-class claim remains blocked until Grid 30 lab passes the undiscarded named-pair smoke gate and that named pair passes the higher temporal rate with synchronized-start timing. Broader claims require a declared multi-device matrix; browser user-agent matching is not a hardware-identity guarantee.
 
 ## Next PHY work
 

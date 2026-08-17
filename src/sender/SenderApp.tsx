@@ -66,6 +66,7 @@ export default function SenderApp() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<HTMLElement>(null);
   const gridStageRef = useRef<HTMLDivElement>(null);
+  const preparationGenerationRef = useRef(0);
   const frameRef = useRef(0);
   const loopsRef = useRef(0);
   const renderDropsRef = useRef(0);
@@ -297,6 +298,14 @@ export default function SenderApp() {
   }
 
   function selectFile(nextFile: File): void {
+    preparationGenerationRef.current += 1;
+    if (nextFile.size === 0) {
+      setFile(undefined);
+      setPrepared(undefined);
+      setError("Choose a non-empty file to send.");
+      setPhase("choose");
+      return;
+    }
     setFile(nextFile);
     setPrepared(undefined);
     setError("");
@@ -308,6 +317,10 @@ export default function SenderApp() {
       setError("Choose a file first.");
       return;
     }
+    if (candidate.size === 0) {
+      setError("Choose a non-empty file to send.");
+      return;
+    }
     if (candidate.size > MAX_BROWSER_FILE_BYTES) {
       setError(`Choose a file no larger than ${formatBytes(MAX_BROWSER_FILE_BYTES)} for this milestone.`);
       return;
@@ -315,15 +328,21 @@ export default function SenderApp() {
     setFile(candidate);
     setError("");
     setPhase("preparing");
+    const preparationGeneration = preparationGenerationRef.current + 1;
+    preparationGenerationRef.current = preparationGeneration;
+    const isCurrentPreparation = () => preparationGenerationRef.current === preparationGeneration;
     try {
       const payload = new Uint8Array(await candidate.arrayBuffer());
+      if (!isCurrentPreparation()) return;
       const envelope = await createBrowserEnvelope(payload, {
         filename: candidate.name,
         mediaType: candidate.type || "application/octet-stream",
         boundary,
       });
+      if (!isCurrentPreparation()) return;
       const profile = OPTICAL_PROFILES[profileId];
       const opticalPayload = await packOpticalPayload(envelope.bytes);
+      if (!isCurrentPreparation()) return;
       const encoder = new OpticalTransferEncoder(opticalPayload.bytes, {
         symbolSize: profile.symbolSize,
         codec: profile.codec,
@@ -354,11 +373,11 @@ export default function SenderApp() {
       setPrepared({ envelope, encoder, opticalPayload, pairing, originalBytes: candidate.size, profile, qrVersion });
       setPhase("pair");
     } catch (prepareError) {
-      fail(prepareError);
+      if (isCurrentPreparation()) fail(prepareError);
     }
   }
 
-  async function useSample(): Promise<void> {
+  function useSample(): void {
     const sample = new File(
       [
         "GlassBridge arbitrary-file browser sender\n",
@@ -369,16 +388,14 @@ export default function SenderApp() {
       { type: "text/plain" },
     );
     selectFile(sample);
-    await prepareTransfer(sample);
   }
 
-  async function useCapacitySample(): Promise<void> {
+  function useCapacitySample(): void {
     const bytes = createCapacitySampleBytes();
     const sample = new File([bytes.slice().buffer], "glassbridge-capacity-144k.bin", {
       type: "application/octet-stream",
     });
     selectFile(sample);
-    await prepareTransfer(sample);
   }
 
   function showPairing(): void {
@@ -411,6 +428,7 @@ export default function SenderApp() {
   }
 
   function reset(): void {
+    preparationGenerationRef.current += 1;
     setFile(undefined);
     setPrepared(undefined);
     setError("");
@@ -449,7 +467,7 @@ export default function SenderApp() {
 
       <section className="sender-intro">
         <div>
-          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 15 OPTICAL LAB</p>
+          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 16 OPTICAL LAB</p>
           <h1>Choose a file.<br /><em>Send it through light.</em></h1>
         </div>
         <p>
@@ -474,13 +492,17 @@ export default function SenderApp() {
         <section className="sender-panel choose-panel">
           <div
             className={`drop-zone ${dragging ? "dragging" : ""}`}
-            onClick={() => fileInputRef.current?.click()}
+            aria-disabled={phase === "preparing"}
+            onClick={() => {
+              if (phase !== "preparing") fileInputRef.current?.click();
+            }}
             onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
             onDragOver={(event) => event.preventDefault()}
             onDragLeave={() => setDragging(false)}
             onDrop={(event) => {
               event.preventDefault();
               setDragging(false);
+              if (phase === "preparing") return;
               const dropped = event.dataTransfer.files.item(0);
               if (dropped) selectFile(dropped);
             }}
@@ -494,7 +516,9 @@ export default function SenderApp() {
             <input
               ref={fileInputRef}
               type="file"
+              disabled={phase === "preparing"}
               onChange={(event) => {
+                if (phase === "preparing") return;
                 const selected = event.currentTarget.files?.item(0);
                 if (selected) selectFile(selected);
               }}
@@ -513,9 +537,10 @@ export default function SenderApp() {
               <p className="sender-kicker" role="status" aria-live="polite">NOTHING QUEUED</p>
               <h2>There is nothing to send.</h2>
               <p>Choose a file first. Transfer settings, pairing, and optical codes stay hidden until a real payload exists.</p>
+              {error && <p className="sender-error" role="alert">{error}</p>}
               <div className="choose-actions empty-actions">
-                <button onClick={() => { void useSample(); }}>Load demo sample</button>
-                <button onClick={() => { void useCapacitySample(); }}>Load 144 KiB test payload</button>
+                <button onClick={useSample}>Load demo sample</button>
+                <button onClick={useCapacitySample}>Load 144 KiB test payload</button>
               </div>
             </div>
           ) : (

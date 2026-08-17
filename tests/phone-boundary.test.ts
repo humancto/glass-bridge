@@ -76,6 +76,26 @@ describe("phone-side replay state", () => {
     storage.setItem("glassbridge-browser-replay-v1", "{not-json");
     expect(() => assertFreshTransfer(transfer, storage)).toThrow("GB-DENY-STATE");
   });
+
+  it("fails closed when replay history is full instead of forgetting old releases", async () => {
+    const storage = new MemoryStorage();
+    const entries = Array.from({ length: 256 }, (_, index) => ({
+      envelopeId: index.toString(16).padStart(32, "0"),
+      signerKeyId: "11".repeat(8),
+      releasedUnix: NOW + index,
+    }));
+    storage.setItem("glassbridge-browser-replay-v1", JSON.stringify({ version: 1, entries }));
+    const transfer = {
+      envelopeId: "ff".repeat(16),
+      signerKeyId: "22".repeat(8),
+    } as VerifiedTransfer;
+
+    await expect(reserveTransferRelease(transfer, NOW, storage, false))
+      .rejects.toThrow("GB-DENY-STATE-FULL");
+    expect(replayLedgerSize(storage)).toBe(256);
+    expect(() => assertFreshTransfer({ ...transfer, envelopeId: entries[0].envelopeId }, storage))
+      .toThrow("GB-DENY-REPLAY");
+  });
 });
 
 describe("phone-side signed release receipt", () => {
@@ -133,6 +153,27 @@ describe("phone-side signed release receipt", () => {
     expect(Buffer.from(receipt.publicKey).toString("hex")).toBe(
       "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
     );
+  });
+
+  it("fails closed when stored receipt keys do not form a pair", async () => {
+    const transfer = await makeTransfer(new Uint8Array(16).fill(0x44));
+    const first = await deterministicReceiptKeys(new Uint8Array(32).fill(0x31));
+    const second = await deterministicReceiptKeys(new Uint8Array(32).fill(0x32));
+
+    await expect(createBrowserReleaseReceipt(transfer, {
+      rank: 1,
+      required: 1,
+      acceptedFrames: 1,
+      duplicateFrames: 0,
+      rejectedFrames: 0,
+      complete: true,
+      symbolSize: 512,
+      payloadLength: transfer.payload.length,
+      expectedFrames: 2,
+    }, {
+      privateKey: first.privateKey,
+      publicKey: second.publicKey,
+    }, NOW)).rejects.toThrow(/do not form a valid Ed25519 pair/);
   });
 });
 

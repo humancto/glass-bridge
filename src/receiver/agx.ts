@@ -9,6 +9,7 @@ const MAX_ENVELOPE_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_BYTES = 512;
 
 export type BootstrapTrust = {
+  pairingVersion: "1" | "2" | "3" | "4";
   publicKey: Uint8Array;
   boundary: string;
   sessionId?: Uint8Array;
@@ -68,7 +69,7 @@ export function parseBootstrapHash(hash: string): BootstrapTrust {
   }
   validateText(boundary, "boundary");
   if (version === "1") {
-    return { publicKey, boundary };
+    return { pairingVersion: version, publicKey, boundary };
   }
 
   const encodedSession = params.get("session");
@@ -100,6 +101,7 @@ export function parseBootstrapHash(hash: string): BootstrapTrust {
     throw new Error("The pairing QR names an unsupported optical symbol rate.");
   }
   return {
+    pairingVersion: version,
     publicKey,
     boundary,
     sessionId,
@@ -110,13 +112,13 @@ export function parseBootstrapHash(hash: string): BootstrapTrust {
   };
 }
 
-export async function trustFingerprint(trust: BootstrapTrust): Promise<string> {
+export async function trustFingerprint(trust: Pick<BootstrapTrust, "publicKey">): Promise<string> {
   return toHex((await sha256(trust.publicKey)).slice(0, 8));
 }
 
 export async function verifyAgxEnvelope(
   envelopeBytes: Uint8Array,
-  trust: BootstrapTrust,
+  trust: Pick<BootstrapTrust, "publicKey" | "boundary">,
 ): Promise<VerifiedTransfer> {
   if (envelopeBytes.length === 0 || envelopeBytes.length > MAX_ENVELOPE_BYTES) {
     throw new Error("AGX envelope exceeds the phone receiver limit.");

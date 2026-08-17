@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://humancto.github.io/glass-bridge/spec/glassbridge-capacity-5.schema.json",
+  "title": "GlassBridge successful physical-device capacity record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "run_id",
+    "measured_at",
+    "source_mode",
+    "profile",
+    "file_bytes",
+    "payload_sha256",
+    "transfer_seconds",
+    "verified_payload_bytes_per_second",
+    "accepted_codes",
+    "required_codes",
+    "duplicate_codes",
+    "rejected_codes",
+    "observed_codes",
+    "accepted_codes_per_second",
+    "accepted_symbol_bytes_per_second",
+    "symbol_bytes",
+    "decoded_acceptance_percent",
+    "fountain_overhead_percent",
+    "payload_efficiency_percent",
+    "transport",
+    "camera",
+    "device"
+  ],
+  "properties": {
+    "schema": { "const": "glassbridge-capacity/5" },
+    "run_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "measured_at": { "type": "string", "format": "date-time" },
+    "source_mode": { "const": "camera" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "lanes"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "lanes": { "type": "integer", "minimum": 0, "maximum": 16 },
+        "qr_version": { "type": "integer", "minimum": 1, "maximum": 40 },
+        "visual_phy": { "enum": ["qr-model2-v1", "mono-grid-v0"] },
+        "target_symbol_rate": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    },
+    "transfer_session": { "type": "string" },
+    "file_bytes": { "type": "integer", "minimum": 1, "maximum": 2097152 },
+    "payload_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "transfer_seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "verified_payload_bytes_per_second": { "type": "number", "minimum": 0 },
+    "camera_to_verified_seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "camera_to_verified_payload_bytes_per_second": { "type": "number", "minimum": 0 },
+    "accepted_codes": { "type": "integer", "minimum": 0 },
+    "required_codes": { "type": "integer", "minimum": 0 },
+    "duplicate_codes": { "type": "integer", "minimum": 0 },
+    "rejected_codes": { "type": "integer", "minimum": 0 },
+    "observed_codes": { "type": "integer", "minimum": 0 },
+    "accepted_codes_per_second": { "type": "number", "minimum": 0 },
+    "accepted_symbol_bytes_per_second": { "type": "number", "minimum": 0 },
+    "optical_frame_window_seconds": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Diagnostic first-accepted-unique to last-accepted-unique window. Grid runs include the valid acquisition preamble and are not synchronized-start benchmark timing."
+    },
+    "optical_accepted_codes_per_second": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Diagnostic accepted-code rate over optical_frame_window_seconds; not publication-grade sender-to-receiver goodput."
+    },
+    "optical_accepted_symbol_bytes_per_second": { "type": "number", "minimum": 0 },
+    "symbol_bytes": { "type": "integer", "minimum": 0, "maximum": 2909 },
+    "decoded_acceptance_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+    "fountain_overhead_percent": { "type": "number", "minimum": 0 },
+    "payload_efficiency_percent": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Verified file bytes divided by accepted symbol bytes. Compression can legitimately make this exceed 100 percent."
+    },
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "encoding",
+        "signed_envelope_bytes",
+        "optical_object_bytes",
+        "optical_reduction_percent"
+      ],
+      "properties": {
+        "encoding": { "enum": ["identity", "gzip"] },
+        "signed_envelope_bytes": { "type": "integer", "minimum": 1 },
+        "optical_object_bytes": { "type": "integer", "minimum": 1 },
+        "optical_reduction_percent": { "type": "number" }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observed_fps",
+        "negotiated_fps",
+        "width",
+        "height",
+        "valid_codes_per_second",
+        "busy_drops",
+        "decode_p50_ms",
+        "decode_p95_ms",
+        "workers"
+      ],
+      "properties": {
+        "observed_fps": { "type": "number", "minimum": 0 },
+        "negotiated_fps": { "type": "number", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 0 },
+        "height": { "type": "integer", "minimum": 0 },
+        "source_width": { "type": "integer", "minimum": 0 },
+        "source_height": { "type": "integer", "minimum": 0 },
+        "valid_codes_per_second": { "type": "number", "minimum": 0 },
+        "busy_drops": { "type": "integer", "minimum": 0 },
+        "decode_p50_ms": { "type": "number", "minimum": 0 },
+        "decode_p95_ms": { "type": "number", "minimum": 0 },
+        "workers": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "camera_active_seconds": { "type": "number", "minimum": 0 },
+        "callback_frames": { "type": "integer", "minimum": 0 },
+        "camera_exposures": { "type": "integer", "minimum": 0 },
+        "duplicate_callbacks": { "type": "integer", "minimum": 0 },
+        "submitted_exposures": { "type": "integer", "minimum": 0 },
+        "decode_jobs": { "type": "integer", "minimum": 0 },
+        "successful_decode_jobs": { "type": "integer", "minimum": 0 },
+        "empty_decode_jobs": { "type": "integer", "minimum": 0 },
+        "optical_acquisition_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "unique_codes_per_second": { "type": "number", "minimum": 0 },
+        "duplicate_codes_per_second": { "type": "number", "minimum": 0 },
+        "rate_limited_exposures": { "type": "integer", "minimum": 0 },
+        "capture_copy_p50_ms": { "type": "number", "minimum": 0 },
+        "capture_copy_p95_ms": { "type": "number", "minimum": 0 },
+        "worker_round_trip_p50_ms": { "type": "number", "minimum": 0 },
+        "worker_round_trip_p95_ms": { "type": "number", "minimum": 0 },
+        "rgba_bytes_per_second": { "type": "number", "minimum": 0 },
+        "same_frame_reacquisitions": { "type": "integer", "minimum": 0 },
+        "same_frame_reacquisition_successes": { "type": "integer", "minimum": 0 },
+        "same_frame_reacquisition_p50_ms": { "type": "number", "minimum": 0 },
+        "same_frame_reacquisition_p95_ms": { "type": "number", "minimum": 0 },
+        "sampling_ratio": { "type": "number", "minimum": 0 },
+        "sampling_status": {
+          "enum": ["oversampled", "single-sampled", "undersampled", "unknown"]
+        },
+        "sampling_warning": { "type": "string" },
+        "grid_last_outcome": {
+          "enum": [
+            "decoded",
+            "invalid-image",
+            "markers-not-found",
+            "geometry-invalid",
+            "contrast-low",
+            "frame-magic-invalid"
+          ]
+        },
+        "grid_contrast": { "type": "number", "minimum": 0, "maximum": 255 },
+        "grid_screen_fill_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "grid_corrected_codewords": { "type": "integer", "minimum": 0 },
+        "grid_registration_reuse_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "time_to_first_valid_ms": { "type": "number", "minimum": 0 }
+      }
+    },
+    "device": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Browser user-agent string for local grouping; not a unique physical-device identifier or pair label."
+    }
+  }
+}

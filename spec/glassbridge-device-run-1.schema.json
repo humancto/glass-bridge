@@ -1,13 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://humancto.github.io/glass-bridge/spec/glassbridge-device-run-1.schema.json",
-  "title": "GlassBridge physical device failed-run record",
+  "title": "GlassBridge receiver failed-run diagnostic",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "schema",
     "run_id",
     "measured_at",
     "outcome",
+    "source_mode",
     "failure_class",
     "reason",
     "profile",
@@ -20,6 +22,10 @@
     "run_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "measured_at": { "type": "string", "format": "date-time" },
     "outcome": { "const": "failed" },
+    "source_mode": {
+      "enum": ["camera", "saved-frames"],
+      "description": "Acquisition source. Only camera records belong in physical screen-to-camera datasets."
+    },
     "failure_class": {
       "enum": [
         "camera-error",
@@ -33,6 +39,7 @@
     "reason": { "type": "string", "minLength": 1, "maxLength": 2048 },
     "profile": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["id", "label", "lanes"],
       "properties": {
         "id": { "type": "string" },
@@ -45,6 +52,7 @@
     "transfer_session": { "type": "string" },
     "progress": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["rank", "required", "accepted_frames", "duplicate_frames", "rejected_frames"],
       "properties": {
         "rank": { "type": "integer", "minimum": 0 },
@@ -56,6 +64,7 @@
     },
     "camera": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "active_seconds",
         "exposures",
@@ -75,6 +84,10 @@
       "properties": {
         "active_seconds": { "type": "number", "minimum": 0 },
         "exposures": { "type": "integer", "minimum": 0 },
+        "callback_frames": { "type": "integer", "minimum": 0 },
+        "camera_exposures": { "type": "integer", "minimum": 0 },
+        "duplicate_callbacks": { "type": "integer", "minimum": 0 },
+        "submitted_exposures": { "type": "integer", "minimum": 0 },
         "observed_fps": { "type": "number", "minimum": 0 },
         "negotiated_fps": { "type": "number", "minimum": 0 },
         "width": { "type": "integer", "minimum": 0 },
@@ -90,6 +103,20 @@
         "decode_p95_ms": { "type": "number", "minimum": 0 },
         "workers": { "type": "integer", "minimum": 0 },
         "rate_limited_exposures": { "type": "integer", "minimum": 0 },
+        "capture_copy_p50_ms": { "type": "number", "minimum": 0 },
+        "capture_copy_p95_ms": { "type": "number", "minimum": 0 },
+        "worker_round_trip_p50_ms": { "type": "number", "minimum": 0 },
+        "worker_round_trip_p95_ms": { "type": "number", "minimum": 0 },
+        "rgba_bytes_per_second": { "type": "number", "minimum": 0 },
+        "same_frame_reacquisitions": { "type": "integer", "minimum": 0 },
+        "same_frame_reacquisition_successes": { "type": "integer", "minimum": 0 },
+        "same_frame_reacquisition_p50_ms": { "type": "number", "minimum": 0 },
+        "same_frame_reacquisition_p95_ms": { "type": "number", "minimum": 0 },
+        "sampling_ratio": { "type": "number", "minimum": 0 },
+        "sampling_status": {
+          "enum": ["oversampled", "single-sampled", "undersampled", "unknown"]
+        },
+        "sampling_warning": { "type": "string" },
         "grid_last_outcome": {
           "enum": [
             "decoded",
@@ -107,6 +134,10 @@
         "time_to_first_valid_ms": { "type": "number", "minimum": 0 }
       }
     },
-    "device": { "type": "string", "minLength": 1 }
+    "device": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Browser user-agent string for local grouping; not a unique physical-device identifier."
+    }
   }
 }
