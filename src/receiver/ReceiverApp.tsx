@@ -9,8 +9,24 @@ import {
 import { evaluateBrowserPolicy, type LocalPolicyDecision } from "./policy";
 import { ingestDecodedQr } from "./qr-result";
 import { DecodeWorkerPool, type DecodeResult } from "./decode-worker-pool";
-import { dualLaneCaptureRegions, fitCaptureDimensions } from "./camera-capture";
+import {
+  dualLaneCaptureRegions,
+  fitCaptureDimensions,
+  fitGridCaptureDimensions,
+} from "./camera-capture";
 import { OPTICAL_PROFILES } from "../protocol/optical-profile";
+import type { GridDecodeOutcome } from "../phy/grid/grid-codec";
+import {
+  GRID_CAMERA_SESSION_LIMIT_MS,
+  GRID_INITIAL_ACQUISITION_TIMEOUT_MS,
+  GRID_TRANSFER_STALL_MS,
+  didGridTransportAdvance,
+  gridAcquisitionGuidance,
+  gridDecodeTargetFps,
+  gridSessionLimitGuidance,
+  shouldPauseGridAcquisition,
+  shouldEndGridCameraSession,
+} from "./grid-acquisition";
 import {
   measureTransport,
 } from "./capacity-measurement";
@@ -44,18 +60,29 @@ type ScannerControls = { stop(): void };
 type LiveMetrics = {
   cameraFps: number;
   decodeFps: number;
+  uniqueFps: number;
+  duplicateFps: number;
   medianDecodeMs: number;
   p95DecodeMs: number;
   busyDrops: number;
   workers: number;
   width: number;
   height: number;
+  sourceWidth: number;
+  sourceHeight: number;
   negotiatedFps: number;
   cameraSeconds: number;
   cameraFrames: number;
   decodeJobs: number;
   successfulDecodeJobs: number;
   emptyDecodeJobs: number;
+  throttledFrames: number;
+  gridOutcome?: GridDecodeOutcome;
+  gridContrast?: number;
+  gridScreenFillRatio?: number;
+  gridCorrectedCodewords?: number;
+  gridRegistrationReusePercent?: number;
+  timeToFirstValidMs?: number;
 };
 
 const SESSION_TRUST_KEY = "glassbridge-demo-trust-v2";
@@ -75,18 +102,23 @@ const EMPTY_PROGRESS: TransferProgress = {
 const EMPTY_METRICS: LiveMetrics = {
   cameraFps: 0,
   decodeFps: 0,
+  uniqueFps: 0,
+  duplicateFps: 0,
   medianDecodeMs: 0,
   p95DecodeMs: 0,
   busyDrops: 0,
   workers: 0,
   width: 0,
   height: 0,
+  sourceWidth: 0,
+  sourceHeight: 0,
   negotiatedFps: 0,
   cameraSeconds: 0,
   cameraFrames: 0,
   decodeJobs: 0,
   successfulDecodeJobs: 0,
   emptyDecodeJobs: 0,
+  throttledFrames: 0,
 };
 
 function readTrust(): { trust?: BootstrapTrust; error?: string } {
@@ -175,6 +207,7 @@ export default function ReceiverApp() {
   const releasingRef = useRef(false);
   const lastProgressPaintRef = useRef(0);
   const transferStartedAtRef = useRef<number | undefined>(undefined);
+  const cameraStartedAtRef = useRef<number | undefined>(undefined);
   const liveMetricsRef = useRef<LiveMetrics>(EMPTY_METRICS);
 
   useEffect(() => {
@@ -231,6 +264,9 @@ export default function ReceiverApp() {
           measurement: nextMeasurement,
           opticalPayload,
           camera: liveMetricsRef.current,
+          cameraToVerifiedSeconds: cameraStartedAtRef.current === undefined
+            ? undefined
+            : Math.max(0.001, (verifiedAtMs - cameraStartedAtRef.current) / 1_000),
           device: navigator.userAgent,
         });
         let previousReports: CapacityReport[] = [];
@@ -286,6 +322,7 @@ export default function ReceiverApp() {
     setMeasurementStatus("");
     setMustRepair(false);
     transferStartedAtRef.current = undefined;
+    cameraStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("scanning");
 
@@ -299,22 +336,28 @@ export default function ReceiverApp() {
       const trackSettings = stream.getVideoTracks()[0]?.getSettings();
       const sourceWidth = video.videoWidth || trackSettings?.width || 1_280;
       const sourceHeight = video.videoHeight || trackSettings?.height || 720;
-      const { width: captureWidth, height: captureHeight } = fitCaptureDimensions(sourceWidth, sourceHeight);
+      const opticalProfile = trust.profileId ? OPTICAL_PROFILES[trust.profileId] : undefined;
+      const opticalLanes = opticalProfile?.lanes ?? 1;
+      const visualPhy = opticalProfile?.visualPhy ?? "qr-model2-v1";
+      const { width: captureWidth, height: captureHeight } = visualPhy === "mono-grid-v0"
+        ? fitGridCaptureDimensions(sourceWidth, sourceHeight)
+        : fitCaptureDimensions(sourceWidth, sourceHeight);
       const captureCanvas = document.createElement("canvas");
       captureCanvas.width = captureWidth;
       captureCanvas.height = captureHeight;
       const captureContext = captureCanvas.getContext("2d", { willReadFrequently: true });
       if (!captureContext) throw new Error("The camera capture surface is unavailable.");
 
-      const opticalProfile = trust.profileId ? OPTICAL_PROFILES[trust.profileId] : undefined;
-      const opticalLanes = opticalProfile?.lanes ?? 1;
-      const visualPhy = opticalProfile?.visualPhy ?? "qr-model2-v1";
       const laneRegions = visualPhy === "qr-model2-v1" && opticalLanes === 2
         ? dualLaneCaptureRegions(captureWidth, captureHeight)
         : undefined;
       const workerCount = visualPhy === "mono-grid-v0"
-        ? 2
+        ? 1
         : Math.min(4, Math.max(2, Math.floor((navigator.hardwareConcurrency || 4) / 2)));
+      const targetDecodeFps = visualPhy === "mono-grid-v0"
+        ? gridDecodeTargetFps(trust.targetSymbolRate ?? opticalProfile?.defaultFps ?? 30)
+        : 60;
+      const captureIntervalMs = 1_000 / targetDecodeFps;
       let active = true;
       let callbackId = 0;
       let cameraFrames = 0;
@@ -323,7 +366,23 @@ export default function ReceiverApp() {
       let successfulDecodeJobs = 0;
       let emptyDecodeJobs = 0;
       let busyDrops = 0;
+      let throttledFrames = 0;
+      let consecutiveNonProgressGridJobs = 0;
+      let lastGridProgressAt = performance.now();
+      let hasAcceptedGridFrame = false;
+      let lastCaptureSubmittedAt = Number.NEGATIVE_INFINITY;
+      let lastMediaTime = Number.NEGATIVE_INFINITY;
+      let acquisitionWatchdogId = 0;
+      let sessionWatchdogId = 0;
+      let gridOutcome: GridDecodeOutcome | undefined;
+      let gridContrast: number | undefined;
+      let gridScreenFillRatio: number | undefined;
+      let gridCorrectedCodewords: number | undefined;
+      let gridRegistrationJobs = 0;
+      let gridRegistrationReuseJobs = 0;
+      let timeToFirstValidMs: number | undefined;
       const cameraStartedAt = performance.now();
+      cameraStartedAtRef.current = cameraStartedAt;
       let lastMetricsPaint = cameraStartedAt;
       const decodeTimes: number[] = [];
 
@@ -332,21 +391,35 @@ export default function ReceiverApp() {
         if (!force && now - lastMetricsPaint < 500) return;
         const seconds = Math.max(0.001, (now - cameraStartedAt) / 1_000);
         const sorted = [...decodeTimes].sort((left, right) => left - right);
+        const decoderSnapshot = decoderRef.current.snapshot();
         const nextMetrics: LiveMetrics = {
           cameraFps: cameraFrames / seconds,
           decodeFps: decodedFrames / seconds,
+          uniqueFps: decoderSnapshot.acceptedFrames / seconds,
+          duplicateFps: decoderSnapshot.duplicateFrames / seconds,
           medianDecodeMs: percentile(sorted, 0.5),
           p95DecodeMs: percentile(sorted, 0.95),
           busyDrops,
           workers: workerCount,
-          width: sourceWidth,
-          height: sourceHeight,
+          width: captureWidth,
+          height: captureHeight,
+          sourceWidth,
+          sourceHeight,
           negotiatedFps: trackSettings?.frameRate ?? 0,
           cameraSeconds: seconds,
           cameraFrames,
           decodeJobs,
           successfulDecodeJobs,
           emptyDecodeJobs,
+          throttledFrames,
+          gridOutcome,
+          gridContrast,
+          gridScreenFillRatio,
+          gridCorrectedCodewords,
+          gridRegistrationReusePercent: gridRegistrationJobs > 0
+            ? gridRegistrationReuseJobs / gridRegistrationJobs * 100
+            : undefined,
+          timeToFirstValidMs,
         };
         liveMetricsRef.current = nextMetrics;
         setLiveMetrics(nextMetrics);
@@ -354,6 +427,55 @@ export default function ReceiverApp() {
       };
 
       let controls: ScannerControls;
+      const failGridAcquisition = () => {
+        if (!active || visualPhy !== "mono-grid-v0") return;
+        updateMetrics(true);
+        controls.stop();
+        controlsRef.current = undefined;
+        setError(gridAcquisitionGuidance(gridOutcome, hasAcceptedGridFrame));
+        setStage("error");
+      };
+      const armGridAcquisitionWatchdog = () => {
+        if (visualPhy !== "mono-grid-v0") return;
+        window.clearTimeout(acquisitionWatchdogId);
+        const timeout = hasAcceptedGridFrame
+          ? GRID_TRANSFER_STALL_MS
+          : GRID_INITIAL_ACQUISITION_TIMEOUT_MS;
+        const elapsed = performance.now() - lastGridProgressAt;
+        acquisitionWatchdogId = window.setTimeout(() => {
+          if (!active) return;
+          const stalledFor = performance.now() - lastGridProgressAt;
+          const currentTimeout = hasAcceptedGridFrame
+            ? GRID_TRANSFER_STALL_MS
+            : GRID_INITIAL_ACQUISITION_TIMEOUT_MS;
+          if (stalledFor >= currentTimeout) {
+            failGridAcquisition();
+            return;
+          }
+          armGridAcquisitionWatchdog();
+        }, Math.max(1, timeout - elapsed));
+      };
+      const failGridSession = () => {
+        if (!active || visualPhy !== "mono-grid-v0") return;
+        updateMetrics(true);
+        controls.stop();
+        controlsRef.current = undefined;
+        setError(gridSessionLimitGuidance());
+        setStage("error");
+      };
+      const armGridSessionWatchdog = () => {
+        if (visualPhy !== "mono-grid-v0") return;
+        window.clearTimeout(sessionWatchdogId);
+        const elapsed = performance.now() - cameraStartedAt;
+        sessionWatchdogId = window.setTimeout(() => {
+          if (!active) return;
+          if (shouldEndGridCameraSession(performance.now() - cameraStartedAt)) {
+            failGridSession();
+            return;
+          }
+          armGridSessionWatchdog();
+        }, Math.max(1, GRID_CAMERA_SESSION_LIMIT_MS - elapsed));
+      };
       const pool = new DecodeWorkerPool(workerCount, (result: DecodeResult) => {
         if (!active || verifyingRef.current) return;
         decodeTimes.push(result.decodeMs);
@@ -366,18 +488,40 @@ export default function ReceiverApp() {
           setStage("error");
           return;
         }
+        if (result.grid) {
+          gridOutcome = result.grid.outcome;
+          gridContrast = result.grid.contrast;
+          gridScreenFillRatio = result.grid.screenFillRatio;
+          gridCorrectedCodewords = result.grid.correctedCodewords;
+          gridRegistrationJobs += 1;
+          gridRegistrationReuseJobs += Number(result.grid.registrationReused);
+        }
         const codes = result.codes ?? [];
         decodeJobs += 1;
         if (codes.length === 0) {
           emptyDecodeJobs += 1;
+          if (visualPhy === "mono-grid-v0") {
+            consecutiveNonProgressGridJobs += 1;
+            const symbolRate = trust.targetSymbolRate ?? opticalProfile?.defaultFps ?? 30;
+            if (shouldPauseGridAcquisition({
+              symbolRate,
+              consecutiveNonProgressJobs: consecutiveNonProgressGridJobs,
+              elapsedSinceProgressMs: performance.now() - lastGridProgressAt,
+              hasAcceptedFrame: hasAcceptedGridFrame,
+            })) {
+              failGridAcquisition();
+              return;
+            }
+          }
           updateMetrics();
           return;
         }
         successfulDecodeJobs += 1;
         decodedFrames += codes.length;
+        let gridJobAccepted = false;
         for (const code of codes) {
           const decoder = decoderRef.current;
-          const before = decoder.snapshot().acceptedFrames;
+          const before = decoder.snapshot();
           const next = code.bytes && isOpticalFrame(code.bytes)
             ? decoder.ingestFrame(code.bytes)
             : decoder.ingestText(code.text ?? "");
@@ -390,7 +534,18 @@ export default function ReceiverApp() {
             setStage("error");
             return;
           }
-          if (next.acceptedFrames > before && transferStartedAtRef.current === undefined) {
+          const transportAdvanced = didGridTransportAdvance(before, next);
+          if (visualPhy === "mono-grid-v0" && transportAdvanced) {
+            gridJobAccepted = true;
+            hasAcceptedGridFrame = true;
+            consecutiveNonProgressGridJobs = 0;
+            lastGridProgressAt = performance.now();
+            armGridAcquisitionWatchdog();
+          }
+          if (transportAdvanced && timeToFirstValidMs === undefined) {
+            timeToFirstValidMs = performance.now() - cameraStartedAt;
+          }
+          if (next.acceptedFrames > before.acceptedFrames && transferStartedAtRef.current === undefined) {
             transferStartedAtRef.current = performance.now();
           }
           publishProgress(next, next.complete);
@@ -410,12 +565,17 @@ export default function ReceiverApp() {
             break;
           }
         }
+        if (visualPhy === "mono-grid-v0" && !gridJobAccepted) {
+          consecutiveNonProgressGridJobs += 1;
+        }
         if (!verifyingRef.current) updateMetrics();
       });
 
       const stop = () => {
         if (!active) return;
         active = false;
+        window.clearTimeout(acquisitionWatchdogId);
+        window.clearTimeout(sessionWatchdogId);
         if ("cancelVideoFrameCallback" in video) video.cancelVideoFrameCallback(callbackId);
         else window.cancelAnimationFrame(callbackId);
         pool.stop();
@@ -424,12 +584,28 @@ export default function ReceiverApp() {
       };
       controls = { stop };
       controlsRef.current = controls;
+      armGridAcquisitionWatchdog();
+      armGridSessionWatchdog();
 
-      const captureFrame = () => {
+      const captureFrame = (now: number, mediaTime?: number) => {
         if (!active || verifyingRef.current) return;
         cameraFrames += 1;
+        if (visualPhy === "mono-grid-v0") {
+          if (mediaTime !== undefined && mediaTime <= lastMediaTime + 1e-6) {
+            throttledFrames += 1;
+            updateMetrics();
+            return;
+          }
+          if (now - lastCaptureSubmittedAt < captureIntervalMs * 0.8) {
+            throttledFrames += 1;
+            lastMediaTime = mediaTime ?? lastMediaTime;
+            updateMetrics();
+            return;
+          }
+        }
         if (pool.busyCount === pool.size) {
           busyDrops += 1;
+          lastMediaTime = mediaTime ?? lastMediaTime;
           updateMetrics();
           return;
         }
@@ -444,6 +620,7 @@ export default function ReceiverApp() {
           captureWidth,
           captureHeight,
         );
+        let submitted = false;
         if (laneRegions && cameraFrames % 15 !== 0) {
           // Alternate submission priority so a saturated worker pool cannot
           // repeatedly favor the left lane and starve the right lane.
@@ -452,26 +629,30 @@ export default function ReceiverApp() {
             : [laneRegions[1], laneRegions[0]];
           for (const region of orderedRegions) {
             const image = captureContext.getImageData(region.x, region.y, region.width, region.height);
-            if (!pool.submit(image, 1, visualPhy)) busyDrops += 1;
+            if (pool.submit(image, 1, visualPhy)) submitted = true;
+            else busyDrops += 1;
           }
         } else {
           // Periodic full-frame acquisition lets the operator recover when the
           // display is not perfectly centered across the two lane regions.
           const image = captureContext.getImageData(0, 0, captureWidth, captureHeight);
-          if (!pool.submit(image, opticalLanes, visualPhy)) busyDrops += 1;
+          if (pool.submit(image, opticalLanes, visualPhy)) submitted = true;
+          else busyDrops += 1;
         }
+        if (submitted) lastCaptureSubmittedAt = now;
+        lastMediaTime = mediaTime ?? lastMediaTime;
         updateMetrics();
       };
 
       if ("requestVideoFrameCallback" in video) {
-        const onVideoFrame: VideoFrameRequestCallback = () => {
-          captureFrame();
+        const onVideoFrame: VideoFrameRequestCallback = (now, metadata) => {
+          captureFrame(now, metadata.mediaTime);
           if (active) callbackId = video.requestVideoFrameCallback(onVideoFrame);
         };
         callbackId = video.requestVideoFrameCallback(onVideoFrame);
       } else {
         const onAnimationFrame = () => {
-          captureFrame();
+          captureFrame(performance.now(), (video as HTMLVideoElement).currentTime);
           if (active) callbackId = window.requestAnimationFrame(onAnimationFrame);
         };
         callbackId = window.requestAnimationFrame(onAnimationFrame);
@@ -565,6 +746,7 @@ export default function ReceiverApp() {
     setMeasurementStatus("");
     setMustRepair(false);
     transferStartedAtRef.current = undefined;
+    cameraStartedAtRef.current = undefined;
     setSourceMode("camera");
     setStage("paired");
   }
@@ -587,6 +769,11 @@ export default function ReceiverApp() {
 
   async function shareCapacityReport(): Promise<void> {
     if (!capacityReport) return;
+    const sharedGoodput = capacityReport.camera_to_verified_payload_bytes_per_second ??
+      capacityReport.verified_payload_bytes_per_second;
+    const sharedWindow = capacityReport.camera_to_verified_payload_bytes_per_second === undefined
+      ? "first accepted → verified"
+      : "camera open → verified";
     const file = new File(
       [JSON.stringify(capacityReport, null, 2)],
       `glassbridge-benchmark-${capacityReport.measured_at.replaceAll(":", "-")}.json`,
@@ -596,7 +783,7 @@ export default function ReceiverApp() {
       if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
         await navigator.share({
           title: "GlassBridge transfer benchmark",
-          text: `${formatRate(capacityReport.verified_payload_bytes_per_second)} verified goodput`,
+          text: `${formatRate(sharedGoodput)} verified goodput · ${sharedWindow}`,
           files: [file],
         });
         setMeasurementStatus("Benchmark JSON shared.");
@@ -784,9 +971,26 @@ export default function ReceiverApp() {
 
           {stage === "scanning" && sourceMode === "camera" && (
             <div className="live-metrics" aria-label="Live optical pipeline measurements">
-              <div><span>CAMERA</span><strong>{liveMetrics.cameraFps.toFixed(1)} FPS</strong><small>{liveMetrics.width}×{liveMetrics.height} @ {liveMetrics.negotiatedFps.toFixed(0) || "—"}</small></div>
-              <div><span>ACQUIRED SYMBOLS</span><strong>{liveMetrics.decodeFps.toFixed(1)} / SEC</strong><small>{liveMetrics.workers} workers · p50 {liveMetrics.medianDecodeMs.toFixed(0)} ms</small></div>
-              <div><span>PRESSURE</span><strong>{liveMetrics.busyDrops} dropped</strong><small>p95 decode {liveMetrics.p95DecodeMs.toFixed(0)} ms</small></div>
+              <div>
+                <span>CAMERA</span>
+                <strong>{liveMetrics.cameraFps.toFixed(1)} FPS</strong>
+                <small>decode {liveMetrics.width}×{liveMetrics.height} · source {liveMetrics.sourceWidth}×{liveMetrics.sourceHeight} @ {liveMetrics.negotiatedFps.toFixed(0) || "—"}</small>
+                {liveMetrics.timeToFirstValidMs !== undefined && <small>first valid {(liveMetrics.timeToFirstValidMs / 1_000).toFixed(2)} s</small>}
+              </div>
+              <div>
+                <span>ACQUIRED SYMBOLS</span>
+                <strong>{liveMetrics.decodeFps.toFixed(1)} / SEC</strong>
+                <small>{liveMetrics.uniqueFps.toFixed(1)} unique/s · {liveMetrics.duplicateFps.toFixed(1)} duplicate/s</small>
+              </div>
+              <div>
+                <span>PRESSURE</span>
+                <strong>{liveMetrics.busyDrops} busy · {liveMetrics.throttledFrames} limited</strong>
+                <small>
+                  p50 {liveMetrics.medianDecodeMs.toFixed(0)} / p95 {liveMetrics.p95DecodeMs.toFixed(0)} ms
+                  {liveMetrics.gridOutcome ? ` · ${liveMetrics.gridOutcome}` : ""}
+                  {liveMetrics.gridContrast !== undefined ? ` · contrast ${liveMetrics.gridContrast}` : ""}
+                </small>
+              </div>
             </div>
           )}
 
@@ -795,7 +999,11 @@ export default function ReceiverApp() {
               <button className="receiver-button primary" type="button" onClick={() => void startCamera()}>
                 Trust sender &amp; open camera
               </button>
-              <p className="security-note">Landscape is recommended for dual-lane capacity modes, but it is never a blocker. Start the camera and keep both QR codes fully inside the guide.</p>
+              <p className="security-note">
+                {trust.visualPhy === "mono-grid-v0"
+                  ? "Use sender fullscreen, turn the phone landscape, and keep all four colored Grid corners inside the guide. You have twenty seconds to switch devices and aim; ten seconds without a new valid symbol stops scanning. This lab camera session also ends after 120 seconds and requires a restart."
+                  : "Landscape is recommended for dual-lane capacity modes, but it is never a blocker. Start the camera and keep both QR codes fully inside the guide."}
+              </p>
               <button className="receiver-button secondary" type="button" onClick={() => fileInputRef.current?.click()}>
                 Diagnostic: decode saved QR frames
               </button>
@@ -941,6 +1149,10 @@ export function CapacityScorecard({
   onCopy: () => void;
   onShare: () => void;
 }) {
+  const headlineGoodput = report.camera_to_verified_payload_bytes_per_second ??
+    report.verified_payload_bytes_per_second;
+  const headlineSeconds = report.camera_to_verified_seconds ?? report.transfer_seconds;
+  const includesAcquisition = report.camera_to_verified_seconds !== undefined;
   const previousDelta = comparison.changeFromPrevious;
   const deltaClass = previousDelta === undefined || Math.abs(previousDelta) < 0.005
     ? "neutral"
@@ -957,8 +1169,8 @@ export function CapacityScorecard({
         </b>
       </div>
       <div className="capacity-hero">
-        <strong>{formatRate(report.verified_payload_bytes_per_second)}</strong>
-        <span>{formatBytes(report.file_bytes)} cryptographically verified in {report.transfer_seconds.toFixed(2)} sec</span>
+        <strong>{formatRate(headlineGoodput)}</strong>
+        <span>{formatBytes(report.file_bytes)} cryptographically verified in {headlineSeconds.toFixed(2)} sec · {includesAcquisition ? "camera open → verified" : "first accepted → verified"}</span>
       </div>
       <div className="capacity-comparison">
         {comparison.previousGoodput === undefined ? (
@@ -983,7 +1195,7 @@ export function CapacityScorecard({
         )}
       </div>
       <div className="capacity-metric-grid">
-        <div><span>ELAPSED</span><strong>{report.transfer_seconds.toFixed(2)} s</strong><small>first accepted code → verified</small></div>
+        <div><span>END TO END</span><strong>{headlineSeconds.toFixed(2)} s</strong><small>{includesAcquisition ? "camera open → verified" : "first accepted code → verified"}</small></div>
         <div><span>CODE RATE</span><strong>{report.accepted_codes_per_second.toFixed(1)}/s</strong><small>{report.accepted_codes} accepted codes</small></div>
         <div><span>ACCEPTANCE</span><strong>{report.decoded_acceptance_percent.toFixed(1)}%</strong><small>accepted ÷ all decoded codes</small></div>
         <div><span>PAYLOAD EFFICIENCY</span><strong>{report.payload_efficiency_percent.toFixed(1)}%</strong><small>file bytes ÷ accepted symbol bytes</small></div>
@@ -995,13 +1207,17 @@ export function CapacityScorecard({
           <div><dt>Accepted / required</dt><dd>{report.accepted_codes} / {report.required_codes} codes</dd></div>
           <div><dt>Rejected / duplicate</dt><dd>{report.rejected_codes} / {report.duplicate_codes} codes</dd></div>
           <div><dt>Accepted optical rate</dt><dd>{formatRate(report.accepted_symbol_bytes_per_second)}</dd></div>
+          {includesAcquisition && <div><dt>Transport-only goodput</dt><dd>{formatRate(report.verified_payload_bytes_per_second)} · {report.transfer_seconds.toFixed(2)} s from first accepted code</dd></div>}
           <div><dt>Fountain overhead</dt><dd>{report.fountain_overhead_percent.toFixed(1)}%</dd></div>
           {report.transport && <div><dt>Optical packing</dt><dd>{report.transport.encoding} · {formatBytes(report.transport.optical_object_bytes)} transmitted · {report.transport.optical_reduction_percent.toFixed(1)}% reduction</dd></div>}
-          <div><dt>Camera</dt><dd>{report.camera.width}×{report.camera.height} · {report.camera.observed_fps.toFixed(1)} observed / {report.camera.negotiated_fps.toFixed(0)} negotiated FPS · {report.camera.camera_exposures ?? "—"} exposures</dd></div>
+          <div><dt>Camera</dt><dd>{report.camera.width}×{report.camera.height} decode{report.camera.source_width ? ` · ${report.camera.source_width}×${report.camera.source_height} source` : ""} · {report.camera.observed_fps.toFixed(1)} observed / {report.camera.negotiated_fps.toFixed(0)} negotiated FPS · {report.camera.camera_exposures ?? "—"} exposures</dd></div>
+          {report.camera.time_to_first_valid_ms !== undefined && <div><dt>First valid symbol</dt><dd>{(report.camera.time_to_first_valid_ms / 1_000).toFixed(2)} s after camera open</dd></div>}
           <div><dt>Decoder</dt><dd>{report.camera.valid_codes_per_second.toFixed(1)} valid codes/s · p50 {report.camera.decode_p50_ms.toFixed(1)} ms · p95 {report.camera.decode_p95_ms.toFixed(1)} ms</dd></div>
           {report.camera.decode_jobs !== undefined && <div><dt>Optical acquisition</dt><dd>{report.camera.optical_acquisition_percent?.toFixed(1)}% · {report.camera.successful_decode_jobs} symbol jobs / {report.camera.decode_jobs} completed jobs · {report.camera.empty_decode_jobs} empty</dd></div>}
+          {report.camera.unique_codes_per_second !== undefined && <div><dt>Symbol yield</dt><dd>{report.camera.unique_codes_per_second.toFixed(1)} unique/s · {report.camera.duplicate_codes_per_second?.toFixed(1) ?? "—"} duplicate/s</dd></div>}
+          {report.camera.grid_last_outcome && <div><dt>Grid lock</dt><dd>{report.camera.grid_last_outcome} · contrast {report.camera.grid_contrast?.toFixed(0) ?? "—"} · fill {report.camera.grid_screen_fill_percent?.toFixed(1) ?? "—"}% · registration reused {report.camera.grid_registration_reuse_percent?.toFixed(1) ?? "—"}%</dd></div>}
           {report.profile.visual_phy && <div><dt>Bound channel</dt><dd>{report.profile.visual_phy} · {report.profile.target_symbol_rate ?? "—"} symbols/s target</dd></div>}
-          <div><dt>Pressure</dt><dd>{report.camera.busy_drops} busy drops · {report.camera.workers} workers</dd></div>
+          <div><dt>Pressure</dt><dd>{report.camera.busy_drops} busy drops · {report.camera.rate_limited_exposures ?? 0} rate-limited exposures · {report.camera.workers} workers</dd></div>
         </dl>
       </details>
       <div className="capacity-actions">

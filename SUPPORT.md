@@ -7,7 +7,7 @@ Use the appropriate public channel:
 
 - **Reproducible defect:** open a bug report.
 - **Phone-camera measurement:** use the physical-device result template and
-  attach all repeated `glassbridge-capacity/4` success records and
+  attach all repeated `glassbridge-capacity/5` success records and
   `glassbridge-device-run/1` failure records.
 - **Feature or research proposal:** use the proposal template and explain the
   security, compatibility, and measurement consequences.

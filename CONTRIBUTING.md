@@ -28,7 +28,7 @@ run, including failures, and use synthetic non-sensitive data.
 - Do not implement new cryptographic primitives.
 - Do not include private data, internal conversations, credentials, or proprietary artifacts.
 - Treat physical throughput, security, and novelty as claims that require reproducible evidence.
-- For a device result, attach every exported `glassbridge-capacity/4` success and `glassbridge-device-run/1` failure. Version 4 binds the visual PHY and target rate and records no-symbol acquisition jobs.
+- For a device result, attach every exported `glassbridge-capacity/5` success and `glassbridge-device-run/1` failure. Version 5 adds camera-open-to-verified goodput while retaining transport-only goodput as a diagnostic.
 
 ## Development setup
 

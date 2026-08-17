@@ -31,12 +31,23 @@ const camera = {
   workers: 4,
   width: 1_280,
   height: 720,
+  sourceWidth: 1_920,
+  sourceHeight: 1_080,
   negotiatedFps: 60,
   cameraSeconds: 3.2,
   cameraFrames: 192,
   decodeJobs: 120,
   successfulDecodeJobs: 82,
   emptyDecodeJobs: 38,
+  uniqueFps: 31.25,
+  duplicateFps: 3.75,
+  throttledFrames: 18,
+  gridOutcome: "decoded" as const,
+  gridContrast: 181.4,
+  gridScreenFillRatio: 0.539,
+  gridCorrectedCodewords: 0,
+  gridRegistrationReusePercent: 93.75,
+  timeToFirstValidMs: 864.25,
 };
 
 function report(goodput?: number): CapacityReport {
@@ -54,6 +65,7 @@ function report(goodput?: number): CapacityReport {
       transmittedBytes: 32_000,
     },
     camera,
+    cameraToVerifiedSeconds: 3.5,
     device: "test-phone",
   });
   return goodput === undefined ? value : {
@@ -65,15 +77,27 @@ function report(goodput?: number): CapacityReport {
 describe("post-receive capacity reports", () => {
   it("records comparable transfer, optical, and camera metrics", () => {
     const value = report();
-    expect(value.schema).toBe("glassbridge-capacity/4");
+    expect(value.schema).toBe("glassbridge-capacity/5");
     expect(value.profile).toMatchObject({ id: "burst", label: "Burst", lanes: 2, qr_version: 30, visual_phy: "qr-model2-v1", target_symbol_rate: 60 });
     expect(value.transfer_seconds).toBe(2.4);
     expect(value.payload_sha256).toBe("ab".repeat(32));
     expect(value.verified_payload_bytes_per_second).toBe(61_440);
+    expect(value.camera_to_verified_seconds).toBe(3.5);
+    expect(value.camera_to_verified_payload_bytes_per_second).toBe(42_130);
     expect(value.accepted_symbol_bytes_per_second).toBe(67_520);
     expect(value.decoded_acceptance_percent).toBe(90.6);
-    expect(value.camera).toMatchObject({ observed_fps: 59.94, decode_p95_ms: 8.5, busy_drops: 2 });
+    expect(value.camera).toMatchObject({ observed_fps: 59.94, decode_p95_ms: 8.5, busy_drops: 2, source_width: 1_920, source_height: 1_080, time_to_first_valid_ms: 864.3 });
     expect(value.camera).toMatchObject({ camera_exposures: 192, decode_jobs: 120, empty_decode_jobs: 38, optical_acquisition_percent: 68.3 });
+    expect(value.camera).toMatchObject({
+      unique_codes_per_second: 31.25,
+      duplicate_codes_per_second: 3.75,
+      rate_limited_exposures: 18,
+      grid_last_outcome: "decoded",
+      grid_contrast: 181.4,
+      grid_screen_fill_percent: 53.9,
+      grid_corrected_codewords: 0,
+      grid_registration_reuse_percent: 93.8,
+    });
     expect(value.transport).toEqual({
       encoding: "gzip",
       signed_envelope_bytes: 148_000,
@@ -91,13 +115,16 @@ describe("post-receive capacity reports", () => {
     const differentPayload = { ...report(90_000), payload_sha256: "cd".repeat(32) };
     const differentRate = { ...report(91_000), profile: { ...report().profile, target_symbol_rate: 120 } };
     const differentDevice = { ...report(92_000), device: "other-phone" };
-    const comparison = compareCapacityReport(report(66_000), [report(60_000), balanced, differentSize, differentPayload, differentRate, differentDevice, report(62_000)]);
+    const current = { ...report(66_000), camera_to_verified_payload_bytes_per_second: 44_000 };
+    const previousOne = { ...report(60_000), camera_to_verified_payload_bytes_per_second: 40_000 };
+    const previousTwo = { ...report(62_000), camera_to_verified_payload_bytes_per_second: 42_000 };
+    const comparison = compareCapacityReport(current, [previousOne, balanced, differentSize, differentPayload, differentRate, differentDevice, previousTwo]);
     expect(comparison.runNumber).toBe(3);
-    expect(comparison.previousGoodput).toBe(62_000);
+    expect(comparison.previousGoodput).toBe(42_000);
     expect(comparison.previousAcceptedCodesPerSecond).toBe(40);
-    expect(comparison.bestGoodputBefore).toBe(62_000);
+    expect(comparison.bestGoodputBefore).toBe(42_000);
     expect(comparison.bestAcceptedCodesPerSecond).toBe(40);
-    expect(comparison.changeFromPrevious).toBeCloseTo(66 / 62 - 1);
+    expect(comparison.changeFromPrevious).toBeCloseTo(44 / 42 - 1);
     expect(comparison.isNewBest).toBe(true);
   });
 

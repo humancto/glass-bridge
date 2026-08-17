@@ -36,7 +36,34 @@ export type GridDecodeResult = {
   screenFillRatio: number;
 };
 
-type Point = { x: number; y: number };
+export type GridDecodeOutcome =
+  | "decoded"
+  | "invalid-image"
+  | "markers-not-found"
+  | "geometry-invalid"
+  | "contrast-low"
+  | "frame-magic-invalid";
+
+export type GridRegistration = {
+  topLeft: Point;
+  topRight: Point;
+  bottomRight: Point;
+  bottomLeft: Point;
+  screenFillRatio: number;
+  sampleRadius: number;
+};
+
+export type GridDecodeAttempt = {
+  outcome: GridDecodeOutcome;
+  markersFound: boolean;
+  registration?: GridRegistration;
+  frame?: Uint8Array;
+  correctedCodewords?: number;
+  contrast?: number;
+  screenFillRatio?: number;
+};
+
+export type Point = { x: number; y: number };
 
 export function encodeGridModules(frame: Uint8Array): Uint8Array {
   if (frame.length !== GRID_FRAME_BYTES) {
@@ -109,16 +136,27 @@ export function renderGridFrame(frame: Uint8Array): PixelBuffer {
   return { data, width: GRID_TOTAL_COLUMNS, height: GRID_TOTAL_ROWS };
 }
 
-export function tryDecodeGridFrame(image: PixelBuffer): GridDecodeResult | undefined {
+export function decodeGridFrame(
+  image: PixelBuffer,
+  registration?: GridRegistration,
+): GridDecodeAttempt {
   if (
     !Number.isSafeInteger(image.width) || image.width < GRID_TOTAL_COLUMNS ||
     !Number.isSafeInteger(image.height) || image.height < GRID_TOTAL_ROWS ||
     image.data.length !== image.width * image.height * 4
   ) {
-    return undefined;
+    return { outcome: "invalid-image", markersFound: false };
   }
-  const markers = locateMarkers(image);
-  if (!markers) return undefined;
+  const markers = registration ?? locateMarkers(image);
+  if (!markers) return { outcome: "markers-not-found", markersFound: false };
+  if (!validMarkerGeometry(markers, image.width, image.height)) {
+    return {
+      outcome: "geometry-invalid",
+      markersFound: true,
+      registration: markers,
+      screenFillRatio: markers.screenFillRatio,
+    };
+  }
   const transform = quadrilateralTransform(
     markers.topLeft,
     markers.topRight,
@@ -136,26 +174,56 @@ export function tryDecodeGridFrame(image: PixelBuffer): GridDecodeResult | undef
     const v = (gridY - MARKER_POINTS.topLeft.y) /
       (MARKER_POINTS.bottomLeft.y - MARKER_POINTS.topLeft.y);
     const point = transform(u, v);
-    samples[index] = lumaAt(image, point.x, point.y);
+    samples[index] = lumaPatchAt(image, point.x, point.y, markers.sampleRadius);
   }
-  const ordered = [...samples].sort((left, right) => left - right);
-  const dark = percentile(ordered, 0.1);
-  const light = percentile(ordered, 0.9);
-  if (light - dark < 48) return undefined;
+  const histogram = lumaHistogram(samples);
+  const dark = histogramPercentile(histogram, samples.length, 0.1);
+  const light = histogramPercentile(histogram, samples.length, 0.9);
+  const contrast = light - dark;
+  if (contrast < 48) {
+    return {
+      outcome: "contrast-low",
+      markersFound: true,
+      registration: markers,
+      contrast,
+      screenFillRatio: markers.screenFillRatio,
+    };
+  }
   const threshold = (dark + light) / 2;
   const modules = Uint8Array.from(samples, (sample) => Number(sample < threshold));
   const decoded = decodeGridModules(modules);
-  if (!looksLikeOpticalFrame(decoded.frame)) return undefined;
-  const screenArea = quadrilateralArea([
-    markers.topLeft,
-    markers.topRight,
-    markers.bottomRight,
-    markers.bottomLeft,
-  ]);
+  if (!looksLikeOpticalFrame(decoded.frame)) {
+    return {
+      outcome: "frame-magic-invalid",
+      markersFound: true,
+      registration: markers,
+      correctedCodewords: decoded.correctedCodewords,
+      contrast,
+      screenFillRatio: markers.screenFillRatio,
+    };
+  }
   return {
-    ...decoded,
-    contrast: light - dark,
-    screenFillRatio: screenArea / (image.width * image.height),
+    outcome: "decoded",
+    markersFound: true,
+    registration: markers,
+    frame: decoded.frame,
+    correctedCodewords: decoded.correctedCodewords,
+    contrast,
+    screenFillRatio: markers.screenFillRatio,
+  };
+}
+
+export function tryDecodeGridFrame(
+  image: PixelBuffer,
+  registration?: GridRegistration,
+): GridDecodeResult | undefined {
+  const attempt = decodeGridFrame(image, registration);
+  if (attempt.outcome !== "decoded" || !attempt.frame) return undefined;
+  return {
+    frame: attempt.frame,
+    correctedCodewords: attempt.correctedCodewords ?? 0,
+    contrast: attempt.contrast ?? 0,
+    screenFillRatio: attempt.screenFillRatio ?? 0,
   };
 }
 
@@ -205,12 +273,14 @@ function whiteningByte(index: number): number {
   return value & 0xff;
 }
 
-function locateMarkers(image: PixelBuffer): Record<keyof typeof MARKER_POINTS, Point> | undefined {
-  const accumulators = {
-    topLeft: accumulator(),
-    topRight: accumulator(),
-    bottomRight: accumulator(),
-    bottomLeft: accumulator(),
+function locateMarkers(image: PixelBuffer): GridRegistration | undefined {
+  const binSize = Math.max(6, Math.floor(Math.min(image.width, image.height) / 90));
+  const binColumns = Math.ceil(image.width / binSize);
+  const bins: Record<keyof typeof MARKER_POINTS, Map<number, MarkerAccumulator>> = {
+    topLeft: new Map(),
+    topRight: new Map(),
+    bottomRight: new Map(),
+    bottomLeft: new Map(),
   };
   const stride = Math.max(1, Math.floor(Math.min(image.width / 640, image.height / 360)));
   for (let y = 0; y < image.height; y += stride) {
@@ -221,21 +291,124 @@ function locateMarkers(image: PixelBuffer): Record<keyof typeof MARKER_POINTS, P
       const blue = image.data[offset + 2];
       const key = classifyMarker(red, green, blue);
       if (!key) continue;
-      const value = accumulators[key];
+      const binX = Math.floor(x / binSize);
+      const binY = Math.floor(y / binSize);
+      const binKey = binY * binColumns + binX;
+      const value = bins[key].get(binKey) ?? accumulator();
       value.x += x;
       value.y += y;
       value.count += 1;
+      bins[key].set(binKey, value);
     }
   }
   const minimum = Math.max(6, Math.floor(image.width * image.height / 200_000));
-  if (Object.values(accumulators).some((value) => value.count < minimum)) return undefined;
-  const points = Object.fromEntries(Object.entries(accumulators).map(([key, value]) => [key, {
-    x: value.x / value.count,
-    y: value.y / value.count,
+  const clustered = Object.fromEntries(Object.entries(bins).map(([key, value]) => [
+    key,
+    strongestMarkerComponent(
+      value,
+      binColumns,
+      Math.ceil(image.height / binSize),
+    ),
+  ])) as Record<keyof typeof MARKER_POINTS, MarkerAccumulator | undefined>;
+  if (Object.values(clustered).some((value) => !value || value.count < minimum)) return undefined;
+  const points = Object.fromEntries(Object.entries(clustered).map(([key, value]) => [key, {
+    x: (value as MarkerAccumulator).x / (value as MarkerAccumulator).count,
+    y: (value as MarkerAccumulator).y / (value as MarkerAccumulator).count,
   }])) as Record<keyof typeof MARKER_POINTS, Point>;
   const area = quadrilateralArea([points.topLeft, points.topRight, points.bottomRight, points.bottomLeft]);
-  if (area < image.width * image.height * 0.08) return undefined;
-  return points;
+  const horizontalPitch = (
+    distance(points.topLeft, points.topRight) + distance(points.bottomLeft, points.bottomRight)
+  ) / 2 / (MARKER_POINTS.topRight.x - MARKER_POINTS.topLeft.x);
+  const verticalPitch = (
+    distance(points.topLeft, points.bottomLeft) + distance(points.topRight, points.bottomRight)
+  ) / 2 / (MARKER_POINTS.bottomLeft.y - MARKER_POINTS.topLeft.y);
+  const cellPitch = Math.min(horizontalPitch, verticalPitch);
+  return {
+    ...points,
+    screenFillRatio: area / (image.width * image.height),
+    // At roughly 3 px/module a 3x3 average crosses into neighbouring modules
+    // after perspective interpolation. Only widen the patch when there is a
+    // full pixel of margin around the sampled module centre.
+    sampleRadius: Math.max(0, Math.min(2, Math.floor((cellPitch - 3) / 2))),
+  };
+}
+
+type MarkerAccumulator = { x: number; y: number; count: number };
+
+function strongestMarkerComponent(
+  bins: Map<number, MarkerAccumulator>,
+  binColumns: number,
+  binRows: number,
+): MarkerAccumulator | undefined {
+  const remaining = new Set(bins.keys());
+  let best: MarkerAccumulator | undefined;
+  let bestCount = 0;
+  while (remaining.size > 0) {
+    const seed = remaining.values().next().value as number;
+    remaining.delete(seed);
+    const pending = [seed];
+    const combined = accumulator();
+    let occupiedBins = 0;
+    let minX = binColumns;
+    let maxX = 0;
+    let minY = binRows;
+    let maxY = 0;
+    while (pending.length > 0) {
+      const key = pending.pop() as number;
+      const binX = key % binColumns;
+      const binY = Math.floor(key / binColumns);
+      const value = bins.get(key);
+      if (!value) continue;
+      combined.x += value.x;
+      combined.y += value.y;
+      combined.count += value.count;
+      occupiedBins += 1;
+      minX = Math.min(minX, binX);
+      maxX = Math.max(maxX, binX);
+      minY = Math.min(minY, binY);
+      maxY = Math.max(maxY, binY);
+      for (let deltaY = -1; deltaY <= 1; deltaY += 1) {
+        for (let deltaX = -1; deltaX <= 1; deltaX += 1) {
+          if (deltaX === 0 && deltaY === 0) continue;
+          const nextX = binX + deltaX;
+          const nextY = binY + deltaY;
+          if (nextX < 0 || nextX >= binColumns || nextY < 0 || nextY >= binRows) continue;
+          const nextKey = nextY * binColumns + nextX;
+          if (!remaining.delete(nextKey)) continue;
+          pending.push(nextKey);
+        }
+      }
+    }
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    const aspectRatio = Math.max(width / height, height / width);
+    const density = occupiedBins / (width * height);
+    if (aspectRatio <= 3.5 && density >= 0.25) {
+      if (combined.count > bestCount) {
+        best = combined;
+        bestCount = combined.count;
+      }
+    }
+  }
+  return best;
+}
+
+function validMarkerGeometry(
+  markers: GridRegistration,
+  imageWidth: number,
+  imageHeight: number,
+): boolean {
+  const points = [markers.topLeft, markers.topRight, markers.bottomRight, markers.bottomLeft];
+  const area = quadrilateralArea(points);
+  if (area < imageWidth * imageHeight * 0.08 || area > imageWidth * imageHeight) return false;
+  const edges = points.map((point, index) => distance(point, points[(index + 1) % points.length]));
+  if (Math.min(...edges) < Math.min(imageWidth, imageHeight) * 0.08) return false;
+  const crossProducts = points.map((point, index) => {
+    const next = points[(index + 1) % points.length];
+    const after = points[(index + 2) % points.length];
+    return (next.x - point.x) * (after.y - next.y) - (next.y - point.y) * (after.x - next.x);
+  });
+  return crossProducts.every((value) => value > 0) || crossProducts.every((value) => value < 0);
 }
 
 function classifyMarker(red: number, green: number, blue: number): keyof typeof MARKER_POINTS | undefined {
@@ -275,19 +448,39 @@ function quadrilateralTransform(
   };
 }
 
-function lumaAt(image: PixelBuffer, x: number, y: number): number {
+function lumaPatchAt(image: PixelBuffer, x: number, y: number, radius: number): number {
   const clampedX = Math.max(0, Math.min(image.width - 1, Math.round(x)));
   const clampedY = Math.max(0, Math.min(image.height - 1, Math.round(y)));
-  const offset = (clampedY * image.width + clampedX) * 4;
-  return Math.round(
-    image.data[offset] * 0.2126 +
-    image.data[offset + 1] * 0.7152 +
-    image.data[offset + 2] * 0.0722
-  );
+  let total = 0;
+  let count = 0;
+  for (let deltaY = -radius; deltaY <= radius; deltaY += 1) {
+    for (let deltaX = -radius; deltaX <= radius; deltaX += 1) {
+      const sampleX = Math.max(0, Math.min(image.width - 1, clampedX + deltaX));
+      const sampleY = Math.max(0, Math.min(image.height - 1, clampedY + deltaY));
+      const offset = (sampleY * image.width + sampleX) * 4;
+      total += image.data[offset] * 0.2126 +
+        image.data[offset + 1] * 0.7152 +
+        image.data[offset + 2] * 0.0722;
+      count += 1;
+    }
+  }
+  return Math.round(total / count);
 }
 
-function percentile(values: number[], ratio: number): number {
-  return values[Math.min(values.length - 1, Math.floor((values.length - 1) * ratio))];
+function lumaHistogram(values: Uint8Array): Uint32Array {
+  const histogram = new Uint32Array(256);
+  for (const value of values) histogram[value] += 1;
+  return histogram;
+}
+
+function histogramPercentile(histogram: Uint32Array, count: number, ratio: number): number {
+  const target = Math.min(count - 1, Math.floor((count - 1) * ratio));
+  let seen = 0;
+  for (let value = 0; value < histogram.length; value += 1) {
+    seen += histogram[value];
+    if (seen > target) return value;
+  }
+  return 255;
 }
 
 function quadrilateralArea(points: Point[]): number {
@@ -297,6 +490,10 @@ function quadrilateralArea(points: Point[]): number {
     area += points[index].x * next.y - next.x * points[index].y;
   }
   return Math.abs(area) / 2;
+}
+
+function distance(left: Point, right: Point): number {
+  return Math.hypot(left.x - right.x, left.y - right.y);
 }
 
 function looksLikeOpticalFrame(frame: Uint8Array): boolean {

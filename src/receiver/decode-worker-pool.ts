@@ -1,4 +1,5 @@
 import type { VisualPhyId } from "../protocol/optical-profile";
+import type { GridDecodeOutcome } from "../phy/grid/grid-codec";
 
 export type DecodeWorkerRequest = {
   id: number;
@@ -18,6 +19,14 @@ export type DecodeWorkerResponse = {
   id: number;
   codes?: DecodeWorkerCode[];
   decodeMs: number;
+  grid?: {
+    outcome: GridDecodeOutcome;
+    markersFound: boolean;
+    registrationReused: boolean;
+    correctedCodewords?: number;
+    contrast?: number;
+    screenFillRatio?: number;
+  };
   error?: string;
 };
 

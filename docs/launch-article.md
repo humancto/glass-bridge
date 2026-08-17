@@ -84,7 +84,7 @@ This is a defensible systems contribution, not yet a claim of being the first sy
 
 ## The live result—and the honest speed story
 
-The public pre-alpha currently supports one file up to 256 KiB. Its default Burst mode shows two QR lanes and uses sparse LT repair. Milestones 13 and 14 added controlled 30/60/90/120 combined-code steps, a dense Ceiling Lab profile, bounded adaptive gzip, and lane-parallel decoding. Milestone 15 adds a registered full-screen binary Grid v0, pairing-bound visual PHY and target rate, empty-acquisition telemetry, like-for-like comparisons, and structured failed-run export.
+The public pre-alpha currently supports one file up to 256 KiB. Its default Burst mode shows two QR lanes and uses sparse LT repair. Milestones 13 and 14 added controlled 30/60/90/120 combined-code steps, a dense Ceiling Lab profile, bounded adaptive gzip, and lane-parallel decoding. Milestone 15 added a registered binary Grid v0. Milestone 16 fixes the first live acquisition bottlenecks: Grid-only fullscreen, integer cell scaling, a valid acquisition preamble, persistent registration, bounded latest-frame scheduling, acquisition and absolute session limits that preserve valid LT rank plateaus, and exported lock-quality diagnostics.
 
 The implemented Ceiling Lab channel budget reaches 348,000 useful symbol bytes per second, or 339.8 KiB/s, before camera loss and protocol overhead. That is a capacity bound, not physical goodput.
 
@@ -92,7 +92,7 @@ For structured files, effective file goodput can rise without increasing the opt
 
 The phone now reports the number that matters after a successful run: verified payload bytes per second. It also preserves the last 20 comparable results locally and exports a versioned JSON record, so a fast-looking best run cannot silently replace the distribution.
 
-We have ideal-raster QR and Grid decoder tests. We do not yet have the physical multi-device dataset required for a speed headline. The Grid CPU reference is approximately 0.41 ms to render a 2,032-byte symbol and 5.1 ms to register/decode one ideal 1280×720 exposure on the development Mac; these numbers do not measure a camera. The next public result should include every run, every failure, device metadata, visual PHY, target rate, payload size, and raw JSON.
+We have ideal-raster tests and a deterministic camera-raster simulator with perspective, fractional resampling, moiré, brightness loss, colored distractors, blur, and rolling-shutter transition tears. Its 144 KiB Grid30 gate recovers 73/73 stable source epochs byte-for-byte at about 7.4 ms p95 decode on the development Mac, while transport CRC rejects every mixed transition epoch in the run. The modeled source floor is 2.43 seconds and the expected LT window is 3.4 seconds. These numbers still do not measure a phone camera. The next public result must include every run, every failure, device metadata, visual PHY, target rate, payload size, and raw JSON.
 
 If GlassBridge beats 128 KB/s on some pairs, that is interesting. If it does not, the diagnostic pipeline should tell us whether the limit is display scheduling, rolling shutter, camera delivery, QR acquisition, worker pressure, erasures, or fountain overhead. Either outcome advances the work.
 
@@ -124,13 +124,13 @@ The hard problems are not hidden: trust provisioning, protected replay state, ma
 
 ## Try it, measure it, break it
 
-Open [GlassBridge Send](https://humancto.github.io/glass-bridge/send.html) on a laptop, select the 144 KiB capacity file and Grid 30 lab, prepare the transfer, scan the stationary pairing QR with a phone, confirm the fingerprint, open the phone camera, and use fullscreen with all four colored Grid corners visible. Validate once at 10/s, then repeat 30/s three times before attempting 60/s. A rate change forces re-pairing because the receiver must bind the exact channel being measured.
+Open [GlassBridge Send](https://humancto.github.io/glass-bridge/send.html) on a laptop, select the 144 KiB capacity file and Grid 30 lab, and prepare the transfer. Scan the stationary pairing QR with a phone, confirm the fingerprint, open the phone camera, and turn the phone landscape. Only then press **Fullscreen & start** once on the laptop and keep all four colored Grid corners visible. Repeat 30/s three times before attempting 60/s. A rate change forces re-pairing because the receiver must bind the exact channel being measured.
 
 After verification, save the benchmark JSON. Repeat the exact condition three times before increasing one capacity step. Synthetic test data only: this is pre-alpha research, not a production security control.
 
 The source, protocol snapshots, tests, milestone reports, and limitations are in [humancto/glass-bridge](https://github.com/humancto/glass-bridge). The most useful contributions right now are:
 
-- raw `glassbridge-capacity/4` successes and `glassbridge-device-run/1` failures from named device pairs;
+- raw `glassbridge-capacity/5` successes and `glassbridge-device-run/1` failures from named device pairs;
 - optical and protocol failure cases;
 - adversarial review of AGX, pairing, policy, quarantine, replay, and receipt semantics;
 - independently written decoders for the published fixtures; and
@@ -149,7 +149,7 @@ The project is available under the Apache License 2.0. The license permits comme
 1. Show Wi-Fi disabled on the receiving device only if it really is disabled.
 2. Choose the 144 KiB test file on the laptop.
 3. Scan the stationary pairing QR and match the fingerprint.
-4. Start the dual-lane optical stream.
+4. Turn the phone landscape and start the fullscreen Grid stream.
 5. Cut directly to “Verified. Held for approval.”
 6. Show verified goodput and accepted-code rate.
 7. Approve release and show the signed receipt beside the file.

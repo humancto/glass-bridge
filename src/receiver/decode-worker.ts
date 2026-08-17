@@ -4,9 +4,18 @@ import { prepareZXingModule, readBarcodes } from "zxing-wasm/reader";
 import wasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
 import { TURBO_READER_OPTIONS } from "./decode-options";
 import type { DecodeWorkerRequest, DecodeWorkerResponse } from "./decode-worker-pool";
-import { tryDecodeGridFrame } from "../phy/grid/grid-codec";
+import {
+  decodeGridFrame,
+  type GridRegistration,
+} from "../phy/grid/grid-codec";
 
 let zxingReady: ReturnType<typeof prepareZXingModule> | undefined;
+let gridRegistration: GridRegistration | undefined;
+let gridJobsSinceRegistration = 0;
+let gridConsecutiveFailures = 0;
+
+const GRID_REGISTRATION_REFRESH_JOBS = 15;
+const GRID_FAILURES_BEFORE_REACQUIRE = 2;
 
 self.onmessage = (event: MessageEvent<DecodeWorkerRequest>) => {
   void decode(event.data);
@@ -17,12 +26,31 @@ async function decode(request: DecodeWorkerRequest): Promise<void> {
   try {
     const pixels = new Uint8ClampedArray(request.pixels);
     if (request.visualPhy === "mono-grid-v0") {
-      const decoded = tryDecodeGridFrame({ data: pixels, width: request.width, height: request.height });
-      const bytes = decoded?.frame.slice();
+      const refreshRegistration = !gridRegistration ||
+        gridJobsSinceRegistration >= GRID_REGISTRATION_REFRESH_JOBS ||
+        gridConsecutiveFailures >= GRID_FAILURES_BEFORE_REACQUIRE;
+      const registration = refreshRegistration ? undefined : gridRegistration;
+      const decoded = decodeGridFrame(
+        { data: pixels, width: request.width, height: request.height },
+        registration,
+      );
+      if (decoded.registration) gridRegistration = decoded.registration;
+      if (refreshRegistration) gridJobsSinceRegistration = 0;
+      gridJobsSinceRegistration += 1;
+      gridConsecutiveFailures = decoded.outcome === "decoded" ? 0 : gridConsecutiveFailures + 1;
+      const bytes = decoded.frame?.slice();
       const response: DecodeWorkerResponse = {
         id: request.id,
         codes: bytes ? [{ bytes: bytes.buffer }] : [],
         decodeMs: performance.now() - startedAt,
+        grid: {
+          outcome: decoded.outcome,
+          markersFound: decoded.markersFound,
+          registrationReused: registration !== undefined,
+          correctedCodewords: decoded.correctedCodewords,
+          contrast: decoded.contrast,
+          screenFillRatio: decoded.screenFillRatio,
+        },
       };
       self.postMessage(response, bytes ? [bytes.buffer] : []);
       return;

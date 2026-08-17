@@ -79,6 +79,8 @@
         "negotiated_fps": { "type": "number", "minimum": 0 },
         "width": { "type": "integer", "minimum": 0 },
         "height": { "type": "integer", "minimum": 0 },
+        "source_width": { "type": "integer", "minimum": 0 },
+        "source_height": { "type": "integer", "minimum": 0 },
         "decode_jobs": { "type": "integer", "minimum": 0 },
         "successful_decode_jobs": { "type": "integer", "minimum": 0 },
         "empty_decode_jobs": { "type": "integer", "minimum": 0 },
@@ -86,7 +88,23 @@
         "busy_drops": { "type": "integer", "minimum": 0 },
         "decode_p50_ms": { "type": "number", "minimum": 0 },
         "decode_p95_ms": { "type": "number", "minimum": 0 },
-        "workers": { "type": "integer", "minimum": 0 }
+        "workers": { "type": "integer", "minimum": 0 },
+        "rate_limited_exposures": { "type": "integer", "minimum": 0 },
+        "grid_last_outcome": {
+          "enum": [
+            "decoded",
+            "invalid-image",
+            "markers-not-found",
+            "geometry-invalid",
+            "contrast-low",
+            "frame-magic-invalid"
+          ]
+        },
+        "grid_contrast": { "type": "number", "minimum": 0, "maximum": 255 },
+        "grid_screen_fill_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "grid_corrected_codewords": { "type": "integer", "minimum": 0 },
+        "grid_registration_reuse_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "time_to_first_valid_ms": { "type": "number", "minimum": 0 }
       }
     },
     "device": { "type": "string", "minLength": 1 }

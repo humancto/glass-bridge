@@ -37,10 +37,10 @@ You need a laptop and a phone. Nothing is installed, and the application has no 
 2. Select **Load demo sample** or choose one file up to 256 KiB.
 3. Scan the stationary pairing QR with the phone's normal Camera app.
 4. Confirm the fingerprint, then tap **Trust sender & open camera**.
-5. For the compatibility baseline, hold the phone landscape with both QR codes inside the guide. For **Grid 30 lab**, use fullscreen and keep all four colored corner markers visible.
+5. For the compatibility baseline, hold the phone landscape with both QR codes inside the guide, then start the stream on the laptop. For **Grid 30 lab**, turn the phone landscape first, then tap **Fullscreen & start** on the laptop once and keep all four colored corner markers visible. Escape exits fullscreen and pauses.
 6. Review the verified object in quarantine, approve release, then save the file and signed receipt.
 
-For a performance run, choose **Load 144 KiB test payload** and **Grid 30 lab** before preparing. Run 10/s once to validate geometry, then repeat 30/s three times before trying 60/s. Changing the target rate intentionally requires re-pairing because pairing v4 binds the visual PHY and rate. Export **Save / share benchmark JSON** after each receive; the phone compares only the same device, PHY, rate, and exact payload.
+For a performance run, choose **Load 144 KiB test payload** and **Grid 30 lab** before preparing. Open the paired receiver and camera before pressing **Fullscreen & start**. Repeat 30/s three times before trying 60/s. Changing the target rate intentionally requires re-pairing because pairing v4 binds the visual PHY and rate. Export **Save / share benchmark JSON** after each receive; the phone compares only the same device, PHY, rate, exact payload, and measurement window.
 
 ## Why this project exists
 
@@ -75,7 +75,7 @@ The strict one-way profile requires no acknowledgment or return signal. Pairing 
 
 ## Speed without fiction
 
-The parallel performance audit found that QR generation, LT reconstruction, cryptography, and ideal-raster decoding are not the current limit. The physical acquisition path is: production QR modules were smaller than the benchmark geometry, camera exposures are not synchronized with display changes, and every frame repeats stateless QR location. Milestone 15 fixes the benchmark/render geometry mismatch, records no-symbol decode jobs, binds the PHY and target rate in pairing, and adds a registered full-screen binary Grid PHY beside QR.
+The parallel performance audit found that QR generation, LT reconstruction, cryptography, and ideal-raster decoding are not the current limit. The bottleneck was acquisition: the sender used fractional display scaling and fullscreened its entire control panel, while the receiver copied and globally re-registered a full camera raster on every exposure. Milestone 16 makes the Grid itself fullscreen at integer cell sizes, holds a valid acquisition preamble, reuses registration, bounds decode cadence, and separates camera, PHY, CRC-accepted, duplicate, and rank-growth telemetry.
 
 | Profile | Useful payload | Nominal budget | Intended role |
 | --- | ---: | ---: | ---: |
@@ -85,9 +85,9 @@ The parallel performance audit found that QR generation, LT reconstruction, cryp
 
 These are pre-loss channel budgets, not phone-camera results. Display refresh, camera exposure, rolling shutter, focus, moiré, and operator motion determine physical goodput. A higher selected code rate can be slower if it produces more rejected frames.
 
-The ideal Grid reference currently renders a symbol in about 0.41 ms and registers/decodes an ideal 1280×720 exposure in about 5.1 ms on the development Mac. Those are CPU measurements, not camera goodput. A structured 144 KiB CSV development sample packed to 23,907 optical bytes—a 6.17× effective file/optical-byte multiplier—while already-compressed or encrypted files usually remain on the identity path.
+The deterministic camera-raster gate projects the Grid through fractional perspective, bilinear resampling, moiré, brightness loss, colored distractors, and a high-fill blur probe. On the development Mac it reconstructed a 144 KiB payload from all 73 stable source epochs byte-for-byte with zero inner corrections and about 7.4 ms p95 decode; 72 mixed rolling-shutter epochs were rejected by transport CRC. The modeled Grid30 source floor is 2.43 seconds and the expected 102-frame LT window is 3.4 seconds. These are synthetic acquisition results—not phone-camera goodput. A structured 144 KiB CSV development sample packed to 23,907 optical bytes, while already-compressed or encrypted files usually remain on the identity path.
 
-Read the complete methodology and stop rules in [Milestone 13](docs/milestone-13.md), [Milestone 14](docs/milestone-14.md), [Milestone 15](docs/milestone-15.md), [AGX-PHY-GRID-0001](spec/AGX-PHY-GRID-0001.md), and [BENCH-0001](spec/BENCH-0001.md).
+Read the complete methodology and stop rules in [Milestone 13](docs/milestone-13.md), [Milestone 14](docs/milestone-14.md), [Milestone 15](docs/milestone-15.md), [Milestone 16](docs/milestone-16.md), [AGX-PHY-GRID-0001](spec/AGX-PHY-GRID-0001.md), and [BENCH-0001](spec/BENCH-0001.md).
 
 ## What is implemented
 
@@ -96,12 +96,12 @@ Read the complete methodology and stop rules in [Milestone 13](docs/milestone-13
 - SHA-256 payload verification and strict boundary binding
 - session-bound AGF1/AGF2 frames with sparse LT repair
 - dual-lane QR v30/v40 transports and 30/60/90/120-code test ladder
-- registered full-screen binary Grid PHY with four-corner projective recovery, whitening, interleaved Hamming correction, and exact frame CRC
+- registered full-screen binary Grid PHY with integer cell scaling, acquisition preamble, persistent four-corner recovery, whitening, interleaved Hamming correction, and exact frame CRC
 - bounded adaptive gzip with pairing protocol v4 binding the packing mode, visual PHY, and target rate
 - lane-parallel ZXing-C++ WASM decoding
 - default-deny browser policy and in-memory quarantine
 - replay reservation and receiver-signed release evidence
-- `glassbridge-capacity/4` success analytics and schema-backed `glassbridge-device-run/1` failure diagnostics, including empty acquisition jobs and like-for-like device/PHY/rate comparisons
+- `glassbridge-capacity/5` success analytics and schema-backed `glassbridge-device-run/1` failure diagnostics, including camera-open-to-verified goodput, first-valid latency, unique/duplicate rates, Grid lock quality, throttling, empty jobs, and like-for-like device/PHY/rate comparisons
 - Rust CLI, deterministic browser/Rust vectors, real PNG and H.264 loopbacks
 
 Still research work: organizational trust roots, large-file transport, production FEC, adaptive feedback, protected monotonic replay state, encryption, malware scanning/CDR, native applications, dedicated receive-only hardware, and certification.
@@ -158,6 +158,7 @@ npm run benchmark:parallel-decode
 npm run benchmark:burst-decode
 npm run benchmark:turbo-decode
 npm run benchmark:grid
+npm run benchmark:grid-acquisition
 ```
 
 ## Repository map

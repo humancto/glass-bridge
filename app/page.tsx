@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-const researchDate = "06 AUG 2026";
+const researchDate = "17 AUG 2026";
 const repositoryHref = "https://github.com/humancto/glass-bridge";
 const launchArticleHref = `${repositoryHref}/blob/main/docs/launch-article.md`;
 const readinessHref = `${repositoryHref}/blob/main/docs/open-source-readiness.md`;
@@ -155,7 +155,7 @@ export default function Home({
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <div className="status-line"><span></span> Runnable pre-alpha · milestone 15 · v0.13</div>
+            <div className="status-line"><span></span> Runnable pre-alpha · milestone 16 · v0.14</div>
             <h1>Move trusted data<br />through <em>light.</em></h1>
             <p className="dek">
               A signed, policy-gated experiment for moving a file through light—without a removable-media payload path, and without pretending that photons alone create trust.
@@ -246,8 +246,8 @@ export default function Home({
             <Callout label="Product thesis">
               <p>GlassBridge is a high-speed, verifiable optical gateway for controlled data exchange across air-gapped boundaries, designed to reduce dependence on removable media while making every crossing explicit, authenticated, policy-constrained, observable, and auditable.</p>
             </Callout>
-            <Callout label="Runnable milestone 15" tone="blue">
-              <p>The public laptop-to-phone demo now includes a registered full-screen binary Grid PHY beside the QR compatibility baseline. Pairing v4 binds the visual PHY and requested symbol rate; the receiver records empty acquisition jobs, exports failed-run diagnostics, and compares only like-for-like device, PHY, rate, and payload results. The verified path still ends in receiver-local policy, memory quarantine, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. Physical phone goodput remains the proof gate.</p>
+            <Callout label="Runnable milestone 16" tone="blue">
+              <p>The public laptop-to-phone demo now gives the binary Grid a true raster-only fullscreen surface with integer cell scaling and an acquisition preamble. The receiver reuses screen registration, bounds camera work, reports unique symbols separately from duplicates, preserves lock quality in exported analytics, and stops failed runs on explicit acquisition and absolute session windows without misclassifying valid fountain-code rank plateaus. The verified path still ends in receiver-local policy, memory quarantine, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. Physical phone goodput remains the proof gate.</p>
             </Callout>
             <Callout label="Open-source status" tone="amber">
               <p>Project-authored GlassBridge code and materials are licensed under Apache-2.0, a permissive license with an express patent grant. Commercial use and future acquisition remain possible. Apache-2.0 copyright licenses already granted for released versions are irrevocable; the patent license is separately subject to the Section 3 termination condition for specified patent litigation. <a href={readinessHref} target="_blank" rel="noreferrer"><strong>Read the launch audit</strong></a> for third-party, contribution-provenance, and production-readiness limits.</p>
@@ -724,8 +724,8 @@ for await event in session.events {
           </Section>
 
           <Section id="roadmap" eyebrow="13 / Milestones, risks & licensing" title="A 22-week path to an evidence-backed alpha.">
-            <Callout label="Actual status · milestone 15" tone="blue">
-              <p>The repository has already crossed the original specification and loopback phases: AGX/1, Rust core/CLI, browser sender/receiver, bounded adaptive optical packing, QR video boundaries, sparse LT repair, dual-lane scheduling, pairing-bound rate and visual-PHY negotiation, a registered monochrome Grid v0, successful-run analytics, and failed-run diagnostics are runnable. The immediate speed gate is repeated Grid 10/30/60 testing on the same physical pair; the next PHY gate is persistent registration, rolling-shutter band recovery, and a shared Rust/WASM grid core.</p>
+            <Callout label="Actual status · milestone 16" tone="blue">
+              <p>The repository has already crossed the original specification and loopback phases: AGX/1, Rust core/CLI, browser sender/receiver, bounded adaptive optical packing, QR video boundaries, sparse LT repair, dual-lane scheduling, pairing-bound rate and visual-PHY negotiation, a persistently registered monochrome Grid v0, camera-open-to-verified analytics, and failed-run diagnostics are runnable. The immediate speed gate is repeated Grid 30 testing on the same physical pair; the next PHY gate is cropped luma-only rectification, rolling-shutter band recovery, and a shared Rust/WASM grid core.</p>
             </Callout>
             <div className="timeline">
               <div><span>M0 · W1–2</span><strong>Threats + AGX draft</strong><p>CDDL, trust model, golden vectors, benchmark preregistration draft.</p><b>Exit: independent parser can reject all negative vectors.</b></div>
@@ -795,7 +795,7 @@ for await event in session.events {
 
       <footer>
         <div className="brand"><span className="brand-mark">GB</span><span>GlassBridge <b>/ AGX</b></span></div>
-        <p>Product & Research Definition · v0.13 · Research cut {researchDate}</p>
+        <p>Product & Research Definition · v0.14 · Research cut {researchDate}</p>
         <a href="#top">Back to top ↑</a>
       </footer>
     </main>

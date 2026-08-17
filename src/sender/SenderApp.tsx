@@ -19,6 +19,11 @@ import {
 import { symbolsForRefresh } from "./scheduler";
 import { OpticalTransferEncoder, pairingUrl } from "./transport";
 import { renderGridFrame } from "../phy/grid/grid-codec";
+import {
+  fitGridDisplay,
+  GRID_ACQUISITION_PREAMBLE_MS,
+  requestGridFullscreen,
+} from "./grid-display";
 
 type Phase = "choose" | "preparing" | "pair" | "playing" | "paused" | "error";
 
@@ -52,6 +57,7 @@ export default function SenderApp() {
   const [loops, setLoops] = useState(0);
   const [measuredFps, setMeasuredFps] = useState(0);
   const [renderDrops, setRenderDrops] = useState(0);
+  const [gridPreamble, setGridPreamble] = useState(false);
   const [dragging, setDragging] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const secondCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -59,6 +65,7 @@ export default function SenderApp() {
   const secondRenderCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<HTMLElement>(null);
+  const gridStageRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef(0);
   const loopsRef = useRef(0);
   const renderDropsRef = useRef(0);
@@ -72,6 +79,25 @@ export default function SenderApp() {
       if (active) fail(renderError);
     });
     return () => { active = false; };
+  }, [prepared, phase]);
+
+  useEffect(() => {
+    if (!prepared || prepared.profile.visualPhy !== "mono-grid-v0" || phase === "pair") return;
+    const resize = () => sizeGridCanvas(canvasRef.current, gridStageRef.current);
+    const handleFullscreenChange = () => {
+      resize();
+      if (phase === "playing" && document.fullscreenElement !== gridStageRef.current) {
+        setGridPreamble(false);
+        setPhase("paused");
+      }
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      window.removeEventListener("resize", resize);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
   }, [prepared, phase]);
 
   useEffect(() => {
@@ -148,6 +174,18 @@ export default function SenderApp() {
     };
     async function start(): Promise<void> {
       const seedCount = activeTransfer.profile.lanes;
+      const isGrid = activeTransfer.profile.visualPhy === "mono-grid-v0";
+      if (isGrid) {
+        setGridPreamble(true);
+        // Hold a real, receiver-compatible symbol long enough for exposure,
+        // focus, and marker lock, but do not consume it from the transfer.
+        // Starting the scheduler at the same symbol makes early acquisition a
+        // harmless duplicate instead of making a late receiver miss source 0.
+        drawGrid(activeTransfer, frameRef.current, () => active);
+        await new Promise((resolve) => window.setTimeout(resolve, GRID_ACQUISITION_PREAMBLE_MS));
+        if (!active) return;
+        setGridPreamble(false);
+      }
       await renderSymbols(seedCount);
       if (!active) return;
       setFrameNumber(frameRef.current);
@@ -203,6 +241,8 @@ export default function SenderApp() {
     const canvas = lane === 0 ? canvasRef.current : secondCanvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
+    canvas.style.removeProperty("width");
+    canvas.style.removeProperty("height");
     canvas.width = rendered.width;
     canvas.height = rendered.height;
     context.drawImage(rendered, 0, 0);
@@ -227,11 +267,33 @@ export default function SenderApp() {
       0,
       0,
     );
+    sizeGridCanvas(canvas, gridStageRef.current);
   }
 
   function fail(value: unknown): void {
     setError(value instanceof Error ? value.message : "The sender could not prepare this transfer.");
     setPhase("error");
+  }
+
+  async function toggleTransfer(): Promise<void> {
+    if (!prepared) return;
+    if (phase === "playing") {
+      setGridPreamble(false);
+      setPhase("paused");
+      if (document.fullscreenElement === gridStageRef.current) {
+        await document.exitFullscreen();
+      }
+      return;
+    }
+    if (prepared.profile.visualPhy === "mono-grid-v0") {
+      try {
+        await requestGridFullscreen(gridStageRef.current, document.fullscreenElement);
+      } catch (fullscreenError) {
+        fail(fullscreenError);
+        return;
+      }
+    }
+    setPhase("playing");
   }
 
   function selectFile(nextFile: File): void {
@@ -320,6 +382,7 @@ export default function SenderApp() {
   }
 
   function showPairing(): void {
+    setGridPreamble(false);
     frameRef.current = 0;
     loopsRef.current = 0;
     renderDropsRef.current = 0;
@@ -331,6 +394,7 @@ export default function SenderApp() {
 
   function changeTransferRate(nextRate: number): void {
     setFps(nextRate);
+    setGridPreamble(false);
     if (!prepared) return;
     const receiver = new URL(`${import.meta.env.BASE_URL}receive.html`, window.location.origin);
     const pairing = pairingUrl(
@@ -354,6 +418,7 @@ export default function SenderApp() {
     frameRef.current = 0;
     loopsRef.current = 0;
     setMeasuredFps(0);
+    setGridPreamble(false);
     setRenderDrops(0);
     renderDropsRef.current = 0;
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -547,15 +612,20 @@ export default function SenderApp() {
             <div className="live-status">
               <span className={phase === "playing" ? "pulse" : ""}></span>
               {phase === "playing"
-                ? frameNumber <= prepared.encoder.sourceCount
-                  ? `SOURCE ${frameNumber}/${prepared.encoder.sourceCount}`
-                  : `REPAIR ${frameNumber - prepared.encoder.sourceCount}`
+                ? gridPreamble
+                  ? "ACQUIRING · FIRST GRID HELD"
+                  : frameNumber <= prepared.encoder.sourceCount
+                    ? `SOURCE ${frameNumber}/${prepared.encoder.sourceCount}`
+                    : `REPAIR ${frameNumber - prepared.encoder.sourceCount}`
                 : phase.toUpperCase()}
             </div>
           </div>
 
           <div className="sender-code-stage">
-            <div className={`sender-qr-shell ${phase !== "pair" && prepared.profile.lanes === 2 ? "dual-lane" : ""} ${phase !== "pair" && prepared.profile.visualPhy === "mono-grid-v0" ? "grid-phy" : ""}`}>
+            <div
+              ref={gridStageRef}
+              className={`sender-qr-shell ${phase !== "pair" && prepared.profile.lanes === 2 ? "dual-lane" : ""} ${phase !== "pair" && prepared.profile.visualPhy === "mono-grid-v0" ? "grid-phy" : ""}`}
+            >
               <canvas ref={canvasRef} aria-label={phase === "pair" ? "Phone pairing QR" : prepared.profile.visualPhy === "mono-grid-v0" ? "Animated registered optical grid" : "Animated optical transfer QR lane 1"}></canvas>
               {phase !== "pair" && prepared.profile.lanes === 2 && (
                 <canvas ref={secondCanvasRef} aria-label="Animated optical transfer QR lane 2"></canvas>
@@ -567,7 +637,11 @@ export default function SenderApp() {
             )}
             {phase !== "pair" && prepared.profile.visualPhy === "mono-grid-v0" && (
               <div className="burst-label">
-                GRID LAB · {fps <= 30 ? "TWO-REFRESH ROBUST DWELL" : "ONE-REFRESH CEILING EXPERIMENT"}
+                GRID LAB · {gridPreamble
+                  ? "ACQUISITION PREAMBLE"
+                  : fps <= 30
+                    ? "ROBUST MULTI-REFRESH DWELL"
+                    : "ONE-REFRESH CEILING EXPERIMENT"}
               </div>
             )}
           </div>
@@ -576,14 +650,18 @@ export default function SenderApp() {
             <button onClick={showPairing}>1 · Show pairing QR</button>
             <button
               className="primary-action"
-              onClick={() => setPhase(phase === "playing" ? "paused" : "playing")}
+              onClick={() => { void toggleTransfer().catch(fail); }}
             >
-              {phase === "playing" ? "Pause transfer" : "2 · Start transfer"}
+              {phase === "playing"
+                ? prepared.profile.visualPhy === "mono-grid-v0" ? "Exit & pause" : "Pause transfer"
+                : prepared.profile.visualPhy === "mono-grid-v0" ? "2 · Fullscreen & start" : "2 · Start transfer"}
             </button>
-            <button onClick={() => {
-              const stage = stageRef.current;
-              if (stage) void stage.requestFullscreen().catch((fullscreenError: unknown) => fail(fullscreenError));
-            }}>Fullscreen</button>
+            {prepared.profile.visualPhy !== "mono-grid-v0" && (
+              <button onClick={() => {
+                const stage = stageRef.current;
+                if (stage) void stage.requestFullscreen().catch((fullscreenError: unknown) => fail(fullscreenError));
+              }}>Fullscreen</button>
+            )}
             {prepared.profile.lanes === 2 ? (
               <fieldset className="transfer-capacity" disabled={phase === "playing"}>
                 <legend>Combined code rate</legend>
@@ -654,11 +732,9 @@ export default function SenderApp() {
           <div className="transfer-footer">
             <p>
               Pair with the normal Camera. After the receiver says <b>PAIRED</b>, tap
-              <b> Trust sender &amp; open camera</b> there. {prepared.profile.lanes === 2
-                ? "Turn the phone landscape and fill its guide with both codes. "
-                : prepared.profile.visualPhy === "mono-grid-v0"
-                  ? "Turn the phone landscape, use fullscreen, and keep all four colored corners visible. "
-                  : ""}Only then start these animated frames.
+              <b> Trust sender &amp; open camera</b> there. {prepared.profile.visualPhy === "mono-grid-v0"
+                ? "Turn the phone landscape, then tap Fullscreen & start once. Keep all four colored corners visible; press Esc to exit and pause."
+                : `${prepared.profile.lanes === 2 ? "Turn the phone landscape and fill its guide with both codes. " : ""}Only then start these animated frames.`}
             </p>
             <button onClick={reset}>Choose another file</button>
           </div>
@@ -676,6 +752,28 @@ function opticalQrPayload(
     return [{ data: transfer.encoder.frameBytes(symbolId), mode: "byte" }];
   }
   return transfer.encoder.frameText(symbolId);
+}
+
+function sizeGridCanvas(
+  canvas: HTMLCanvasElement | null,
+  stage: HTMLDivElement | null,
+): void {
+  if (!canvas || !stage) return;
+  const fullscreen = document.fullscreenElement === stage;
+  const shellPadding = fullscreen ? 0 : 16;
+  const availableWidth = fullscreen
+    ? window.innerWidth
+    : Math.min(window.innerWidth * 0.94, 1_256) - shellPadding;
+  const availableHeight = fullscreen
+    ? window.innerHeight
+    : window.innerHeight * 0.72 - shellPadding;
+  const fitted = fitGridDisplay(
+    Math.max(1, availableWidth),
+    Math.max(1, availableHeight),
+  );
+  canvas.style.width = `${fitted.width}px`;
+  canvas.style.height = `${fitted.height}px`;
+  canvas.dataset.gridScale = String(fitted.scale);
 }
 
 async function renderQrCanvas(

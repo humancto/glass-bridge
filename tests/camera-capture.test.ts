@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { dualLaneCaptureRegions, fitCaptureDimensions } from "../src/receiver/camera-capture";
+import {
+  dualLaneCaptureRegions,
+  fitCaptureDimensions,
+  fitGridCaptureDimensions,
+} from "../src/receiver/camera-capture";
 
 describe("camera capture sizing", () => {
   it("preserves a full 1280x720 landscape frame for two optical lanes", () => {
@@ -14,6 +18,21 @@ describe("camera capture sizing", () => {
 
   it("rejects invalid dimensions", () => {
     expect(() => fitCaptureDimensions(0, 720)).toThrow(/positive/);
+  });
+});
+
+describe("Grid camera capture sizing", () => {
+  it("reduces a 16:9 Grid decode raster to 960x540 without cropping", () => {
+    expect(fitGridCaptureDimensions(1_280, 720)).toEqual({ width: 960, height: 540 });
+    expect(fitGridCaptureDimensions(1_920, 1_080)).toEqual({ width: 960, height: 540 });
+  });
+
+  it("preserves the full portrait-shaped Safari field of view", () => {
+    expect(fitGridCaptureDimensions(720, 1_280)).toEqual({ width: 540, height: 960 });
+  });
+
+  it("leaves Grid sources below the decode budget unchanged", () => {
+    expect(fitGridCaptureDimensions(640, 360)).toEqual({ width: 640, height: 360 });
   });
 });
 

@@ -63,7 +63,7 @@ test("contains the complete public design baseline", async () => {
   assert.match(page, /novelty remains a hypothesis/i);
   assert.match(page, /QRFerry/);
   assert.match(page, /Decimen Optical Transfer/);
-  assert.match(page, /Runnable milestone 15/);
+  assert.match(page, /Runnable milestone 16/);
   assert.match(page, /Open-source status/);
   assert.match(page, /Measure it on five device pairs/);
   assert.doesNotMatch(page, /Runnable milestone 9/);

@@ -13,6 +13,8 @@ const report: CapacityReport = {
   payload_sha256: "ab".repeat(32),
   transfer_seconds: 2.4,
   verified_payload_bytes_per_second: 61_440,
+  camera_to_verified_seconds: 3,
+  camera_to_verified_payload_bytes_per_second: 49_152,
   accepted_codes: 96,
   required_codes: 88,
   duplicate_codes: 3,
@@ -69,11 +71,12 @@ describe("post-receive analytics scorecard", () => {
       onShare: () => undefined,
     }));
     expect(html).toContain("Post-receive transfer analytics");
-    expect(html).toContain("60.0 KiB/s");
+    expect(html).toContain("48.0 KiB/s");
     expect(html).toContain("NEW BEST");
     expect(html).toContain("+11.7%");
     expect(html).toContain("28.4 codes/s");
-    expect(html).toContain("first accepted code → verified");
+    expect(html).toContain("camera open → verified");
+    expect(html).toContain("Transport-only goodput");
     expect(html).toContain("90.6%");
     expect(html).toContain("Pipeline diagnostics");
     expect(html).toContain("68.3%");

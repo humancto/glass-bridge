@@ -1,5 +1,7 @@
 # Milestone 15: registered Grid PHY and honest acquisition telemetry
 
+> Milestone 16 implements the first live-acquisition hardening items identified here. See [Milestone 16](milestone-16.md).
+
 Milestone 15 begins the post-QR transport without changing the GlassBridge trust
 contract. It also fixes a production/benchmark mismatch found during the channel
 audit: the live dual-lane sender rendered v30 and v40 modules materially smaller
@@ -35,14 +37,14 @@ goodput.
 
 ## Measurement changes
 
-`glassbridge-capacity/4` records the bound visual PHY and target rate and adds
-completed decode jobs, symbol-bearing jobs, empty jobs, optical acquisition
-percentage, and camera-active time. Like-for-like device history now matches
-profile, visual PHY, target rate, exact payload, and receiver device.
-
-The existing transfer metric still starts at the first accepted optical frame.
-That remains useful for solved-channel goodput but excludes leading focus and
-acquisition delay. Failed camera runs can now export a
+Milestone 15 introduced `glassbridge-capacity/4`, which records the bound visual
+PHY and target rate, completed decode jobs, symbol-bearing jobs, empty jobs,
+optical acquisition percentage, and camera-active time. Milestone 16 supersedes
+that success format with `glassbridge-capacity/5`: its headline covers camera
+open through verified reconstruction, while the original first-accepted-frame
+metric remains available as a solved-channel diagnostic. Like-for-like device
+history matches measurement window, profile, visual PHY, target rate, exact
+payload, and receiver device. Failed camera runs can export a
 `glassbridge-device-run/1` record containing a stable failure class, bound
 channel, rank, frame counters, empty acquisition jobs, camera exposure count,
 timing, and device identity. A future revision must still add a robust optical

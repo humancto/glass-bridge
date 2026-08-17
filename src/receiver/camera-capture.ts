@@ -1,6 +1,9 @@
 export type CaptureDimensions = { width: number; height: number };
 export type CaptureRegion = { x: number; y: number; width: number; height: number };
 
+export const GRID_CAPTURE_LONG_EDGE = 960;
+export const GRID_CAPTURE_MAX_PIXELS = 960 * 540;
+
 /**
  * Preserve the complete camera field of view while bounding decoder work by
  * long edge and total pixels. The symmetric bounds are intentional: Safari
@@ -27,6 +30,23 @@ export function fitCaptureDimensions(
     width: Math.max(1, Math.floor(sourceWidth * scale)),
     height: Math.max(1, Math.floor(sourceHeight * scale)),
   };
+}
+
+/**
+ * Grid uses the complete camera field of view but a smaller RGBA raster than
+ * dense QR. A 16:9 camera becomes 960x540 (or 540x960 when Safari reports the
+ * track rotated), reducing per-exposure bytes by 43.75% from 1280x720.
+ */
+export function fitGridCaptureDimensions(
+  sourceWidth: number,
+  sourceHeight: number,
+): CaptureDimensions {
+  return fitCaptureDimensions(
+    sourceWidth,
+    sourceHeight,
+    GRID_CAPTURE_LONG_EDGE,
+    GRID_CAPTURE_MAX_PIXELS,
+  );
 }
 
 /**

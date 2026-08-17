@@ -38,6 +38,8 @@ export type DeviceRunFailureReport = {
     negotiated_fps: number;
     width: number;
     height: number;
+    source_width?: number;
+    source_height?: number;
     decode_jobs: number;
     successful_decode_jobs: number;
     empty_decode_jobs: number;
@@ -46,6 +48,13 @@ export type DeviceRunFailureReport = {
     decode_p50_ms: number;
     decode_p95_ms: number;
     workers: number;
+    rate_limited_exposures?: number;
+    grid_last_outcome?: string;
+    grid_contrast?: number;
+    grid_screen_fill_percent?: number;
+    grid_corrected_codewords?: number;
+    grid_registration_reuse_percent?: number;
+    time_to_first_valid_ms?: number;
   };
   device: string;
 };
@@ -99,6 +108,8 @@ export function createDeviceRunFailureReport(input: {
       negotiated_fps: round(input.camera.negotiatedFps, 2),
       width: input.camera.width,
       height: input.camera.height,
+      source_width: input.camera.sourceWidth,
+      source_height: input.camera.sourceHeight,
       decode_jobs: decodeJobs,
       successful_decode_jobs: successfulDecodeJobs,
       empty_decode_jobs: input.camera.emptyDecodeJobs ?? 0,
@@ -107,6 +118,15 @@ export function createDeviceRunFailureReport(input: {
       decode_p50_ms: round(input.camera.medianDecodeMs, 2),
       decode_p95_ms: round(input.camera.p95DecodeMs, 2),
       workers: input.camera.workers,
+      rate_limited_exposures: input.camera.throttledFrames,
+      grid_last_outcome: input.camera.gridOutcome,
+      grid_contrast: optionalRound(input.camera.gridContrast, 1),
+      grid_screen_fill_percent: input.camera.gridScreenFillRatio === undefined
+        ? undefined
+        : round(input.camera.gridScreenFillRatio * 100, 1),
+      grid_corrected_codewords: input.camera.gridCorrectedCodewords,
+      grid_registration_reuse_percent: optionalRound(input.camera.gridRegistrationReusePercent, 1),
+      time_to_first_valid_ms: optionalRound(input.camera.timeToFirstValidMs, 1),
     },
     device: input.device,
   };
@@ -125,4 +145,8 @@ export function classifyFailure(reason: string): DeviceRunFailureClass {
 
 function round(value: number, digits: number): number {
   return Number(value.toFixed(digits));
+}
+
+function optionalRound(value: number | undefined, digits: number): number | undefined {
+  return value === undefined ? undefined : round(value, digits);
 }

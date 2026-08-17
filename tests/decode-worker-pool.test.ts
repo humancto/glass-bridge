@@ -86,6 +86,37 @@ describe("parallel QR decode worker pool", () => {
     });
     expect(results).toEqual([[11, 22]]);
   });
+
+  it("preserves Grid acquisition diagnostics from the worker", () => {
+    const worker = new FakeWorker();
+    const outcomes: DecodeWorkerResponse["grid"][] = [];
+    const pool = new DecodeWorkerPool(
+      1,
+      (result) => outcomes.push(result.grid),
+      () => worker as unknown as Worker,
+    );
+    pool.submit(makeImageData(), 1, "mono-grid-v0");
+    worker.reply({
+      id: 0,
+      codes: [],
+      decodeMs: 5,
+      grid: {
+        outcome: "contrast-low",
+        markersFound: true,
+        registrationReused: true,
+        contrast: 31,
+        screenFillRatio: 0.62,
+      },
+    });
+
+    expect(outcomes).toEqual([{
+      outcome: "contrast-low",
+      markersFound: true,
+      registrationReused: true,
+      contrast: 31,
+      screenFillRatio: 0.62,
+    }]);
+  });
 });
 
 function makeImageData(): ImageData {

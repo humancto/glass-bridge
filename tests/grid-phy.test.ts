@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  decodeGridFrame,
   decodeGridModules,
   encodeGridModules,
   GRID_FRAME_BYTES,
@@ -82,7 +83,46 @@ describe("registered monochrome Grid PHY", () => {
       height: 360,
       data: new Uint8ClampedArray(640 * 360 * 4).fill(255),
     };
+    expect(decodeGridFrame(blank)).toMatchObject({
+      outcome: "markers-not-found",
+      markersFound: false,
+    });
     expect(tryDecodeGridFrame(blank)).toBeUndefined();
+  });
+
+  it("reports low contrast separately from marker acquisition failure", () => {
+    const encoder = makeEncoder(deterministicBytes(8_192));
+    const captured = renderGridFrame(encoder.frameBytes(2));
+    flattenMonochromeData(captured);
+
+    expect(decodeGridFrame(captured)).toMatchObject({
+      outcome: "contrast-low",
+      markersFound: true,
+      contrast: 0,
+    });
+  });
+
+  it("reuses a prior registration when the next exposure loses its marker colours", () => {
+    const encoder = makeEncoder(deterministicBytes(8_192));
+    const expected = encoder.frameBytes(6);
+    const captured = upscale(renderGridFrame(expected), 4);
+    const first = decodeGridFrame(captured);
+    expect(first.outcome).toBe("decoded");
+    expect(first.registration).toBeDefined();
+
+    eraseMarkerColours(captured);
+    const reused = decodeGridFrame(captured, first.registration);
+    expect(reused.outcome).toBe("decoded");
+    expect(reused.frame).toEqual(expected);
+  });
+
+  it("uses the full marker component when scattered same-colour pixels are present", () => {
+    const encoder = makeEncoder(deterministicBytes(8_192));
+    const expected = encoder.frameBytes(9);
+    const captured = skewIntoCapture(upscale(renderGridFrame(expected), 3), 1_280, 720);
+    addMarkerDistractors(captured);
+
+    expect(decodeGridFrame(captured).frame).toEqual(expected);
   });
 });
 
@@ -148,5 +188,50 @@ function degradeCapture(image: PixelBuffer): void {
     for (let channel = 0; channel < 3; channel += 1) {
       image.data[offset + channel] = Math.round(image.data[offset + channel] * 0.72 + noise);
     }
+  }
+}
+
+function flattenMonochromeData(image: PixelBuffer): void {
+  for (let pixel = 0; pixel < image.width * image.height; pixel += 1) {
+    const offset = pixel * 4;
+    if (isMarkerColour(image.data[offset], image.data[offset + 1], image.data[offset + 2])) continue;
+    image.data[offset] = 128;
+    image.data[offset + 1] = 128;
+    image.data[offset + 2] = 128;
+  }
+}
+
+function eraseMarkerColours(image: PixelBuffer): void {
+  for (let pixel = 0; pixel < image.width * image.height; pixel += 1) {
+    const offset = pixel * 4;
+    if (!isMarkerColour(image.data[offset], image.data[offset + 1], image.data[offset + 2])) continue;
+    image.data[offset] = 255;
+    image.data[offset + 1] = 255;
+    image.data[offset + 2] = 255;
+  }
+}
+
+function isMarkerColour(red: number, green: number, blue: number): boolean {
+  return (red === 255 && green === 0 && blue === 0) ||
+    (red === 0 && green === 255 && blue === 0) ||
+    (red === 0 && green === 80 && blue === 255) ||
+    (red === 255 && green === 0 && blue === 255);
+}
+
+function addMarkerDistractors(image: PixelBuffer): void {
+  const colours = [
+    [255, 0, 0],
+    [0, 255, 0],
+    [0, 80, 255],
+    [255, 0, 255],
+  ] as const;
+  for (let index = 0; index < 96; index += 1) {
+    const x = (index * 109 + 17) % image.width;
+    const y = (index * 73 + 31) % image.height;
+    const offset = (y * image.width + x) * 4;
+    const colour = colours[index % colours.length];
+    image.data[offset] = colour[0];
+    image.data[offset + 1] = colour[1];
+    image.data[offset + 2] = colour[2];
   }
 }
