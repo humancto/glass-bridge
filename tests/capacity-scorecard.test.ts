@@ -40,6 +40,10 @@ const report: CapacityReport = {
     decode_p50_ms: 4.2,
     decode_p95_ms: 8.5,
     workers: 4,
+    decode_jobs: 120,
+    successful_decode_jobs: 82,
+    empty_decode_jobs: 38,
+    optical_acquisition_percent: 68.3,
   },
   device: "test-phone",
 };
@@ -72,11 +76,12 @@ describe("post-receive analytics scorecard", () => {
     expect(html).toContain("first accepted code → verified");
     expect(html).toContain("90.6%");
     expect(html).toContain("Pipeline diagnostics");
+    expect(html).toContain("68.3%");
     expect(html).toContain("gzip · 31.3 KiB transmitted · 78.4% reduction");
     expect(html).toContain("Copy benchmark JSON");
     expect(html).toContain("Save / share benchmark JSON");
     expect(html).toContain("last 20 runs retained");
-    expect(html).toContain("comparisons match profile + exact payload");
+    expect(html).toContain("comparisons match device + visual PHY + target rate + exact payload");
     expect(html).toContain("Benchmark JSON copied.");
   });
 });

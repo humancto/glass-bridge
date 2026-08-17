@@ -1,6 +1,6 @@
 import { base64UrlEncode } from "../receiver/transport";
 import { expectedLtFrames, ltFrameIndices } from "../protocol/lt-codec";
-import type { OpticalCodecId, OpticalProfileId } from "../protocol/optical-profile";
+import { OPTICAL_PROFILES, type OpticalCodecId, type OpticalProfileId } from "../protocol/optical-profile";
 import type { OpticalPayloadEncoding } from "../protocol/optical-payload";
 
 const DENSE_FRAME_MAGIC = new Uint8Array([0x41, 0x47, 0x46, 0x31]);
@@ -109,25 +109,31 @@ export function pairingUrl(
   sessionId: Uint8Array,
   profileId: OpticalProfileId,
   packing: OpticalPayloadEncoding,
+  symbolRate: number,
 ): string {
   const url = new URL(receiverUrl);
+  const profile = OPTICAL_PROFILES[profileId];
   if (
     url.hash ||
     url.search ||
     publicKey.length !== 32 ||
     sessionId.length !== 16 ||
     !/^[a-z][a-z0-9-]{0,31}$/u.test(profileId) ||
-    (packing !== "identity" && packing !== "gzip")
+    (packing !== "identity" && packing !== "gzip") ||
+    !Number.isSafeInteger(symbolRate) ||
+    symbolRate < profile.minFps || symbolRate > profile.maxFps
   ) {
     throw new Error("The receiver URL or sender key is invalid.");
   }
   url.hash = new URLSearchParams({
-    v: "3",
+    v: "4",
     key: base64UrlEncode(publicKey),
     boundary,
     session: base64UrlEncode(sessionId),
     profile: profileId,
     packing,
+    phy: profile.visualPhy,
+    rate: String(symbolRate),
   }).toString();
   return url.toString();
 }

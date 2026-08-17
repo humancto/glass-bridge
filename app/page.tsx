@@ -99,6 +99,7 @@ const sources = [
   ["TXQR", "Animated QR transfer using fountain codes", "https://github.com/divan/txqr"],
   ["qram", "LT-code library decoupled from the delivery medium", "https://github.com/digitalbazaar/qram"],
   ["libcimbar", "Experimental color-icon-matrix barcode for air-gapped transfer", "https://github.com/sz3/libcimbar"],
+  ["AIRCODE", "Screen-camera communication with a reported 1.069 Mbit/s raw PHY and 159.4 Kbit/s average adaptive goodput", "https://www.usenix.org/conference/nsdi21/presentation/qian"],
   ["AirGap Vault", "Offline signing workflow using QR exchange", "https://github.com/airgap-it/airgap-vault"],
   ["RescQR", "Reliable recovery under dynamic screen-camera conditions", "https://hhannuaa.github.io/papers/tmc2024_hhan.pdf"],
   ["SoftLight", "Adaptive visible-light communication over screen-camera links", "https://jansencl.github.io/publication/2016-04-07_TMC-2016"],
@@ -154,7 +155,7 @@ export default function Home({
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <div className="status-line"><span></span> Runnable pre-alpha · milestone 14 · v0.12</div>
+            <div className="status-line"><span></span> Runnable pre-alpha · milestone 15 · v0.13</div>
             <h1>Move trusted data<br />through <em>light.</em></h1>
             <p className="dek">
               A signed, policy-gated experiment for moving a file through light—without a removable-media payload path, and without pretending that photons alone create trust.
@@ -245,8 +246,8 @@ export default function Home({
             <Callout label="Product thesis">
               <p>GlassBridge is a high-speed, verifiable optical gateway for controlled data exchange across air-gapped boundaries, designed to reduce dependence on removable media while making every crossing explicit, authenticated, policy-constrained, observable, and auditable.</p>
             </Callout>
-            <Callout label="Runnable milestone 14" tone="blue">
-              <p>The public laptop-to-phone demo now applies bounded adaptive gzip when it removes optical bytes, binds that packing mode into pairing, and decodes dual QR lanes as parallel overlapping regions with periodic full-frame reacquisition. The verified path still ends in receiver-local policy, memory quarantine, post-receive analytics, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. Physical phone goodput remains the proof gate.</p>
+            <Callout label="Runnable milestone 15" tone="blue">
+              <p>The public laptop-to-phone demo now includes a registered full-screen binary Grid PHY beside the QR compatibility baseline. Pairing v4 binds the visual PHY and requested symbol rate; the receiver records empty acquisition jobs, exports failed-run diagnostics, and compares only like-for-like device, PHY, rate, and payload results. The verified path still ends in receiver-local policy, memory quarantine, explicit approval, replay reservation, and a receiver-signed <code>release-authorized</code> receipt. Physical phone goodput remains the proof gate.</p>
             </Callout>
             <Callout label="Open-source status" tone="amber">
               <p>Project-authored GlassBridge code and materials are licensed under Apache-2.0, a permissive license with an express patent grant. Commercial use and future acquisition remain possible. Apache-2.0 copyright licenses already granted for released versions are irrevocable; the patent license is separately subject to the Section 3 termination condition for specified patent litigation. <a href={readinessHref} target="_blank" rel="noreferrer"><strong>Read the launch audit</strong></a> for third-party, contribution-provenance, and production-readiness limits.</p>
@@ -304,6 +305,7 @@ export default function Home({
               <a href="https://github.com/bashalarmistalt/decimen-optical-transfer" target="_blank" rel="noreferrer"><span>Closest practical baseline</span><strong>Decimen Optical Transfer</strong><p>One-way fountain-coded QR, self-describing frames, no handshake, adaptive compression, SHA-256 verification, 128 KB/s handheld and approximately 186 KB/s propped in its parent experiment.</p><b>Lesson → useful commodity-device speed is demonstrated.</b></a>
               <a href="https://github.com/divan/txqr" target="_blank" rel="noreferrer"><span>Foundational open-source prior art</span><strong>TXQR / qram</strong><p>TXQR described animated QR transfer with fountain codes in 2018; qram decouples its LT-code stream from the delivery mechanism.</p><b>Lesson → fountain-coded animated QR is not novel.</b></a>
               <a href="https://github.com/sz3/libcimbar" target="_blank" rel="noreferrer"><span>Beyond QR</span><strong>libcimbar</strong><p>An experimental color-icon-matrix barcode with Reed–Solomon plus fountain coding, zstd compression, and a reported 850 kbit/s / ~106 KB/s link.</p><b>Lesson → codec abstraction must include custom dense codes.</b></a>
+              <a href="https://www.usenix.org/conference/nsdi21/presentation/qian" target="_blank" rel="noreferrer"><span>Screen-camera systems baseline</span><strong>AIRCODE · NSDI ’21</strong><p>Reports a 1.069 Mbit/s raw PHY, but 159.4 Kbit/s average and 182 Kbit/s best adaptive goodput using registration, channel coding, temporal design, and an inaudible control channel.</p><b>Lesson → raw bitrate is not completed-file goodput, and the PHY must be designed around the camera.</b></a>
             </div>
             <div className="table-wrap">
               <table className="matrix">
@@ -652,7 +654,7 @@ for await event in session.events {
           </Section>
 
           <Section id="benchmarks" eyebrow="11 / Benchmark & validation plan" title="Measure the boundary, not the animation.">
-            <div className="metric-banner"><div><span>Primary metric</span><strong>Verified goodput</strong><p>Original application bytes ÷ time from authenticated manifest detection to final digest verification.</p></div><div><span>Reliability</span><strong>Completion probability</strong><p>Successful verified transfers within the policy time budget.</p></div><div><span>Security UX</span><strong>Unsafe-action rate</strong><p>Incorrect approvals/imports in controlled workflow tasks.</p></div></div>
+            <div className="metric-banner"><div><span>Primary metric</span><strong>Verified goodput</strong><p>Original application bytes divided by a declared timing window. The current receiver exports first-accepted-to-verified plus camera-active acquisition evidence; a synchronized optical start marker remains required for publication comparisons.</p></div><div><span>Reliability</span><strong>Completion probability</strong><p>Successful verified transfers within the policy time budget, with structured failed runs retained.</p></div><div><span>Security UX</span><strong>Unsafe-action rate</strong><p>Incorrect approvals/imports in controlled workflow tasks.</p></div></div>
             <h3>Reference device matrix</h3>
             <div className="table-wrap">
               <table>
@@ -722,8 +724,8 @@ for await event in session.events {
           </Section>
 
           <Section id="roadmap" eyebrow="13 / Milestones, risks & licensing" title="A 22-week path to an evidence-backed alpha.">
-            <Callout label="Actual status · milestone 14" tone="blue">
-              <p>The repository has already crossed the original specification and loopback phases: AGX/1, Rust core/CLI, browser sender/receiver, bounded adaptive optical packing, QR video boundaries, sparse LT repair, dual-lane scheduling and lane-parallel acquisition, a 30/60/90/120 capacity ladder, and post-receive analytics are runnable. The next speed gate is physical device evidence; the next transport research gate is a registered custom grid beyond standard QR.</p>
+            <Callout label="Actual status · milestone 15" tone="blue">
+              <p>The repository has already crossed the original specification and loopback phases: AGX/1, Rust core/CLI, browser sender/receiver, bounded adaptive optical packing, QR video boundaries, sparse LT repair, dual-lane scheduling, pairing-bound rate and visual-PHY negotiation, a registered monochrome Grid v0, successful-run analytics, and failed-run diagnostics are runnable. The immediate speed gate is repeated Grid 10/30/60 testing on the same physical pair; the next PHY gate is persistent registration, rolling-shutter band recovery, and a shared Rust/WASM grid core.</p>
             </Callout>
             <div className="timeline">
               <div><span>M0 · W1–2</span><strong>Threats + AGX draft</strong><p>CDDL, trust model, golden vectors, benchmark preregistration draft.</p><b>Exit: independent parser can reject all negative vectors.</b></div>
@@ -793,7 +795,7 @@ for await event in session.events {
 
       <footer>
         <div className="brand"><span className="brand-mark">GB</span><span>GlassBridge <b>/ AGX</b></span></div>
-        <p>Product & Research Definition · v0.12 · Research cut {researchDate}</p>
+        <p>Product & Research Definition · v0.13 · Research cut {researchDate}</p>
         <a href="#top">Back to top ↑</a>
       </footer>
     </main>

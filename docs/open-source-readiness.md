@@ -1,7 +1,7 @@
 # GlassBridge open-source readiness review
 
 **Review date:** 2026-08-06  
-**Reviewed baseline:** milestone 14 browser research path, extending the `41c240a` trust-path audit  
+**Reviewed baseline:** milestone 15 browser research path, extending the `41c240a` trust-path audit  
 **Decision:** publish as an Apache-2.0 open-source research preview while keeping production and performance claims gated on physical evidence and security hardening.
 
 ## Executive answer
@@ -26,7 +26,7 @@ The repository now includes the canonical Apache License 2.0 and matching packag
 
 | Priority | Blocker | Why it matters | Recommended action |
 | --- | --- | --- | --- |
-| P0 | No physical device-matrix result set | The implemented channel budgets and ideal-raster tests are not phone-camera goodput. A speed headline without raw physical results would overclaim. | Run at least three repetitions for each announced profile on five sender/receiver pairs; publish every run as `glassbridge-capacity/3` JSON. |
+| P0 | No physical device-matrix result set | The implemented channel budgets and ideal-raster tests are not phone-camera goodput. A speed headline without raw physical results would overclaim. | Run at least three repetitions for each announced profile on five sender/receiver pairs; publish every success as `glassbridge-capacity/4` and every failure as `glassbridge-device-run/1`. |
 | P0 | Demo trust is session TOFU | The current pairing proves that the recovered envelope came from the ephemeral key shown during pairing. It does not prove a company, release role, managed device, or software publisher. | Keep the demo language explicit. Before a security-product claim, add provisioned organizational trust roots, signed role delegation, rotation, and revocation. |
 | P1 | Future exclusive relicensing is undefined | Apache-2.0 supports commercial use and acquisition, but outside contributors retain copyright and existing public grants are irrevocable. | Keep inbound and outbound terms aligned now. If an exclusive dual-license model becomes important, review a contributor agreement with qualified counsel before accepting substantial outside code. |
 
@@ -50,8 +50,8 @@ laptop chooses one file (<= 256 KiB)
   -> Ed25519 signature
   -> bounded adaptive gzip only when it reduces optical bytes
   -> AGF2 sparse-LT repair stream
-  -> one or two animated QR lanes
-  -> phone camera + lane-parallel ZXing-C++ WASM workers
+  -> one or two animated QR lanes, or a registered full-screen Grid v0 field
+  -> phone camera + visual-PHY worker path
   -> wrong/mixed-session rejection and bounded reconstruction
   -> canonical CBOR + COSE + signature + boundary + length + SHA-256 verification
   -> receiver-local default-deny policy
@@ -77,7 +77,7 @@ This is substantially more than a product mock-up. The browser and Rust paths ha
 
 ### 2. Pairing
 
-**Implemented:** a stationary QR carries the sender public key, intended boundary, optical profile, and random session identifier. The fingerprint appears on both devices.
+**Implemented:** a stationary QR carries the sender public key, intended boundary, optical profile, visual PHY, target symbol rate, packing mode, and random session identifier. The fingerprint appears on both devices.
 
 **Security value:** animated frames from another session are rejected; a completed envelope must verify under the paired key and boundary.
 
@@ -85,7 +85,7 @@ This is substantially more than a product mock-up. The browser and Rust paths ha
 
 ### 3. One-way optical transport
 
-**Implemented:** no acknowledgment is required. Sparse LT repair frames can arrive out of order and tolerate erasures; Burst and Ceiling Lab expose a controlled 30/60/90/120 combined-code capacity ladder. The sender uses bounded gzip only when it reduces the signed envelope, and pairing binds the packing mode. Dual-lane receiver work is split into overlapping one-code jobs with periodic full-frame reacquisition.
+**Implemented:** no acknowledgment is required. Sparse LT repair frames can arrive out of order and tolerate erasures; Burst and Ceiling Lab expose a controlled 30/60/90/120 combined-code capacity ladder. Grid 30 lab adds a full-screen binary field with four orientation-distinct corner markers, projective sampling, whitening, interleaved Hamming correction, and transport CRC. The sender uses bounded gzip only when it reduces the signed envelope, and pairing v4 binds packing, visual PHY, and target rate.
 
 **Security value:** the payload can cross without a network connection or writable removable medium. CRC rejects transport corruption; session binding rejects stream mixing.
 
@@ -109,11 +109,11 @@ This is substantially more than a product mock-up. The browser and Rust paths ha
 
 ### 6. Analytics, release, replay, and evidence
 
-**Implemented:** verified goodput, accepted-code rate, decode latency, fountain overhead, payload efficiency, camera diagnostics, comparable-run history, JSON export, explicit release, local replay reservation, and a receiver-signed `release-authorized` receipt.
+**Implemented:** verified goodput, acquired-symbol rate, empty decode jobs, decode latency, fountain overhead, payload efficiency, camera diagnostics, like-for-like run history, `glassbridge-capacity/4` success export, `glassbridge-device-run/1` failure export, explicit release, local replay reservation, and a receiver-signed `release-authorized` receipt.
 
 **Security value:** performance is measured at the useful security outcome, not at the number of pixels flashed. Receipt semantics distinguish release authorization from downstream persistence or use.
 
-**Remaining risk:** browser local storage is not monotonic or tamper-resistant. Clearing site data clears replay history and the receiver receipt identity. A receipt does not prove that another app opened or persisted the file.
+**Remaining risk:** browser local storage is not monotonic or tamper-resistant. Clearing site data clears replay history and the receiver receipt identity. A receipt does not prove that another app opened or persisted the file. Failed-run export is user-triggered and still lacks joined sender presentation timestamps, geometry, lux, brightness, and a synchronized optical start marker.
 
 ## What “air-gapped” means here
 

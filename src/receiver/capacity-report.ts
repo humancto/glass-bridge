@@ -1,4 +1,4 @@
-import { OPTICAL_PROFILES, type OpticalProfileId } from "../protocol/optical-profile";
+import { OPTICAL_PROFILES, type OpticalProfileId, type VisualPhyId } from "../protocol/optical-profile";
 import type { OpticalPayloadEncoding } from "../protocol/optical-payload";
 import type { TransportMeasurement } from "./capacity-measurement";
 
@@ -15,16 +15,23 @@ export type CapacityCameraMetrics = {
   width: number;
   height: number;
   negotiatedFps: number;
+  cameraSeconds?: number;
+  cameraFrames?: number;
+  decodeJobs?: number;
+  successfulDecodeJobs?: number;
+  emptyDecodeJobs?: number;
 };
 
 export type CapacityReport = {
-  schema: "glassbridge-capacity/2" | "glassbridge-capacity/3";
+  schema: "glassbridge-capacity/2" | "glassbridge-capacity/3" | "glassbridge-capacity/4";
   measured_at: string;
   profile: {
     id: OpticalProfileId | "unbound";
     label: string;
     lanes: number;
     qr_version?: number;
+    visual_phy?: VisualPhyId;
+    target_symbol_rate?: number;
   };
   transfer_session?: string;
   file_bytes: number;
@@ -58,6 +65,12 @@ export type CapacityReport = {
     decode_p50_ms: number;
     decode_p95_ms: number;
     workers: number;
+    camera_active_seconds?: number;
+    camera_exposures?: number;
+    decode_jobs?: number;
+    successful_decode_jobs?: number;
+    empty_decode_jobs?: number;
+    optical_acquisition_percent?: number;
   };
   device: string;
 };
@@ -79,6 +92,7 @@ type StorageWriter = Pick<Storage, "getItem" | "setItem">;
 export function createCapacityReport(input: {
   measuredAt?: Date;
   profileId?: OpticalProfileId;
+  targetSymbolRate?: number;
   transferSession?: string;
   fileBytes: number;
   payloadSha256: string;
@@ -94,13 +108,15 @@ export function createCapacityReport(input: {
   const profile = input.profileId ? OPTICAL_PROFILES[input.profileId] : undefined;
   const measurement = input.measurement;
   return {
-    schema: "glassbridge-capacity/3",
+    schema: "glassbridge-capacity/4",
     measured_at: (input.measuredAt ?? new Date()).toISOString(),
     profile: {
       id: profile?.id ?? "unbound",
       label: profile?.label ?? "Unbound profile",
       lanes: profile?.lanes ?? 0,
       qr_version: profile?.qrVersion,
+      visual_phy: profile?.visualPhy,
+      target_symbol_rate: input.targetSymbolRate,
     },
     transfer_session: input.transferSession,
     file_bytes: input.fileBytes,
@@ -137,6 +153,16 @@ export function createCapacityReport(input: {
       decode_p50_ms: round(input.camera.medianDecodeMs, 2),
       decode_p95_ms: round(input.camera.p95DecodeMs, 2),
       workers: input.camera.workers,
+      camera_active_seconds: round(input.camera.cameraSeconds ?? 0, 3),
+      camera_exposures: input.camera.cameraFrames ?? 0,
+      decode_jobs: input.camera.decodeJobs ?? 0,
+      successful_decode_jobs: input.camera.successfulDecodeJobs ?? 0,
+      empty_decode_jobs: input.camera.emptyDecodeJobs ?? 0,
+      optical_acquisition_percent: round(
+        (input.camera.successfulDecodeJobs ?? 0) /
+          Math.max(1, input.camera.decodeJobs ?? 0) * 100,
+        1,
+      ),
     },
     device: input.device,
   };
@@ -148,7 +174,10 @@ export function compareCapacityReport(
 ): CapacityComparison {
   const comparable = history.filter((report) =>
     report.profile.id === current.profile.id &&
+    report.profile.visual_phy === current.profile.visual_phy &&
+    report.profile.target_symbol_rate === current.profile.target_symbol_rate &&
     report.file_bytes === current.file_bytes &&
+    report.device === current.device &&
     (current.payload_sha256 === undefined || report.payload_sha256 === current.payload_sha256)
   );
   const previous = comparable.at(-1);
@@ -192,7 +221,7 @@ export function storeCapacityReport(
 function isCapacityReport(value: unknown): value is CapacityReport {
   if (!value || typeof value !== "object") return false;
   const report = value as Partial<CapacityReport>;
-  return (report.schema === "glassbridge-capacity/2" || report.schema === "glassbridge-capacity/3") &&
+  return (report.schema === "glassbridge-capacity/2" || report.schema === "glassbridge-capacity/3" || report.schema === "glassbridge-capacity/4") &&
     typeof report.measured_at === "string" &&
     typeof report.file_bytes === "number" &&
     (report.schema === "glassbridge-capacity/2" || (

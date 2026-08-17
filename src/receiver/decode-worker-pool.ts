@@ -1,9 +1,12 @@
+import type { VisualPhyId } from "../protocol/optical-profile";
+
 export type DecodeWorkerRequest = {
   id: number;
   width: number;
   height: number;
   pixels: ArrayBuffer;
   maxSymbols: 1 | 2;
+  visualPhy: VisualPhyId;
 };
 
 export type DecodeWorkerCode = {
@@ -78,7 +81,11 @@ export class DecodeWorkerPool {
     return this.slots.reduce((count, slot) => count + Number(slot.busy), 0);
   }
 
-  submit(imageData: ImageData, maxSymbols: 1 | 2 = 2): boolean {
+  submit(
+    imageData: ImageData,
+    maxSymbols: 1 | 2 = 2,
+    visualPhy: VisualPhyId = "qr-model2-v1",
+  ): boolean {
     if (!this.active) return false;
     const slot = this.slots.find((candidate) => !candidate.busy);
     if (!slot) return false;
@@ -89,6 +96,7 @@ export class DecodeWorkerPool {
       height: imageData.height,
       pixels: imageData.data.buffer,
       maxSymbols,
+      visualPhy,
     };
     this.nextId += 1;
     slot.worker.postMessage(request, [request.pixels]);

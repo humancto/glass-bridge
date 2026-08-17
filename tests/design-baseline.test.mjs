@@ -63,7 +63,7 @@ test("contains the complete public design baseline", async () => {
   assert.match(page, /novelty remains a hypothesis/i);
   assert.match(page, /QRFerry/);
   assert.match(page, /Decimen Optical Transfer/);
-  assert.match(page, /Runnable milestone 14/);
+  assert.match(page, /Runnable milestone 15/);
   assert.match(page, /Open-source status/);
   assert.match(page, /Measure it on five device pairs/);
   assert.doesNotMatch(page, /Runnable milestone 9/);
@@ -111,7 +111,7 @@ test("publishes a visitor-first community front door", async () => {
   assert.match(support, /private vulnerability reporting/i);
   assert.match(citation, /cff-version: 1\.2\.0/);
   assert.match(issueConfig, /security\/advisories\/new/);
-  assert.match(deviceResult, /glassbridge-capacity\/3/);
+  assert.match(deviceResult, /glassbridge-capacity\/4/);
 });
 
 test("publishes coherent Apache-2.0 licensing metadata", async () => {

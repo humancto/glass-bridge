@@ -14,6 +14,7 @@ import { OPTICAL_PROFILES } from "../protocol/optical-profile";
 import {
   measureTransport,
 } from "./capacity-measurement";
+import { createDeviceRunFailureReport } from "./device-run-report";
 import { unpackOpticalPayload } from "../protocol/optical-payload";
 import {
   CAPACITY_HISTORY_LIMIT,
@@ -50,6 +51,11 @@ type LiveMetrics = {
   width: number;
   height: number;
   negotiatedFps: number;
+  cameraSeconds: number;
+  cameraFrames: number;
+  decodeJobs: number;
+  successfulDecodeJobs: number;
+  emptyDecodeJobs: number;
 };
 
 const SESSION_TRUST_KEY = "glassbridge-demo-trust-v2";
@@ -76,6 +82,11 @@ const EMPTY_METRICS: LiveMetrics = {
   width: 0,
   height: 0,
   negotiatedFps: 0,
+  cameraSeconds: 0,
+  cameraFrames: 0,
+  decodeJobs: 0,
+  successfulDecodeJobs: 0,
+  emptyDecodeJobs: 0,
 };
 
 function readTrust(): { trust?: BootstrapTrust; error?: string } {
@@ -90,6 +101,8 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
           session: trust.sessionId ? base64UrlEncode(trust.sessionId) : undefined,
           profile: trust.profileId,
           packing: trust.packing,
+          phy: trust.visualPhy,
+          rate: trust.targetSymbolRate,
         }),
       );
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
@@ -105,14 +118,17 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
       session?: unknown;
       profile?: unknown;
       packing?: unknown;
+      phy?: unknown;
+      rate?: unknown;
     };
     if (typeof value.key !== "string" || typeof value.boundary !== "string") {
       throw new Error("Stored pairing is invalid.");
     }
     const hasSession = typeof value.session === "string" && typeof value.profile === "string";
     const hasPacking = value.packing === "identity" || value.packing === "gzip";
+    const hasPhy = typeof value.phy === "string" && Number.isSafeInteger(value.rate);
     const params = new URLSearchParams({
-      v: hasPacking ? "3" : hasSession ? "2" : "1",
+      v: hasPacking && hasPhy ? "4" : hasPacking ? "3" : hasSession ? "2" : "1",
       key: value.key,
       boundary: value.boundary,
     });
@@ -121,6 +137,10 @@ function readTrust(): { trust?: BootstrapTrust; error?: string } {
       params.set("profile", value.profile as string);
     }
     if (hasPacking) params.set("packing", value.packing as string);
+    if (hasPhy) {
+      params.set("phy", value.phy as string);
+      params.set("rate", String(value.rate));
+    }
     return {
       trust: parseBootstrapHash(`#${params.toString()}`),
     };
@@ -204,6 +224,7 @@ export default function ReceiverApp() {
         const nextMeasurement = measureTransport(transfer.payload.length, seconds, completion);
         const nextReport = createCapacityReport({
           profileId: trust.profileId,
+          targetSymbolRate: trust.targetSymbolRate,
           transferSession: trust.sessionId ? formatSession(trust.sessionId) : undefined,
           fileBytes: transfer.payload.length,
           payloadSha256: transfer.payloadSha256,
@@ -285,15 +306,22 @@ export default function ReceiverApp() {
       const captureContext = captureCanvas.getContext("2d", { willReadFrequently: true });
       if (!captureContext) throw new Error("The camera capture surface is unavailable.");
 
-      const opticalLanes = trust.profileId ? OPTICAL_PROFILES[trust.profileId].lanes : 1;
-      const laneRegions = opticalLanes === 2
+      const opticalProfile = trust.profileId ? OPTICAL_PROFILES[trust.profileId] : undefined;
+      const opticalLanes = opticalProfile?.lanes ?? 1;
+      const visualPhy = opticalProfile?.visualPhy ?? "qr-model2-v1";
+      const laneRegions = visualPhy === "qr-model2-v1" && opticalLanes === 2
         ? dualLaneCaptureRegions(captureWidth, captureHeight)
         : undefined;
-      const workerCount = Math.min(4, Math.max(2, Math.floor((navigator.hardwareConcurrency || 4) / 2)));
+      const workerCount = visualPhy === "mono-grid-v0"
+        ? 2
+        : Math.min(4, Math.max(2, Math.floor((navigator.hardwareConcurrency || 4) / 2)));
       let active = true;
       let callbackId = 0;
       let cameraFrames = 0;
       let decodedFrames = 0;
+      let decodeJobs = 0;
+      let successfulDecodeJobs = 0;
+      let emptyDecodeJobs = 0;
       let busyDrops = 0;
       const cameraStartedAt = performance.now();
       let lastMetricsPaint = cameraStartedAt;
@@ -314,6 +342,11 @@ export default function ReceiverApp() {
           width: sourceWidth,
           height: sourceHeight,
           negotiatedFps: trackSettings?.frameRate ?? 0,
+          cameraSeconds: seconds,
+          cameraFrames,
+          decodeJobs,
+          successfulDecodeJobs,
+          emptyDecodeJobs,
         };
         liveMetricsRef.current = nextMetrics;
         setLiveMetrics(nextMetrics);
@@ -326,6 +359,7 @@ export default function ReceiverApp() {
         decodeTimes.push(result.decodeMs);
         if (decodeTimes.length > 240) decodeTimes.splice(0, decodeTimes.length - 240);
         if (result.error) {
+          updateMetrics(true);
           controls.stop();
           controlsRef.current = undefined;
           setError(`Optical decoder unavailable: ${result.error}`);
@@ -333,10 +367,13 @@ export default function ReceiverApp() {
           return;
         }
         const codes = result.codes ?? [];
+        decodeJobs += 1;
         if (codes.length === 0) {
+          emptyDecodeJobs += 1;
           updateMetrics();
           return;
         }
+        successfulDecodeJobs += 1;
         decodedFrames += codes.length;
         for (const code of codes) {
           const decoder = decoderRef.current;
@@ -345,6 +382,7 @@ export default function ReceiverApp() {
             ? decoder.ingestFrame(code.bytes)
             : decoder.ingestText(code.text ?? "");
           if (next.rejectionReason === "wrong-session") {
+            updateMetrics(true);
             controls.stop();
             controlsRef.current = undefined;
             setMustRepair(true);
@@ -357,9 +395,12 @@ export default function ReceiverApp() {
           }
           publishProgress(next, next.complete);
           if (next.acceptedFrames === 0 && next.rejectedFrames >= INVALID_FRAME_LIMIT) {
+            updateMetrics(true);
             controls.stop();
             controlsRef.current = undefined;
-            setError("The camera can see QR shapes, but no intact GlassBridge frame survived. Keep both codes fully inside the guide, move closer until each code is sharp, and restart at 30/s before increasing speed.");
+            setError(visualPhy === "mono-grid-v0"
+              ? "The camera found the Grid markers, but no intact GlassBridge frame survived. Keep all four colored corners inside the guide, use fullscreen on the sender, and restart at 10/s before increasing speed."
+              : "The camera can see QR shapes, but no intact GlassBridge frame survived. Keep both codes fully inside the guide, move closer until each code is sharp, and restart at 30/s before increasing speed.");
             setStage("error");
             return;
           }
@@ -411,13 +452,13 @@ export default function ReceiverApp() {
             : [laneRegions[1], laneRegions[0]];
           for (const region of orderedRegions) {
             const image = captureContext.getImageData(region.x, region.y, region.width, region.height);
-            if (!pool.submit(image, 1)) busyDrops += 1;
+            if (!pool.submit(image, 1, visualPhy)) busyDrops += 1;
           }
         } else {
           // Periodic full-frame acquisition lets the operator recover when the
           // display is not perfectly centered across the two lane regions.
           const image = captureContext.getImageData(0, 0, captureWidth, captureHeight);
-          if (!pool.submit(image, opticalLanes)) busyDrops += 1;
+          if (!pool.submit(image, opticalLanes, visualPhy)) busyDrops += 1;
         }
         updateMetrics();
       };
@@ -572,6 +613,42 @@ export default function ReceiverApp() {
     }
   }
 
+  async function shareFailureReport(): Promise<void> {
+    if (!trust) return;
+    const snapshot = decoderRef.current.snapshot();
+    const report = createDeviceRunFailureReport({
+      profileId: trust.profileId,
+      targetSymbolRate: trust.targetSymbolRate,
+      transferSession: trust.sessionId ? formatSession(trust.sessionId) : undefined,
+      reason: error || "The receiver stopped before verification.",
+      progress: snapshot,
+      camera: liveMetricsRef.current,
+      device: navigator.userAgent,
+    });
+    const file = new File(
+      [JSON.stringify(report, null, 2)],
+      `glassbridge-failure-${report.measured_at.replaceAll(":", "-")}.json`,
+      { type: "application/json" },
+    );
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({
+          title: "GlassBridge failed-run diagnostics",
+          text: `${report.failure_class}: no payload released`,
+          files: [file],
+        });
+        setMeasurementStatus("Failure diagnostics shared.");
+      } else {
+        downloadFile(file);
+        setMeasurementStatus("Failure diagnostics download started.");
+      }
+    } catch (shareError) {
+      setMeasurementStatus(shareError instanceof DOMException && shareError.name === "AbortError"
+        ? "Failure diagnostics share cancelled."
+        : "The browser could not export failure diagnostics.");
+    }
+  }
+
   async function authorizeRelease(): Promise<void> {
     if (!verified || !policyDecision?.allowed || releasingRef.current) {
       return;
@@ -676,6 +753,8 @@ export default function ReceiverApp() {
             <div><span>BOUNDARY</span><strong>{trust.boundary}</strong></div>
             {trust.sessionId && <div><span>TRANSFER SESSION</span><strong>{formatSession(trust.sessionId)}</strong></div>}
             {trust.packing && <div><span>PACKING</span><strong>{trust.packing.toUpperCase()}</strong></div>}
+            {trust.visualPhy && <div><span>VISUAL PHY</span><strong>{trust.visualPhy}</strong></div>}
+            {trust.targetSymbolRate && <div><span>TARGET RATE</span><strong>{trust.targetSymbolRate} symbols/s</strong></div>}
           </div>
 
           <div className={`camera-shell ${stage === "scanning" && sourceMode === "camera" ? "camera-live" : ""}`}>
@@ -706,7 +785,7 @@ export default function ReceiverApp() {
           {stage === "scanning" && sourceMode === "camera" && (
             <div className="live-metrics" aria-label="Live optical pipeline measurements">
               <div><span>CAMERA</span><strong>{liveMetrics.cameraFps.toFixed(1)} FPS</strong><small>{liveMetrics.width}×{liveMetrics.height} @ {liveMetrics.negotiatedFps.toFixed(0) || "—"}</small></div>
-              <div><span>VALID CODES</span><strong>{liveMetrics.decodeFps.toFixed(1)} / SEC</strong><small>{liveMetrics.workers} WASM workers · p50 {liveMetrics.medianDecodeMs.toFixed(0)} ms</small></div>
+              <div><span>ACQUIRED SYMBOLS</span><strong>{liveMetrics.decodeFps.toFixed(1)} / SEC</strong><small>{liveMetrics.workers} workers · p50 {liveMetrics.medianDecodeMs.toFixed(0)} ms</small></div>
               <div><span>PRESSURE</span><strong>{liveMetrics.busyDrops} dropped</strong><small>p95 decode {liveMetrics.p95DecodeMs.toFixed(0)} ms</small></div>
             </div>
           )}
@@ -823,6 +902,12 @@ export default function ReceiverApp() {
           <p className="receiver-kicker">FAIL CLOSED</p>
           <h1>Nothing was released.</h1>
           <p>{error}</p>
+          {trust && (
+            <button className="receiver-button secondary" type="button" onClick={() => void shareFailureReport()}>
+              Save / share failure diagnostics
+            </button>
+          )}
+          {measurementStatus && <p className="measurement-status" role="status">{measurementStatus}</p>}
           {trust && !mustRepair ? (
             <button className="receiver-button primary" type="button" onClick={resetToPaired}>Return to paired receiver</button>
           ) : (
@@ -912,8 +997,10 @@ export function CapacityScorecard({
           <div><dt>Accepted optical rate</dt><dd>{formatRate(report.accepted_symbol_bytes_per_second)}</dd></div>
           <div><dt>Fountain overhead</dt><dd>{report.fountain_overhead_percent.toFixed(1)}%</dd></div>
           {report.transport && <div><dt>Optical packing</dt><dd>{report.transport.encoding} · {formatBytes(report.transport.optical_object_bytes)} transmitted · {report.transport.optical_reduction_percent.toFixed(1)}% reduction</dd></div>}
-          <div><dt>Camera</dt><dd>{report.camera.width}×{report.camera.height} · {report.camera.observed_fps.toFixed(1)} observed / {report.camera.negotiated_fps.toFixed(0)} negotiated FPS</dd></div>
+          <div><dt>Camera</dt><dd>{report.camera.width}×{report.camera.height} · {report.camera.observed_fps.toFixed(1)} observed / {report.camera.negotiated_fps.toFixed(0)} negotiated FPS · {report.camera.camera_exposures ?? "—"} exposures</dd></div>
           <div><dt>Decoder</dt><dd>{report.camera.valid_codes_per_second.toFixed(1)} valid codes/s · p50 {report.camera.decode_p50_ms.toFixed(1)} ms · p95 {report.camera.decode_p95_ms.toFixed(1)} ms</dd></div>
+          {report.camera.decode_jobs !== undefined && <div><dt>Optical acquisition</dt><dd>{report.camera.optical_acquisition_percent?.toFixed(1)}% · {report.camera.successful_decode_jobs} symbol jobs / {report.camera.decode_jobs} completed jobs · {report.camera.empty_decode_jobs} empty</dd></div>}
+          {report.profile.visual_phy && <div><dt>Bound channel</dt><dd>{report.profile.visual_phy} · {report.profile.target_symbol_rate ?? "—"} symbols/s target</dd></div>}
           <div><dt>Pressure</dt><dd>{report.camera.busy_drops} busy drops · {report.camera.workers} workers</dd></div>
         </dl>
       </details>
@@ -923,7 +1010,7 @@ export function CapacityScorecard({
       </div>
       <p className="capacity-history-note">
         {historySaved
-          ? `Saved privately on this device · last ${CAPACITY_HISTORY_LIMIT} runs retained · comparisons match profile + exact payload`
+          ? `Saved privately on this device · last ${CAPACITY_HISTORY_LIMIT} runs retained · comparisons match device + visual PHY + target rate + exact payload`
           : "Device history is unavailable in this browser session. Export the JSON to preserve this run."}
       </p>
       {status && <p className="measurement-status" role="status">{status}</p>}

@@ -4,13 +4,9 @@ import { prepareZXingModule, readBarcodes } from "zxing-wasm/reader";
 import wasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
 import { TURBO_READER_OPTIONS } from "./decode-options";
 import type { DecodeWorkerRequest, DecodeWorkerResponse } from "./decode-worker-pool";
+import { tryDecodeGridFrame } from "../phy/grid/grid-codec";
 
-const ready = prepareZXingModule({
-  overrides: {
-    locateFile: (path: string, prefix: string) => path.endsWith(".wasm") ? wasmUrl : `${prefix}${path}`,
-  },
-  fireImmediately: true,
-});
+let zxingReady: ReturnType<typeof prepareZXingModule> | undefined;
 
 self.onmessage = (event: MessageEvent<DecodeWorkerRequest>) => {
   void decode(event.data);
@@ -19,8 +15,25 @@ self.onmessage = (event: MessageEvent<DecodeWorkerRequest>) => {
 async function decode(request: DecodeWorkerRequest): Promise<void> {
   const startedAt = performance.now();
   try {
-    await ready;
     const pixels = new Uint8ClampedArray(request.pixels);
+    if (request.visualPhy === "mono-grid-v0") {
+      const decoded = tryDecodeGridFrame({ data: pixels, width: request.width, height: request.height });
+      const bytes = decoded?.frame.slice();
+      const response: DecodeWorkerResponse = {
+        id: request.id,
+        codes: bytes ? [{ bytes: bytes.buffer }] : [],
+        decodeMs: performance.now() - startedAt,
+      };
+      self.postMessage(response, bytes ? [bytes.buffer] : []);
+      return;
+    }
+    zxingReady ??= prepareZXingModule({
+      overrides: {
+        locateFile: (path: string, prefix: string) => path.endsWith(".wasm") ? wasmUrl : `${prefix}${path}`,
+      },
+      fireImmediately: true,
+    });
+    await zxingReady;
     const results = await readBarcodes(
       new ImageData(pixels, request.width, request.height),
       { ...TURBO_READER_OPTIONS, maxNumberOfSymbols: request.maxSymbols },
@@ -40,7 +53,7 @@ async function decode(request: DecodeWorkerRequest): Promise<void> {
     const response: DecodeWorkerResponse = {
       id: request.id,
       decodeMs: performance.now() - startedAt,
-      error: error instanceof Error ? error.message : "QR decoding failed.",
+      error: error instanceof Error ? error.message : "Optical decoding failed.",
     };
     self.postMessage(response);
   }

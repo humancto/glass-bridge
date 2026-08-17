@@ -104,6 +104,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .sender-qr-shell canvas { display: block; width: auto; height: auto; max-width: min(76vw, 820px); image-rendering: pixelated; }
 .sender-qr-shell.dual-lane { grid-template-columns: repeat(2, auto); gap: 10px; padding: 10px; }
 .sender-qr-shell.dual-lane canvas { max-width: min(42vw, 540px); }
+.sender-qr-shell.grid-phy { width: min(94vw, 1240px, calc(72vh * 248 / 136)); padding: 8px; overflow: hidden; }
+.sender-qr-shell.grid-phy canvas { width: 100%; height: auto; max-width: none; aspect-ratio: 248 / 136; }
 .pair-label, .burst-label { margin-top: 10px; padding: 8px 11px; border: 1px solid #29463a; border-radius: 6px; background: #08110d; color: #7ff0c1; font: 800 8px/1 ui-monospace, monospace; letter-spacing: .13em; white-space: nowrap; }
 .transfer-controls { display: flex; align-items: center; justify-content: center; gap: 9px; flex-wrap: wrap; padding: 18px; border: 1px solid #203027; border-radius: 14px; background: #0a120d; }
 .speed-control { display: flex; align-items: center; gap: 8px; margin-left: 6px; color: #839589; font-size: 10px; }

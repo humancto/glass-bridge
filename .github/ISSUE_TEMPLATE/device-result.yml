@@ -43,7 +43,7 @@ body:
     id: runs
     attributes:
       label: All repeated runs
-      description: Attach or paste each exported `glassbridge-capacity/3` JSON record, including failures and retry notes.
+      description: Attach or paste each exported `glassbridge-capacity/4` JSON record. Also describe every failed or aborted attempt until structured failure export lands; a best run alone is not a benchmark.
     validations:
       required: true
   - type: textarea

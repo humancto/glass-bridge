@@ -78,6 +78,23 @@ describe("phone receiver AGX verification", () => {
       `#v=3&key=${base64UrlEncode(publicKey)}&boundary=demo&session=${base64UrlEncode(sessionId)}&profile=ceiling&packing=brotli`,
     )).toThrow(/packing mode/);
   });
+
+  it("binds version 4 pairing to the exact visual PHY and symbol rate", () => {
+    const publicKey = new Uint8Array(32).fill(7);
+    const sessionId = new Uint8Array(16).fill(9);
+    const prefix = `#v=4&key=${base64UrlEncode(publicKey)}&boundary=demo&session=${base64UrlEncode(sessionId)}`;
+    const trust = parseBootstrapHash(
+      `${prefix}&profile=grid&packing=identity&phy=mono-grid-v0&rate=30`,
+    );
+    expect(trust.visualPhy).toBe("mono-grid-v0");
+    expect(trust.targetSymbolRate).toBe(30);
+    expect(() => parseBootstrapHash(
+      `${prefix}&profile=grid&packing=identity&phy=qr-model2-v1&rate=30`,
+    )).toThrow(/visual PHY/);
+    expect(() => parseBootstrapHash(
+      `${prefix}&profile=grid&packing=identity&phy=mono-grid-v0&rate=120`,
+    )).toThrow(/symbol rate/);
+  });
 });
 
 describe("phone receiver optical reconstruction", () => {

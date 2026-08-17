@@ -18,6 +18,7 @@ import {
 } from "./agx";
 import { symbolsForRefresh } from "./scheduler";
 import { OpticalTransferEncoder, pairingUrl } from "./transport";
+import { renderGridFrame } from "../phy/grid/grid-codec";
 
 type Phase = "choose" | "preparing" | "pair" | "playing" | "paused" | "error";
 
@@ -28,7 +29,7 @@ type PreparedTransfer = {
   pairing: string;
   originalBytes: number;
   profile: OpticalProfile;
-  qrVersion: number;
+  qrVersion?: number;
 };
 
 const DEFAULT_BOUNDARY = "demo/phone-laptop";
@@ -89,13 +90,17 @@ export default function SenderApp() {
     async function renderSymbols(count: number): Promise<void> {
       const symbols = Array.from({ length: count }, (_, offset) => frameRef.current + offset);
       try {
-        await Promise.all(symbols.map((symbolId) => drawQr(
-            opticalQrPayload(activeTransfer, symbolId),
-            activeTransfer.profile.errorCorrectionLevel,
-            () => active,
-            activeTransfer.profile,
-            activeTransfer.profile.lanes === 2 && symbolId % 2 === 1 ? 1 : 0,
-          )));
+        if (activeTransfer.profile.visualPhy === "mono-grid-v0") {
+          for (const symbolId of symbols) drawGrid(activeTransfer, symbolId, () => active);
+        } else {
+          await Promise.all(symbols.map((symbolId) => drawQr(
+              opticalQrPayload(activeTransfer, symbolId),
+              activeTransfer.profile.errorCorrectionLevel,
+              () => active,
+              activeTransfer.profile,
+              activeTransfer.profile.lanes === 2 && symbolId % 2 === 1 ? 1 : 0,
+            )));
+        }
       } catch (renderError) {
         if (active) fail(renderError);
         return;
@@ -171,9 +176,9 @@ export default function SenderApp() {
       ? Math.max(
           320,
           Math.min(
-            560,
-            Math.floor(window.innerHeight * 0.68),
-            Math.floor((Math.min(window.innerWidth, 1_180) - 120) / 2),
+            640,
+            Math.floor(window.innerHeight * 0.72),
+            Math.floor((window.innerWidth - 32) / 2),
           ),
         )
       : Math.max(
@@ -201,6 +206,27 @@ export default function SenderApp() {
     canvas.width = rendered.width;
     canvas.height = rendered.height;
     context.drawImage(rendered, 0, 0);
+  }
+
+  function drawGrid(
+    transfer: PreparedTransfer,
+    symbolId: number,
+    shouldCommit = () => true,
+  ): void {
+    const rendered = renderGridFrame(transfer.encoder.frameBytes(symbolId));
+    if (!shouldCommit()) return;
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    if (canvas.width !== rendered.width || canvas.height !== rendered.height) {
+      canvas.width = rendered.width;
+      canvas.height = rendered.height;
+    }
+    context.putImageData(
+      new ImageData(new Uint8ClampedArray(rendered.data), rendered.width, rendered.height),
+      0,
+      0,
+    );
   }
 
   function fail(value: unknown): void {
@@ -240,11 +266,13 @@ export default function SenderApp() {
         symbolSize: profile.symbolSize,
         codec: profile.codec,
       });
-      const qrVersion = QRCode.create(opticalQrPayload({ encoder, profile }, 0), {
-        errorCorrectionLevel: profile.errorCorrectionLevel,
-        version: profile.qrVersion,
-        maskPattern: profile.maskPattern,
-      }).version;
+      const qrVersion = profile.visualPhy === "qr-model2-v1"
+        ? QRCode.create(opticalQrPayload({ encoder, profile }, 0), {
+            errorCorrectionLevel: profile.errorCorrectionLevel,
+            version: profile.qrVersion,
+            maskPattern: profile.maskPattern,
+          }).version
+        : undefined;
       const receiver = new URL(`${import.meta.env.BASE_URL}receive.html`, window.location.origin);
       const pairing = pairingUrl(
         receiver.toString(),
@@ -253,6 +281,7 @@ export default function SenderApp() {
         encoder.sessionId,
         profile.id,
         opticalPayload.encoding,
+        fps,
       );
       frameRef.current = 0;
       loopsRef.current = 0;
@@ -300,6 +329,23 @@ export default function SenderApp() {
     setPhase("pair");
   }
 
+  function changeTransferRate(nextRate: number): void {
+    setFps(nextRate);
+    if (!prepared) return;
+    const receiver = new URL(`${import.meta.env.BASE_URL}receive.html`, window.location.origin);
+    const pairing = pairingUrl(
+      receiver.toString(),
+      prepared.envelope.publicKey,
+      prepared.envelope.boundary,
+      prepared.encoder.sessionId,
+      prepared.profile.id,
+      prepared.opticalPayload.encoding,
+      nextRate,
+    );
+    setPrepared({ ...prepared, pairing });
+    setPhase("pair");
+  }
+
   function reset(): void {
     setFile(undefined);
     setPrepared(undefined);
@@ -338,12 +384,12 @@ export default function SenderApp() {
 
       <section className="sender-intro">
         <div>
-          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 14 CAPACITY LAB</p>
+          <p className="sender-kicker">LAPTOP → PHONE / MILESTONE 15 OPTICAL LAB</p>
           <h1>Choose a file.<br /><em>Send it through light.</em></h1>
         </div>
         <p>
           Nothing is uploaded. Your browser signs the file in memory, turns the signed AGX
-          envelope into repairable QR frames, and displays them for the phone camera.
+          envelope into repairable optical frames, and displays them as QR or a registered Grid for the phone camera.
         </p>
       </section>
 
@@ -433,7 +479,7 @@ export default function SenderApp() {
                 </div>
                 <small>
                   {formatRate(nominalGoodputBytes(selectedProfile, selectedProfile.defaultFps))} nominal.
-                  Burst is the recommended phone path. Ceiling lab combines two maximum-density QR codes.
+                  Grid 30 is the registered post-QR lab path. Burst remains the compatibility baseline.
                 </small>
               </fieldset>
 
@@ -496,7 +542,7 @@ export default function SenderApp() {
           <div className="transfer-heading">
             <div>
               <p className="sender-kicker">{phase === "pair" ? "STEP 2 / PAIR PHONE" : "STEP 3 / OPTICAL TRANSFER"}</p>
-              <h2>{phase === "pair" ? "Scan this once with the phone Camera." : prepared.profile.lanes === 2 ? "Aim the GlassBridge camera at both codes." : "Aim the GlassBridge camera at this code."}</h2>
+              <h2>{phase === "pair" ? "Scan this once with the phone Camera." : prepared.profile.visualPhy === "mono-grid-v0" ? "Fill the phone guide with all four colored grid corners." : prepared.profile.lanes === 2 ? "Aim the GlassBridge camera at both codes." : "Aim the GlassBridge camera at this code."}</h2>
             </div>
             <div className="live-status">
               <span className={phase === "playing" ? "pulse" : ""}></span>
@@ -509,8 +555,8 @@ export default function SenderApp() {
           </div>
 
           <div className="sender-code-stage">
-            <div className={`sender-qr-shell ${phase !== "pair" && prepared.profile.lanes === 2 ? "dual-lane" : ""}`}>
-              <canvas ref={canvasRef} aria-label={phase === "pair" ? "Phone pairing QR" : "Animated optical transfer QR lane 1"}></canvas>
+            <div className={`sender-qr-shell ${phase !== "pair" && prepared.profile.lanes === 2 ? "dual-lane" : ""} ${phase !== "pair" && prepared.profile.visualPhy === "mono-grid-v0" ? "grid-phy" : ""}`}>
+              <canvas ref={canvasRef} aria-label={phase === "pair" ? "Phone pairing QR" : prepared.profile.visualPhy === "mono-grid-v0" ? "Animated registered optical grid" : "Animated optical transfer QR lane 1"}></canvas>
               {phase !== "pair" && prepared.profile.lanes === 2 && (
                 <canvas ref={secondCanvasRef} aria-label="Animated optical transfer QR lane 2"></canvas>
               )}
@@ -518,6 +564,9 @@ export default function SenderApp() {
             {phase === "pair" && <div className="pair-label">NORMAL CAMERA · SCAN ONCE</div>}
             {phase !== "pair" && prepared.profile.lanes === 2 && (
               <div className="burst-label">{prepared.profile.label.toUpperCase()} · HOLD PHONE LANDSCAPE</div>
+            )}
+            {phase !== "pair" && prepared.profile.visualPhy === "mono-grid-v0" && (
+              <div className="burst-label">GRID LAB · HOLD EACH SYMBOL FOR TWO DISPLAY REFRESHES</div>
             )}
           </div>
 
@@ -543,7 +592,7 @@ export default function SenderApp() {
                     className={fps === step.rate ? "selected" : ""}
                     aria-pressed={fps === step.rate}
                     title={step.detail}
-                    onClick={() => setFps(step.rate)}
+                    onClick={() => changeTransferRate(step.rate)}
                   >{step.rate}/s</button>
                 ))}
               </fieldset>
@@ -555,7 +604,7 @@ export default function SenderApp() {
                   min={prepared.profile.minFps}
                   max={prepared.profile.maxFps}
                   value={fps}
-                  onChange={(event) => setFps(Number(event.currentTarget.value))}
+                  onChange={(event) => changeTransferRate(Number(event.currentTarget.value))}
                 />
                 <b>{fps}/s</b>
               </label>
@@ -575,7 +624,7 @@ export default function SenderApp() {
               <span>Optical profile</span>
               <strong>{prepared.profile.label} · {formatRate(nominalGoodputBytes(prepared.profile, fps))}</strong>
               <small>
-                {prepared.profile.lanes === 2 ? "2 lanes · " : ""}{prepared.profile.symbolSize.toLocaleString()} B/symbol · QR v{prepared.qrVersion}-{prepared.profile.errorCorrectionLevel} · {prepared.profile.continuousRepair
+                {prepared.profile.lanes === 2 ? "2 lanes · " : ""}{prepared.profile.symbolSize.toLocaleString()} B/symbol · {prepared.profile.visualPhy === "mono-grid-v0" ? "224×112 binary cells · Hamming inner correction" : `QR v${prepared.qrVersion}-${prepared.profile.errorCorrectionLevel}`} · {prepared.profile.continuousRepair
                   ? `${formatDuration(cycleSeconds)} expected solve window · endless unique repair`
                   : `${formatDuration(cycleSeconds)} repair loop · ${loops} loops`}
               </small>
@@ -605,7 +654,9 @@ export default function SenderApp() {
               Pair with the normal Camera. After the receiver says <b>PAIRED</b>, tap
               <b> Trust sender &amp; open camera</b> there. {prepared.profile.lanes === 2
                 ? "Turn the phone landscape and fill its guide with both codes. "
-                : ""}Only then start these animated frames.
+                : prepared.profile.visualPhy === "mono-grid-v0"
+                  ? "Turn the phone landscape, use fullscreen, and keep all four colored corners visible. "
+                  : ""}Only then start these animated frames.
             </p>
             <button onClick={reset}>Choose another file</button>
           </div>

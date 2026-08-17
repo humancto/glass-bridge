@@ -1,6 +1,6 @@
 import { verifyAsync } from "@noble/ed25519";
 import { decode, encode } from "cborg";
-import { OPTICAL_PROFILES, type OpticalProfileId } from "../protocol/optical-profile";
+import { OPTICAL_PROFILES, type OpticalProfileId, type VisualPhyId } from "../protocol/optical-profile";
 import type { OpticalPayloadEncoding } from "../protocol/optical-payload";
 import { base64UrlDecode } from "./transport";
 
@@ -14,6 +14,8 @@ export type BootstrapTrust = {
   sessionId?: Uint8Array;
   profileId?: OpticalProfileId;
   packing?: OpticalPayloadEncoding;
+  visualPhy?: VisualPhyId;
+  targetSymbolRate?: number;
 };
 
 export type VerifiedTransfer = {
@@ -42,7 +44,9 @@ export function parseBootstrapHash(hash: string): BootstrapTrust {
   const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
   const keys = Array.from(params.keys());
   const version = params.get("v");
-  const expectedKeys = version === "3"
+  const expectedKeys = version === "4"
+    ? new Set(["v", "key", "boundary", "session", "profile", "packing", "phy", "rate"])
+    : version === "3"
     ? new Set(["v", "key", "boundary", "session", "profile", "packing"])
     : version === "2"
     ? new Set(["v", "key", "boundary", "session", "profile"])
@@ -50,7 +54,7 @@ export function parseBootstrapHash(hash: string): BootstrapTrust {
   if (keys.length !== expectedKeys.size || new Set(keys).size !== keys.length || keys.some((key) => !expectedKeys.has(key))) {
     throw new Error("The pairing QR has unexpected or duplicate fields.");
   }
-  if (version !== "1" && version !== "2" && version !== "3") {
+  if (version !== "1" && version !== "2" && version !== "3" && version !== "4") {
     throw new Error("Scan the pairing QR displayed by GlassBridge on the laptop.");
   }
   const encodedKey = params.get("key");
@@ -80,15 +84,29 @@ export function parseBootstrapHash(hash: string): BootstrapTrust {
     throw new Error("The pairing QR names an unsupported optical profile.");
   }
   const packing = params.get("packing");
-  if (version === "3" && packing !== "identity" && packing !== "gzip") {
+  if ((version === "3" || version === "4") && packing !== "identity" && packing !== "gzip") {
     throw new Error("The pairing QR names an unsupported optical packing mode.");
+  }
+  const profile = OPTICAL_PROFILES[profileId as OpticalProfileId];
+  const visualPhy = params.get("phy");
+  const targetSymbolRate = Number(params.get("rate"));
+  if (version === "4" && visualPhy !== profile.visualPhy) {
+    throw new Error("The pairing QR visual PHY does not match its optical profile.");
+  }
+  if (
+    version === "4" &&
+    (!Number.isSafeInteger(targetSymbolRate) || targetSymbolRate < profile.minFps || targetSymbolRate > profile.maxFps)
+  ) {
+    throw new Error("The pairing QR names an unsupported optical symbol rate.");
   }
   return {
     publicKey,
     boundary,
     sessionId,
     profileId: profileId as OpticalProfileId,
-    packing: version === "3" ? packing as OpticalPayloadEncoding : undefined,
+    packing: version === "3" || version === "4" ? packing as OpticalPayloadEncoding : undefined,
+    visualPhy: version === "4" ? visualPhy as VisualPhyId : profile.visualPhy,
+    targetSymbolRate: version === "4" ? targetSymbolRate : undefined,
   };
 }
 

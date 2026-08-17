@@ -126,17 +126,20 @@ describe("browser sender optical interoperability", () => {
       sessionId,
       "burst",
       "gzip",
+      60,
     ));
     expect(url.origin + url.pathname).toBe(
       "https://humancto.github.io/glass-bridge/receive.html",
     );
     expect(new URLSearchParams(url.hash.slice(1)).get("boundary"))
       .toBe("demo/phone-laptop");
-    expect(new URLSearchParams(url.hash.slice(1)).get("v")).toBe("3");
+    expect(new URLSearchParams(url.hash.slice(1)).get("v")).toBe("4");
     expect(new URLSearchParams(url.hash.slice(1)).get("session"))
       .toBe(base64UrlEncode(sessionId));
     expect(new URLSearchParams(url.hash.slice(1)).get("profile")).toBe("burst");
     expect(new URLSearchParams(url.hash.slice(1)).get("packing")).toBe("gzip");
+    expect(new URLSearchParams(url.hash.slice(1)).get("phy")).toBe("qr-model2-v1");
+    expect(new URLSearchParams(url.hash.slice(1)).get("rate")).toBe("60");
   });
 });
 

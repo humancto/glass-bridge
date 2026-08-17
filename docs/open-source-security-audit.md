@@ -1,7 +1,7 @@
 # GlassBridge browser security audit
 
 **Audit date:** 2026-08-04  
-**Baseline:** `41c240a` trust path plus milestone 14 optical packing and lane-acquisition review  
+**Baseline:** `41c240a` trust path plus milestone 15 optical packing, pairing v4, Grid PHY, and acquisition-telemetry review  
 **Scope:** public React/TypeScript sender and receiver, HTML entry points, service worker, browser storage, CI/release configuration, dependency and secret checks. The Rust implementation was built, tested, linted, and dependency-audited, but this document is not a line-by-line Rust security review.
 
 ## Executive summary

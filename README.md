@@ -37,10 +37,10 @@ You need a laptop and a phone. Nothing is installed, and the application has no 
 2. Select **Load demo sample** or choose one file up to 256 KiB.
 3. Scan the stationary pairing QR with the phone's normal Camera app.
 4. Confirm the fingerprint, then tap **Trust sender & open camera**.
-5. Hold the phone landscape with both QR codes inside the guide and start the transfer.
+5. For the compatibility baseline, hold the phone landscape with both QR codes inside the guide. For **Grid 30 lab**, use fullscreen and keep all four colored corner markers visible.
 6. Review the verified object in quarantine, approve release, then save the file and signed receipt.
 
-For a performance run, choose **Load 144 KiB test payload**. Repeat the same payload three times at 30/s, 60/s, and 90/s before trying 120/s. Export **Save / share benchmark JSON** after each receive; the phone compares exact-payload runs locally.
+For a performance run, choose **Load 144 KiB test payload** and **Grid 30 lab** before preparing. Run 10/s once to validate geometry, then repeat 30/s three times before trying 60/s. Changing the target rate intentionally requires re-pairing because pairing v4 binds the visual PHY and rate. Export **Save / share benchmark JSON** after each receive; the phone compares only the same device, PHY, rate, and exact payload.
 
 ## Why this project exists
 
@@ -75,18 +75,19 @@ The strict one-way profile requires no acknowledgment or return signal. Pairing 
 
 ## Speed without fiction
 
-Milestone 14 attacks transfer time in two places: it sends fewer optical bytes when bounded gzip genuinely helps, and it decodes left/right QR regions as independent WASM jobs with fair scheduling and periodic full-frame recovery.
+The parallel performance audit found that QR generation, LT reconstruction, cryptography, and ideal-raster decoding are not the current limit. The physical acquisition path is: production QR modules were smaller than the benchmark geometry, camera exposures are not synchronized with display changes, and every frame repeats stateless QR location. Milestone 15 fixes the benchmark/render geometry mismatch, records no-symbol decode jobs, binds the PHY and target rate in pairing, and adds a registered full-screen binary Grid PHY beside QR.
 
-| Profile | Useful payload | Stable nominal budget | Aggressive nominal peak |
+| Profile | Useful payload | Nominal budget | Intended role |
 | --- | ---: | ---: | ---: |
-| Burst · dual QR v30-L | 1,688 B/code | 98.9 KiB/s | 197.8 KiB/s |
-| Ceiling Lab · dual QR v40-L | 2,900 B/code | 169.9 KiB/s | 339.8 KiB/s |
+| Grid 30 lab · registered field | 2,032 B/symbol | 59.5 KiB/s at 30/s; 119.1 KiB/s at 60/s | robust post-QR experiment |
+| Burst · dual QR v30-L | 1,688 B/code | 98.9 KiB/s at 60/s; 197.8 KiB/s at 120/s | compatibility baseline |
+| Ceiling Lab · dual QR v40-L | 2,900 B/code | 169.9 KiB/s at 60/s; 339.8 KiB/s at 120/s | standard-QR ceiling experiment |
 
 These are pre-loss channel budgets, not phone-camera results. Display refresh, camera exposure, rolling shutter, focus, moiré, and operator motion determine physical goodput. A higher selected code rate can be slower if it produces more rejected frames.
 
-The ideal-raster benchmark shows approximately 1.0–1.28 MB/s of modeled parallel decoder headroom, so additional browser workers alone cannot break the optical channel ceiling. A structured 144 KiB CSV development sample packed to 23,907 optical bytes—a 6.17× effective file/optical-byte multiplier—while already-compressed or encrypted files usually remain on the identity path.
+The ideal Grid reference currently renders a symbol in about 0.41 ms and registers/decodes an ideal 1280×720 exposure in about 5.1 ms on the development Mac. Those are CPU measurements, not camera goodput. A structured 144 KiB CSV development sample packed to 23,907 optical bytes—a 6.17× effective file/optical-byte multiplier—while already-compressed or encrypted files usually remain on the identity path.
 
-Read the complete methodology and stop rules in [Milestone 13](docs/milestone-13.md), [Milestone 14](docs/milestone-14.md), and [BENCH-0001](spec/BENCH-0001.md).
+Read the complete methodology and stop rules in [Milestone 13](docs/milestone-13.md), [Milestone 14](docs/milestone-14.md), [Milestone 15](docs/milestone-15.md), [AGX-PHY-GRID-0001](spec/AGX-PHY-GRID-0001.md), and [BENCH-0001](spec/BENCH-0001.md).
 
 ## What is implemented
 
@@ -95,11 +96,12 @@ Read the complete methodology and stop rules in [Milestone 13](docs/milestone-13
 - SHA-256 payload verification and strict boundary binding
 - session-bound AGF1/AGF2 frames with sparse LT repair
 - dual-lane QR v30/v40 transports and 30/60/90/120-code test ladder
-- bounded adaptive gzip with pairing protocol v3
+- registered full-screen binary Grid PHY with four-corner projective recovery, whitening, interleaved Hamming correction, and exact frame CRC
+- bounded adaptive gzip with pairing protocol v4 binding the packing mode, visual PHY, and target rate
 - lane-parallel ZXing-C++ WASM decoding
 - default-deny browser policy and in-memory quarantine
 - replay reservation and receiver-signed release evidence
-- `glassbridge-capacity/3` post-receive analytics
+- `glassbridge-capacity/4` success analytics and schema-backed `glassbridge-device-run/1` failure diagnostics, including empty acquisition jobs and like-for-like device/PHY/rate comparisons
 - Rust CLI, deterministic browser/Rust vectors, real PNG and H.264 loopbacks
 
 Still research work: organizational trust roots, large-file transport, production FEC, adaptive feedback, protected monotonic replay state, encryption, malware scanning/CDR, native applications, dedicated receive-only hardware, and certification.
@@ -155,6 +157,7 @@ npm run benchmark:capacity
 npm run benchmark:parallel-decode
 npm run benchmark:burst-decode
 npm run benchmark:turbo-decode
+npm run benchmark:grid
 ```
 
 ## Repository map
@@ -163,6 +166,7 @@ npm run benchmark:turbo-decode
 app/                         public research and product site
 src/sender/                  browser sender and optical scheduler
 src/receiver/                phone receiver, policy, quarantine, receipts
+src/phy/                     visual-PHY encoders, registration and decoders
 src/protocol/                shared browser transport and packing primitives
 crates/agx-core/             bounded envelope, policy, workflow, transport
 crates/agx-visual/           visual-codec boundary and QR baseline

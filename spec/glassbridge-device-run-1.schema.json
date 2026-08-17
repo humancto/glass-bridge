@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://humancto.github.io/glass-bridge/spec/glassbridge-device-run-1.schema.json",
+  "title": "GlassBridge physical device failed-run record",
+  "type": "object",
+  "required": [
+    "schema",
+    "run_id",
+    "measured_at",
+    "outcome",
+    "failure_class",
+    "reason",
+    "profile",
+    "progress",
+    "camera",
+    "device"
+  ],
+  "properties": {
+    "schema": { "const": "glassbridge-device-run/1" },
+    "run_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "measured_at": { "type": "string", "format": "date-time" },
+    "outcome": { "const": "failed" },
+    "failure_class": {
+      "enum": [
+        "camera-error",
+        "decode-error",
+        "session-mismatch",
+        "rank-incomplete",
+        "verification-or-policy-error",
+        "operator-or-environment-error"
+      ]
+    },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "profile": {
+      "type": "object",
+      "required": ["id", "label", "lanes"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "visual_phy": { "type": "string" },
+        "target_symbol_rate": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "lanes": { "type": "integer", "minimum": 0, "maximum": 16 }
+      }
+    },
+    "transfer_session": { "type": "string" },
+    "progress": {
+      "type": "object",
+      "required": ["rank", "required", "accepted_frames", "duplicate_frames", "rejected_frames"],
+      "properties": {
+        "rank": { "type": "integer", "minimum": 0 },
+        "required": { "type": "integer", "minimum": 0 },
+        "accepted_frames": { "type": "integer", "minimum": 0 },
+        "duplicate_frames": { "type": "integer", "minimum": 0 },
+        "rejected_frames": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "camera": {
+      "type": "object",
+      "required": [
+        "active_seconds",
+        "exposures",
+        "observed_fps",
+        "negotiated_fps",
+        "width",
+        "height",
+        "decode_jobs",
+        "successful_decode_jobs",
+        "empty_decode_jobs",
+        "optical_acquisition_percent",
+        "busy_drops",
+        "decode_p50_ms",
+        "decode_p95_ms",
+        "workers"
+      ],
+      "properties": {
+        "active_seconds": { "type": "number", "minimum": 0 },
+        "exposures": { "type": "integer", "minimum": 0 },
+        "observed_fps": { "type": "number", "minimum": 0 },
+        "negotiated_fps": { "type": "number", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 0 },
+        "height": { "type": "integer", "minimum": 0 },
+        "decode_jobs": { "type": "integer", "minimum": 0 },
+        "successful_decode_jobs": { "type": "integer", "minimum": 0 },
+        "empty_decode_jobs": { "type": "integer", "minimum": 0 },
+        "optical_acquisition_percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "busy_drops": { "type": "integer", "minimum": 0 },
+        "decode_p50_ms": { "type": "number", "minimum": 0 },
+        "decode_p95_ms": { "type": "number", "minimum": 0 },
+        "workers": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "device": { "type": "string", "minLength": 1 }
+  }
+}

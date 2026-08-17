@@ -28,7 +28,7 @@ run, including failures, and use synthetic non-sensitive data.
 - Do not implement new cryptographic primitives.
 - Do not include private data, internal conversations, credentials, or proprietary artifacts.
 - Treat physical throughput, security, and novelty as claims that require reproducible evidence.
-- For a device result, attach the exported `glassbridge-capacity/3` JSON and include every repeated run, including failures. Version 3 separates effective file goodput from optical packing reduction.
+- For a device result, attach every exported `glassbridge-capacity/4` success and `glassbridge-device-run/1` failure. Version 4 binds the visual PHY and target rate and records no-symbol acquisition jobs.
 
 ## Development setup
 
