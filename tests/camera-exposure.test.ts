@@ -65,13 +65,15 @@ describe("CameraExposureTracker", () => {
     expect(tracker.duplicateCallbacks).toBe(0);
   });
 
-  it("uses presentationTime when a non-conforming rVFC counter regresses", () => {
+  it("resets the baseline when a non-conforming rVFC counter regresses", () => {
     const tracker = new CameraExposureTracker();
 
     tracker.observe({ mediaTime: 0, presentedFrames: 4, presentationTime: 10, currentTime: 0 });
     tracker.observe({ mediaTime: 0, presentedFrames: 3, presentationTime: 20, currentTime: 0 });
+    tracker.observe({ mediaTime: 0, presentedFrames: 4, presentationTime: 30, currentTime: 0 });
+    tracker.observe({ mediaTime: 0, presentedFrames: 5, presentationTime: 40, currentTime: 0 });
 
-    expect(tracker.cameraExposures).toBe(2);
+    expect(tracker.cameraExposures).toBe(4);
     expect(tracker.duplicateCallbacks).toBe(0);
   });
 

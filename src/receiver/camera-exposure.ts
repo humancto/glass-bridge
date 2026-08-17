@@ -79,7 +79,10 @@ export class CameraExposureTracker {
       );
     }
 
-    this.lastPresentedFrames = greatest(this.lastPresentedFrames, presentedFrames);
+    // A conforming counter is monotonic. If a browser regresses it, accept the
+    // frame through the timing fallback above and reset the baseline so the
+    // counter's next forward step is not mistaken for a duplicate.
+    if (presentedFrames !== undefined) this.lastPresentedFrames = presentedFrames;
     this.lastPresentationTime = greatest(this.lastPresentationTime, presentationTime);
     this.lastMediaTime = greatest(this.lastMediaTime, mediaTime);
     this.lastCurrentTime = greatest(this.lastCurrentTime, currentTime);
