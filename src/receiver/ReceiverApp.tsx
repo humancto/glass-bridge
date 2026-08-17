@@ -60,6 +60,13 @@ import {
 import { parseStoredPairing, serializeStoredPairing } from "./pairing-storage";
 import { SavedFrameRunGuard, validateSavedFrameSelection } from "./saved-frame-policy";
 import { classifyOpticalCodeCandidate, didTransportAcceptFrame } from "./decode-metrics";
+import {
+  CameraExposureTracker,
+  createVideoFrameExposureObservation,
+  type CameraExposureObservation,
+} from "./camera-exposure";
+
+export { CameraExposureTracker } from "./camera-exposure";
 
 type Stage = "unpaired" | "paired" | "scanning" | "verifying" | "quarantined" | "releasing" | "released" | "error";
 type SourceMode = "camera" | "files";
@@ -160,29 +167,6 @@ const EMPTY_METRICS: LiveMetrics = {
   sameFrameReacquisitionP95Ms: 0,
   samplingStatus: "unknown",
 };
-
-/**
- * Counts real camera exposures rather than browser callback invocations.
- * Safari/Chromium may invoke a callback more often than the camera advances;
- * mediaTime/currentTime is the source of truth for a new exposure.
- */
-export class CameraExposureTracker {
-  callbackFrames = 0;
-  cameraExposures = 0;
-  duplicateCallbacks = 0;
-  private lastMediaTime = Number.NEGATIVE_INFINITY;
-
-  observe(mediaTime: number): boolean {
-    this.callbackFrames += 1;
-    if (!Number.isFinite(mediaTime) || mediaTime <= this.lastMediaTime + 1e-6) {
-      this.duplicateCallbacks += 1;
-      return false;
-    }
-    this.lastMediaTime = mediaTime;
-    this.cameraExposures += 1;
-    return true;
-  }
-}
 
 function readTrust(): { trust?: BootstrapTrust; error?: string } {
   try {
@@ -832,9 +816,9 @@ export default function ReceiverApp() {
       armQrAcquisitionWatchdog();
       armGridSessionWatchdog();
 
-      const captureFrame = (now: number, mediaTime: number) => {
+      const captureFrame = (now: number, exposure: CameraExposureObservation) => {
         if (!active || verifyingRef.current) return;
-        if (!exposureTracker.observe(mediaTime)) {
+        if (!exposureTracker.observe(exposure)) {
           updateMetrics();
           return;
         }
@@ -902,9 +886,9 @@ export default function ReceiverApp() {
         updateMetrics();
       };
 
-      const captureSafely = (now: number, mediaTime: number) => {
+      const captureSafely = (now: number, exposure: CameraExposureObservation) => {
         try {
-          captureFrame(now, mediaTime);
+          captureFrame(now, exposure);
         } catch (captureError) {
           failDecoder(captureError);
         }
@@ -912,7 +896,10 @@ export default function ReceiverApp() {
 
       if (hasVideoFrameTimestamps) {
         const onVideoFrame: VideoFrameRequestCallback = (now, metadata) => {
-          captureSafely(now, metadata.mediaTime);
+          captureSafely(
+            now,
+            createVideoFrameExposureObservation(metadata, video.currentTime),
+          );
           if (active) {
             try {
               callbackId = video.requestVideoFrameCallback(onVideoFrame);
@@ -924,7 +911,9 @@ export default function ReceiverApp() {
         callbackId = video.requestVideoFrameCallback(onVideoFrame);
       } else {
         const onAnimationFrame = () => {
-          captureSafely(performance.now(), (video as HTMLVideoElement).currentTime);
+          captureSafely(performance.now(), {
+            currentTime: (video as HTMLVideoElement).currentTime,
+          });
           if (active) {
             try {
               callbackId = window.requestAnimationFrame(onAnimationFrame);
