@@ -39,7 +39,8 @@
     "benchmark:parallel-decode": "node scripts/benchmark-lane-parallelism.mjs",
     "benchmark:grid": "vitest bench --run tests/grid-phy.bench.ts",
     "benchmark:grid-acquisition": "node scripts/benchmark-grid-acquisition.mjs",
-    "benchmark:grid-recovery": "GLASSBRIDGE_REPORT_TIMING=1 vitest run tests/decode-worker-pool.test.ts tests/grid-registration.test.ts",
+    "benchmark:grid-recovery": "GLASSBRIDGE_REPORT_TIMING=1 vitest run --no-file-parallelism --maxWorkers=1 tests/decode-worker-pool.test.ts tests/grid-registration.test.ts",
+    "benchmark:grid-recovery:strict": "GLASSBRIDGE_REPORT_TIMING=1 GLASSBRIDGE_ENFORCE_TIMING=1 vitest run --no-file-parallelism --maxWorkers=1 tests/decode-worker-pool.test.ts tests/grid-registration.test.ts",
     "start": "vite preview",
     "test:unit": "vitest run",
     "test": "npm run build && npm run test:unit && node --test tests/design-baseline.test.mjs"

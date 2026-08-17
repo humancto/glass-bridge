@@ -270,8 +270,10 @@ describe("parallel QR decode worker pool", () => {
       console.info(
         `Grid same-frame registration recovery p50/p95: ${p50.toFixed(2)}/${p95.toFixed(2)} ms`,
       );
-      // Enforce the 60 Hz p95 only in the documented isolated timing run;
-      // Vitest executes files concurrently in the complete correctness suite.
+    }
+    if (process.env.GLASSBRIDGE_ENFORCE_TIMING === "1") {
+      // Enforce the host-specific 60 Hz p95 only on a declared reference host.
+      // Shared CI runners report timing but gate deterministic recovery correctness.
       expect(p95).toBeLessThan(1_000 / 60);
     }
   }, 30_000);

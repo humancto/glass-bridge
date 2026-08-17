@@ -175,6 +175,7 @@ npm run benchmark:turbo-decode
 npm run benchmark:grid
 npm run benchmark:grid-acquisition
 npm run benchmark:grid-recovery
+npm run benchmark:grid-recovery:strict # reference-host 60 Hz p95 gate
 ```
 
 ## Repository map

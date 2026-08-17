@@ -27,6 +27,12 @@ Host decode timing is reported separately and is advisory. It is meaningful
 only when comparing materially identical hardware, runtime, power, and load
 conditions. It does not affect the process exit status.
 
+`npm run benchmark:grid-recovery` runs the Grid recovery suite in one worker and
+reports the same-frame registration timing without turning shared-runner noise
+into a release failure. On a declared, repeatable reference host,
+`npm run benchmark:grid-recovery:strict` additionally enforces the synthetic
+60 Hz p95 budget. Neither command is physical-camera evidence.
+
 This workload renders and captures frames entirely in software. It does **not**
 exercise a display, camera sensor, browser camera pipeline, rolling shutter,
 autofocus, exposure control, hand motion, or thermal throttling. It therefore
