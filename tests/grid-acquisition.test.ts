@@ -8,6 +8,7 @@ import {
   gridDecodeTargetFps,
   gridEmptyJobLimit,
   gridSessionLimitGuidance,
+  mostInformativeGridOutcome,
   shouldEndGridCameraSession,
   shouldPauseGridAcquisition,
 } from "../src/receiver/grid-acquisition";
@@ -120,11 +121,24 @@ describe("Grid camera acquisition policy", () => {
   });
 
   it("maps acquisition failures to operator-actionable guidance", () => {
-    expect(gridAcquisitionGuidance("markers-not-found")).toContain("four colored markers");
+    expect(gridAcquisitionGuidance("markers-not-found")).toContain("complete four-marker set");
+    expect(gridAcquisitionGuidance("markers-not-found")).toContain("not proof of bad aim");
     expect(gridAcquisitionGuidance("contrast-low")).toContain("brightness");
     expect(gridAcquisitionGuidance("frame-magic-invalid")).toContain("10 symbols/s");
+    expect(gridAcquisitionGuidance("decoded")).toContain("reached PHY decoding");
     expect(gridAcquisitionGuidance("decoded", true)).toContain("scanning stopped");
     expect(gridAcquisitionGuidance(undefined)).toContain("twenty seconds");
+  });
+
+  it("does not let the final bad exposure erase stronger acquisition evidence", () => {
+    let outcome = mostInformativeGridOutcome(undefined, "geometry-invalid");
+    outcome = mostInformativeGridOutcome(outcome, "frame-magic-invalid");
+    outcome = mostInformativeGridOutcome(outcome, "markers-not-found");
+    expect(outcome).toBe("frame-magic-invalid");
+
+    outcome = mostInformativeGridOutcome(outcome, "decoded");
+    outcome = mostInformativeGridOutcome(outcome, "invalid-image");
+    expect(outcome).toBe("decoded");
   });
 
   it("rejects invalid scheduling inputs", () => {

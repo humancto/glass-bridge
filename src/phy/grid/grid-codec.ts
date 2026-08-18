@@ -44,6 +44,8 @@ export type GridDecodeOutcome =
   | "contrast-low"
   | "frame-magic-invalid";
 
+export type GridOutcomeCounts = Record<GridDecodeOutcome, number>;
+
 export type GridRegistration = {
   topLeft: Point;
   topRight: Point;
@@ -274,6 +276,30 @@ function whiteningByte(index: number): number {
 }
 
 function locateMarkers(image: PixelBuffer): GridRegistration | undefined {
+  const strict = locateMarkersWith(
+    image,
+    classifyMarkerStrict,
+    3.5,
+  );
+  if (strict && validMarkerGeometry(strict, image.width, image.height)) return strict;
+
+  // A bounded second pass tolerates camera white balance and glare, but uses a
+  // tighter component-shape gate so ordinary colored UI bars do not displace
+  // the square fiducials selected by the strict pass.
+  const adaptive = locateMarkersWith(
+    image,
+    classifyMarkerByDominance,
+    2.0,
+  );
+  if (adaptive && validMarkerGeometry(adaptive, image.width, image.height)) return adaptive;
+  return strict ?? adaptive;
+}
+
+function locateMarkersWith(
+  image: PixelBuffer,
+  classifier: (red: number, green: number, blue: number) => keyof typeof MARKER_POINTS | undefined,
+  maximumComponentAspectRatio: number,
+): GridRegistration | undefined {
   const binSize = Math.max(6, Math.floor(Math.min(image.width, image.height) / 90));
   const binColumns = Math.ceil(image.width / binSize);
   const bins: Record<keyof typeof MARKER_POINTS, Map<number, MarkerAccumulator>> = {
@@ -289,7 +315,7 @@ function locateMarkers(image: PixelBuffer): GridRegistration | undefined {
       const red = image.data[offset];
       const green = image.data[offset + 1];
       const blue = image.data[offset + 2];
-      const key = classifyMarker(red, green, blue);
+      const key = classifier(red, green, blue);
       if (!key) continue;
       const binX = Math.floor(x / binSize);
       const binY = Math.floor(y / binSize);
@@ -308,6 +334,7 @@ function locateMarkers(image: PixelBuffer): GridRegistration | undefined {
       value,
       binColumns,
       Math.ceil(image.height / binSize),
+      maximumComponentAspectRatio,
     ),
   ])) as Record<keyof typeof MARKER_POINTS, MarkerAccumulator | undefined>;
   if (Object.values(clustered).some((value) => !value || value.count < minimum)) return undefined;
@@ -339,6 +366,7 @@ function strongestMarkerComponent(
   bins: Map<number, MarkerAccumulator>,
   binColumns: number,
   binRows: number,
+  maximumAspectRatio = 3.5,
 ): MarkerAccumulator | undefined {
   const remaining = new Set(bins.keys());
   let best: MarkerAccumulator | undefined;
@@ -383,7 +411,7 @@ function strongestMarkerComponent(
     const height = maxY - minY + 1;
     const aspectRatio = Math.max(width / height, height / width);
     const density = occupiedBins / (width * height);
-    if (aspectRatio <= 3.5 && density >= 0.25) {
+    if (aspectRatio <= maximumAspectRatio && density >= 0.25) {
       if (combined.count > bestCount) {
         best = combined;
         bestCount = combined.count;
@@ -411,11 +439,40 @@ function validMarkerGeometry(
   return crossProducts.every((value) => value > 0) || crossProducts.every((value) => value < 0);
 }
 
-function classifyMarker(red: number, green: number, blue: number): keyof typeof MARKER_POINTS | undefined {
+function classifyMarkerStrict(red: number, green: number, blue: number): keyof typeof MARKER_POINTS | undefined {
   if (red > 150 && green < 105 && blue < 105) return "topLeft";
   if (green > 145 && red < 125 && blue < 125) return "topRight";
   if (blue > 145 && red < 125 && green < 145) return "bottomRight";
   if (red > 145 && blue > 145 && green < 125) return "bottomLeft";
+  return undefined;
+}
+
+function classifyMarkerByDominance(
+  red: number,
+  green: number,
+  blue: number,
+): keyof typeof MARKER_POINTS | undefined {
+  // A camera does not preserve the sender's literal RGB values. Auto exposure,
+  // glare, white balance, display profiles, and bilinear resampling can raise
+  // every channel or dim all of them together. Classify by chroma and channel
+  // dominance instead of requiring fixed absolute channel ceilings.
+  const maximum = Math.max(red, green, blue);
+  const minimum = Math.min(red, green, blue);
+  if (maximum < 60 || maximum - minimum < 24) return undefined;
+
+  const redOverGreen = red - green;
+  const redOverBlue = red - blue;
+  const greenOverRed = green - red;
+  const greenOverBlue = green - blue;
+  const blueOverRed = blue - red;
+  const blueOverGreen = blue - green;
+
+  // Magenta must be tested before red/blue so a camera colour matrix that
+  // favors one of its two high channels does not rotate the corner identity.
+  if (redOverGreen >= 24 && blueOverGreen >= 24) return "bottomLeft";
+  if (redOverGreen >= 24 && redOverBlue >= 24) return "topLeft";
+  if (greenOverRed >= 24 && greenOverBlue >= 24) return "topRight";
+  if (blueOverRed >= 24 && blueOverGreen >= 16) return "bottomRight";
   return undefined;
 }
 

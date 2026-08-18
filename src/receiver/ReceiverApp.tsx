@@ -15,12 +15,13 @@ import {
 } from "./decode-worker-pool";
 import {
   CameraStartGuard,
+  cameraVideoConstraints,
   captureLayoutsEqual,
   createCaptureLayout,
   stopMediaStream,
 } from "./camera-capture";
 import { OPTICAL_PROFILES } from "../protocol/optical-profile";
-import type { GridDecodeOutcome } from "../phy/grid/grid-codec";
+import type { GridDecodeOutcome, GridOutcomeCounts } from "../phy/grid/grid-codec";
 import {
   GRID_CAMERA_SESSION_LIMIT_MS,
   GRID_INITIAL_ACQUISITION_TIMEOUT_MS,
@@ -28,6 +29,7 @@ import {
   didGridTransportAdvance,
   gridAcquisitionGuidance,
   gridDecodeTargetFps,
+  mostInformativeGridOutcome,
   gridSessionLimitGuidance,
   shouldPauseGridAcquisition,
   shouldEndGridCameraSession,
@@ -110,6 +112,8 @@ type LiveMetrics = {
   samplingStatus: "oversampled" | "single-sampled" | "undersampled" | "unknown";
   samplingWarning?: string;
   gridOutcome?: GridDecodeOutcome;
+  gridFurthestPhyOutcome?: GridDecodeOutcome;
+  gridOutcomeCounts?: GridOutcomeCounts;
   gridContrast?: number;
   gridScreenFillRatio?: number;
   gridCorrectedCodewords?: number;
@@ -389,7 +393,7 @@ export default function ReceiverApp() {
 
     let stream: MediaStream | undefined;
     try {
-      stream = await openCameraStream();
+      stream = await openCameraStream(trust.visualPhy === "mono-grid-v0");
       if (!cameraStartGuardRef.current.trackStream(cameraGeneration, stream)) return;
       const video = videoRef.current;
       if (!video) {
@@ -453,6 +457,15 @@ export default function ReceiverApp() {
       let acquisitionWatchdogId = 0;
       let sessionWatchdogId = 0;
       let gridOutcome: GridDecodeOutcome | undefined;
+      let gridDiagnosticOutcome: GridDecodeOutcome | undefined;
+      const gridOutcomeCounts: GridOutcomeCounts = {
+        decoded: 0,
+        "invalid-image": 0,
+        "markers-not-found": 0,
+        "geometry-invalid": 0,
+        "contrast-low": 0,
+        "frame-magic-invalid": 0,
+      };
       let gridContrast: number | undefined;
       let gridScreenFillRatio: number | undefined;
       let gridCorrectedCodewords: number | undefined;
@@ -524,6 +537,12 @@ export default function ReceiverApp() {
           samplingStatus: sampling.status,
           samplingWarning: sampling.warning,
           gridOutcome,
+          gridFurthestPhyOutcome: visualPhy === "mono-grid-v0"
+            ? gridDiagnosticOutcome
+            : undefined,
+          gridOutcomeCounts: visualPhy === "mono-grid-v0"
+            ? { ...gridOutcomeCounts }
+            : undefined,
           gridContrast,
           gridScreenFillRatio,
           gridCorrectedCodewords,
@@ -554,7 +573,7 @@ export default function ReceiverApp() {
         updateMetrics(true);
         controls.stop();
         controlsRef.current = undefined;
-        setError(gridAcquisitionGuidance(gridOutcome, hasAcceptedGridFrame));
+        setError(gridAcquisitionGuidance(gridDiagnosticOutcome, hasAcceptedGridFrame));
         setStage("error");
       };
       const armGridAcquisitionWatchdog = () => {
@@ -646,6 +665,11 @@ export default function ReceiverApp() {
         const codes = result.codes ?? [];
         if (result.grid) {
           gridOutcome = result.grid.outcome;
+          gridOutcomeCounts[result.grid.outcome] += 1;
+          gridDiagnosticOutcome = mostInformativeGridOutcome(
+            gridDiagnosticOutcome,
+            result.grid.outcome,
+          );
           gridContrast = result.grid.contrast;
           gridScreenFillRatio = result.grid.screenFillRatio;
           gridCorrectedCodewords = result.grid.correctedCodewords;
@@ -836,13 +860,14 @@ export default function ReceiverApp() {
           return;
         }
         const frameLayout = captureLayout;
+        const sourceRegion = frameLayout.sourceRegion;
         const captureCopyStartedAt = performance.now();
         captureContext.drawImage(
           video,
-          0,
-          0,
-          frameLayout.sourceWidth,
-          frameLayout.sourceHeight,
+          sourceRegion.x,
+          sourceRegion.y,
+          sourceRegion.width,
+          sourceRegion.height,
           0,
           0,
           frameLayout.width,
@@ -1234,7 +1259,7 @@ export default function ReceiverApp() {
             {trust.targetSymbolRate && <div><span>TARGET RATE</span><strong>{trust.targetSymbolRate} symbols/s</strong></div>}
           </div>
 
-          <div className={`camera-shell ${stage === "scanning" && sourceMode === "camera" ? "camera-live" : ""}`}>
+          <div className={`camera-shell ${trust.visualPhy === "mono-grid-v0" ? "camera-grid" : ""} ${stage === "scanning" && sourceMode === "camera" ? "camera-live" : ""}`}>
             <video ref={videoRef} muted playsInline aria-label="Live camera preview" />
             <div className="camera-reticle" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
             {(stage !== "scanning" || sourceMode === "files") && (
@@ -1281,6 +1306,9 @@ export default function ReceiverApp() {
                   decode p50 {liveMetrics.medianDecodeMs.toFixed(0)} / p95 {liveMetrics.p95DecodeMs.toFixed(0)} ms
                   {` · round trip p95 ${liveMetrics.workerRoundTripP95Ms.toFixed(0)} ms`}
                   {liveMetrics.gridOutcome ? ` · ${liveMetrics.gridOutcome}` : ""}
+                  {liveMetrics.gridFurthestPhyOutcome && liveMetrics.gridFurthestPhyOutcome !== liveMetrics.gridOutcome
+                    ? ` · furthest PHY ${liveMetrics.gridFurthestPhyOutcome}`
+                    : ""}
                   {liveMetrics.gridContrast !== undefined ? ` · contrast ${liveMetrics.gridContrast}` : ""}
                 </small>
               </div>
@@ -1517,7 +1545,9 @@ export function CapacityScorecard({
           <div><dt>Decoder</dt><dd>{report.camera.valid_codes_per_second.toFixed(1)} valid codes/s · p50 {report.camera.decode_p50_ms.toFixed(1)} ms · p95 {report.camera.decode_p95_ms.toFixed(1)} ms</dd></div>
           {report.camera.decode_jobs !== undefined && <div><dt>Optical acquisition</dt><dd>{report.camera.optical_acquisition_percent?.toFixed(1)}% · {report.camera.successful_decode_jobs} symbol jobs / {report.camera.decode_jobs} completed jobs · {report.camera.empty_decode_jobs} empty</dd></div>}
           {report.camera.unique_codes_per_second !== undefined && <div><dt>Symbol yield</dt><dd>{report.camera.unique_codes_per_second.toFixed(1)} unique/s · {report.camera.duplicate_codes_per_second?.toFixed(1) ?? "—"} duplicate/s</dd></div>}
-          {report.camera.grid_last_outcome && <div><dt>Grid lock</dt><dd>{report.camera.grid_last_outcome} · contrast {report.camera.grid_contrast?.toFixed(0) ?? "—"} · fill {report.camera.grid_screen_fill_percent?.toFixed(1) ?? "—"}% · registration reused {report.camera.grid_registration_reuse_percent?.toFixed(1) ?? "—"}%</dd></div>}
+          {report.camera.grid_last_outcome && <div><dt>Last Grid attempt</dt><dd>{report.camera.grid_last_outcome} · contrast {report.camera.grid_contrast?.toFixed(0) ?? "—"} · fill {report.camera.grid_screen_fill_percent?.toFixed(1) ?? "—"}% · registration reused {report.camera.grid_registration_reuse_percent?.toFixed(1) ?? "—"}%</dd></div>}
+          {report.camera.grid_furthest_phy_outcome && <div><dt>Furthest Grid PHY stage</dt><dd>{report.camera.grid_furthest_phy_outcome}</dd></div>}
+          {report.camera.grid_outcome_counts && <div><dt>Grid attempt outcomes</dt><dd>{Object.entries(report.camera.grid_outcome_counts).map(([outcome, count]) => `${outcome} ${count}`).join(" · ")}</dd></div>}
           {report.camera.same_frame_reacquisitions !== undefined && <div><dt>Same-frame Grid reacquisition</dt><dd>{report.camera.same_frame_reacquisition_successes ?? 0} / {report.camera.same_frame_reacquisitions} successful · p50 {report.camera.same_frame_reacquisition_p50_ms?.toFixed(1) ?? "—"} ms · p95 {report.camera.same_frame_reacquisition_p95_ms?.toFixed(1) ?? "—"} ms</dd></div>}
           {report.profile.visual_phy && <div><dt>Bound channel</dt><dd>{report.profile.visual_phy} · {report.profile.target_symbol_rate ?? "—"} symbols/s target</dd></div>}
           <div><dt>Pressure</dt><dd>{report.camera.busy_drops} busy drops · {report.camera.rate_limited_exposures ?? 0} rate-limited exposures · {report.camera.submitted_exposures ?? "—"} submitted exposures · {report.camera.workers} workers · copy p95 {report.camera.capture_copy_p95_ms?.toFixed(1) ?? "—"} ms · worker round trip p95 {report.camera.worker_round_trip_p95_ms?.toFixed(1) ?? "—"} ms</dd></div>
@@ -1560,23 +1590,27 @@ function downloadFile(file: File): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-async function openCameraStream(): Promise<MediaStream> {
-  const baseConstraints: MediaTrackConstraints = {
-    facingMode: { ideal: "environment" },
-    width: { ideal: 1_280 },
-    height: { ideal: 720 },
-    aspectRatio: { ideal: 16 / 9 },
-  };
+async function openCameraStream(preferGridResolution = false): Promise<MediaStream> {
+  if (preferGridResolution) {
+    // iPhone Safari selected 720p when exact 60 fps was requested, leaving the
+    // 248-column Grid below its spatial sampling floor. Grid30 needs resolution
+    // more than duplicate temporal samples, so ask for 1080p-class input at a
+    // camera cadence the transport can actually consume.
+    return navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: cameraVideoConstraints("grid"),
+    });
+  }
   try {
     return await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { ...baseConstraints, frameRate: { exact: 60 } },
+      video: cameraVideoConstraints("qr", true),
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "NotAllowedError") throw error;
     return navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { ...baseConstraints, frameRate: { ideal: 60 } },
+      video: cameraVideoConstraints("qr", false),
     });
   }
 }

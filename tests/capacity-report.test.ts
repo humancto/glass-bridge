@@ -61,6 +61,15 @@ const camera = {
   sameFrameReacquisitionP50Ms: 8.1,
   sameFrameReacquisitionP95Ms: 11.4,
   gridOutcome: "decoded" as const,
+  gridFurthestPhyOutcome: "decoded" as const,
+  gridOutcomeCounts: {
+    decoded: 82,
+    "invalid-image": 0,
+    "markers-not-found": 7,
+    "geometry-invalid": 3,
+    "contrast-low": 2,
+    "frame-magic-invalid": 26,
+  },
   gridContrast: 181.4,
   gridScreenFillRatio: 0.539,
   gridCorrectedCodewords: 0,
@@ -68,10 +77,10 @@ const camera = {
   timeToFirstValidMs: 864.25,
 };
 
-function report(goodput?: number): CapacityReport {
+function report(goodput?: number, profileId: "burst" | "grid" = "burst"): CapacityReport {
   const value = createCapacityReport({
     measuredAt: new Date("2026-08-05T01:02:03.000Z"),
-    profileId: "burst",
+    profileId,
     targetSymbolRate: 60,
     transferSession: "09090909",
     fileBytes: 144 * 1_024,
@@ -129,23 +138,42 @@ describe("post-receive capacity reports", () => {
       worker_round_trip_p50_ms: 5.5,
       worker_round_trip_p95_ms: 9.25,
       rgba_bytes_per_second: 124_416_000,
-      same_frame_reacquisitions: 4,
-      same_frame_reacquisition_successes: 3,
-      same_frame_reacquisition_p50_ms: 8.1,
-      same_frame_reacquisition_p95_ms: 11.4,
       sampling_ratio: 1,
       sampling_status: "single-sampled",
-      grid_last_outcome: "decoded",
-      grid_contrast: 181.4,
-      grid_screen_fill_percent: 53.9,
-      grid_corrected_codewords: 0,
-      grid_registration_reuse_percent: 93.8,
     });
+    expect(value.camera.grid_last_outcome).toBeUndefined();
+    expect(value.camera.grid_outcome_counts).toBeUndefined();
+    expect(value.camera.same_frame_reacquisitions).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(value)).camera).not.toHaveProperty("grid_outcome_counts");
     expect(value.transport).toEqual({
       encoding: "gzip",
       signed_envelope_bytes: 148_000,
       optical_object_bytes: 32_000,
       optical_reduction_percent: 78.4,
+    });
+  });
+
+  it("includes Grid outcome evidence only for the Grid PHY", () => {
+    const value = report(undefined, "grid");
+    expect(value.camera).toMatchObject({
+      grid_last_outcome: "decoded",
+      grid_furthest_phy_outcome: "decoded",
+      grid_outcome_counts: {
+        decoded: 82,
+        "invalid-image": 0,
+        "markers-not-found": 7,
+        "geometry-invalid": 3,
+        "contrast-low": 2,
+        "frame-magic-invalid": 26,
+      },
+      grid_contrast: 181.4,
+      grid_screen_fill_percent: 53.9,
+      grid_corrected_codewords: 0,
+      grid_registration_reuse_percent: 93.8,
+      same_frame_reacquisitions: 4,
+      same_frame_reacquisition_successes: 3,
+      same_frame_reacquisition_p50_ms: 8.1,
+      same_frame_reacquisition_p95_ms: 11.4,
     });
   });
 

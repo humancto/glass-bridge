@@ -28,13 +28,14 @@ The earlier benchmark started with an already framed, integer-scaled Grid. The l
 
 ## Receiver changes
 
-- Colored fiducials are selected as guarded connected components instead of global color averages.
+- Colored fiducials use the original strict classifier first, followed only when needed by one bounded chroma-dominance pass with tighter square-component geometry.
 - Geometry is validated before cell sampling.
 - Luma thresholds use a fixed histogram rather than allocating and sorting 25,088 samples.
 - Sampling radius is derived from observed cell pitch and stays at one center pixel near three pixels per module.
-- One Grid worker reuses its last successful registration, periodically performs a global reacquisition, and can perform a bounded same-exposure fresh reacquisition after a transport-invalid decode. This is reuse plus reacquisition, not local quadrilateral tracking.
-- Camera submissions are media-time aware and target-rate bounded; stale or duplicate callbacks are not decoded.
-- Grid uses a full-field 960×540 decode raster instead of 1280×720, reducing RGBA readback from about 221 MB/s to 124 MB/s at 60 exposures/s.
+- One Grid worker reuses its last transport-valid registration, treats a periodic global refresh as a candidate, retains the verified registration when that refresh fails, and can perform a bounded same-exposure fresh reacquisition after a transport-invalid decode. This is reuse plus reacquisition, not local quadrilateral tracking.
+- Camera submissions use `presentedFrames` when available and are target-rate bounded; stale or duplicate callbacks are not decoded.
+- Grid decodes the same centered 16:9 cover crop shown in the phone preview at 960×540. This avoids squeezing Safari's portrait-shaped camera source into a 540×960 worker raster and makes the operator guide describe the pixels actually decoded.
+- Grid requests 1080p-class source resolution at 30 fps rather than forcing 60 fps at 720p; the 248-column PHY needs spatial samples more than duplicate temporal observations.
 - The receiver allows 20 seconds for initial aiming, then stops after ten seconds without a new CRC-valid unique symbol.
 - An absolute 120-second Grid camera-session ceiling bounds a failed lab run without treating a legitimate LT rank plateau as corruption.
 - CRC-invalid frames cannot reset the optical-progress watchdog.
@@ -48,6 +49,7 @@ Live and exported reports now distinguish:
 - accepted unique symbols per second;
 - duplicate symbols per second;
 - busy drops and rate-limited exposures;
+- last Grid attempt, furthest PHY stage, and a per-outcome Grid histogram;
 - last Grid outcome, contrast, screen fill, corrected codewords, and registration reuse;
 - reconstruction rank and required rank.
 - time to first valid symbol, camera-open-to-verified diagnostic goodput, and the legacy first-accepted-to-verified diagnostic window.

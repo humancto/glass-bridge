@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { classifyFailure, createDeviceRunFailureReport } from "../src/receiver/device-run-report";
+import { gridAcquisitionGuidance } from "../src/receiver/grid-acquisition";
 
 const camera = {
   cameraFps: 59.8,
@@ -36,6 +37,15 @@ const camera = {
   sameFrameReacquisitionP50Ms: 8.4,
   sameFrameReacquisitionP95Ms: 12.7,
   gridOutcome: "markers-not-found" as const,
+  gridFurthestPhyOutcome: "frame-magic-invalid" as const,
+  gridOutcomeCounts: {
+    decoded: 0,
+    "invalid-image": 0,
+    "markers-not-found": 320,
+    "geometry-invalid": 12,
+    "contrast-low": 8,
+    "frame-magic-invalid": 132,
+  },
   gridContrast: 22.4,
   gridScreenFillRatio: 0.31,
   gridCorrectedCodewords: 17,
@@ -100,6 +110,15 @@ describe("physical device failure reports", () => {
         same_frame_reacquisition_p95_ms: 12.7,
         sampling_status: "oversampled",
         grid_last_outcome: "markers-not-found",
+        grid_furthest_phy_outcome: "frame-magic-invalid",
+        grid_outcome_counts: {
+          decoded: 0,
+          "invalid-image": 0,
+          "markers-not-found": 320,
+          "geometry-invalid": 12,
+          "contrast-low": 8,
+          "frame-magic-invalid": 132,
+        },
         grid_contrast: 22.4,
         grid_screen_fill_percent: 31,
         grid_corrected_codewords: 17,
@@ -111,12 +130,26 @@ describe("physical device failure reports", () => {
 
   it("uses stable failure classes for the major pipeline stages", () => {
     expect(classifyFailure("Camera unavailable: permission denied")).toBe("camera-error");
+    expect(classifyFailure("Live camera scanning requires the HTTPS receiver page.")).toBe("camera-error");
     expect(classifyFailure("Optical decoder unavailable: WASM failed")).toBe("decode-error");
     expect(classifyFailure("paired to a different transfer session")).toBe("session-mismatch");
     expect(classifyFailure("Not enough independent frames: rank 4 of 20")).toBe("rank-incomplete");
     expect(classifyFailure("Signature verification failed")).toBe("verification-or-policy-error");
     expect(classifyFailure("Operator stopped camera scanning before verification.")).toBe("operator-or-environment-error");
     expect(classifyFailure("Operator stopped saved-frame decoding before verification.")).toBe("operator-or-environment-error");
+  });
+
+  it("does not misclassify Grid acquisition guidance as a camera API failure", () => {
+    for (const outcome of [
+      "markers-not-found",
+      "geometry-invalid",
+      "contrast-low",
+      "frame-magic-invalid",
+      "decoded",
+    ] as const) {
+      expect(classifyFailure(gridAcquisitionGuidance(outcome))).toBe("operator-or-environment-error");
+    }
+    expect(classifyFailure(gridAcquisitionGuidance("invalid-image"))).toBe("camera-error");
   });
 
   it("publishes a machine-readable schema for failed physical runs", async () => {
