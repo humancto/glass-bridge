@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   CameraStartGuard,
+  cameraVideoConstraints,
   captureLayoutsEqual,
+  centeredCoverRegion,
   createCaptureLayout,
   dualLaneCaptureRegions,
   fitCaptureDimensions,
@@ -54,6 +56,16 @@ describe("camera startup generation guard", () => {
 });
 
 describe("camera capture sizing", () => {
+  it("prioritizes 1080p-class spatial resolution over forced 60 fps for Grid", () => {
+    expect(cameraVideoConstraints("grid")).toMatchObject({
+      width: { ideal: 1_920 },
+      height: { ideal: 1_080 },
+      frameRate: { ideal: 30, max: 30 },
+    });
+    expect(cameraVideoConstraints("qr", true).frameRate).toEqual({ exact: 60 });
+    expect(cameraVideoConstraints("qr", false).frameRate).toEqual({ ideal: 60 });
+  });
+
   it("preserves a full 1280x720 landscape frame for two optical lanes", () => {
     expect(fitCaptureDimensions(1_280, 720)).toEqual({ width: 1_280, height: 720 });
     expect(fitCaptureDimensions(1_920, 1_080)).toEqual({ width: 1_280, height: 720 });
@@ -75,15 +87,15 @@ describe("Grid camera capture sizing", () => {
     expect(fitGridCaptureDimensions(1_920, 1_080)).toEqual({ width: 960, height: 540 });
   });
 
-  it("preserves the full portrait-shaped Safari field of view", () => {
-    expect(fitGridCaptureDimensions(720, 1_280)).toEqual({ width: 540, height: 960 });
+  it("keeps a fixed 16:9 Grid decoder for a portrait-shaped Safari source", () => {
+    expect(fitGridCaptureDimensions(720, 1_280)).toEqual({ width: 960, height: 540 });
   });
 
-  it("leaves Grid sources below the decode budget unchanged", () => {
-    expect(fitGridCaptureDimensions(640, 360)).toEqual({ width: 640, height: 360 });
+  it("uses the fixed Grid decoder for sources below the output budget", () => {
+    expect(fitGridCaptureDimensions(640, 360)).toEqual({ width: 960, height: 540 });
   });
 
-  it("atomically reconfigures full-FOV Grid capture from portrait to landscape", () => {
+  it("matches the centered 16:9 preview crop for portrait and landscape sources", () => {
     const portrait = createCaptureLayout(720, 1_280, "grid", 1);
     const samePortrait = createCaptureLayout(720, 1_280, "grid", 1);
     const landscape = createCaptureLayout(1_280, 720, "grid", 1);
@@ -91,19 +103,22 @@ describe("Grid camera capture sizing", () => {
     expect(portrait).toMatchObject({
       sourceWidth: 720,
       sourceHeight: 1_280,
-      width: 540,
-      height: 960,
+      sourceRegion: { x: 0, y: 437, width: 720, height: 405 },
+      width: 960,
+      height: 540,
     });
     expect(captureLayoutsEqual(portrait, samePortrait)).toBe(true);
     expect(captureLayoutsEqual(portrait, landscape)).toBe(false);
     expect(landscape).toMatchObject({
       sourceWidth: 1_280,
       sourceHeight: 720,
+      sourceRegion: { x: 0, y: 0, width: 1_280, height: 720 },
       width: 960,
       height: 540,
     });
-    expect(portrait.width / portrait.height).toBe(portrait.sourceWidth / portrait.sourceHeight);
-    expect(landscape.width / landscape.height).toBe(landscape.sourceWidth / landscape.sourceHeight);
+    expect(portrait.width / portrait.height).toBeCloseTo(16 / 9);
+    expect(landscape.width / landscape.height).toBeCloseTo(16 / 9);
+    expect(centeredCoverRegion(1_280, 720)).toEqual({ x: 0, y: 0, width: 1_280, height: 720 });
   });
 });
 

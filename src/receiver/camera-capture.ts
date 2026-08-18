@@ -3,6 +3,7 @@ export type CaptureRegion = { x: number; y: number; width: number; height: numbe
 export type CaptureLayout = {
   sourceWidth: number;
   sourceHeight: number;
+  sourceRegion: CaptureRegion;
   width: number;
   height: number;
   laneRegions?: [CaptureRegion, CaptureRegion];
@@ -12,6 +13,21 @@ type StoppableStream = Pick<MediaStream, "getTracks">;
 
 export const GRID_CAPTURE_LONG_EDGE = 960;
 export const GRID_CAPTURE_MAX_PIXELS = 960 * 540;
+
+export function cameraVideoConstraints(
+  mode: "grid" | "qr",
+  strictHighRate = true,
+): MediaTrackConstraints {
+  return {
+    facingMode: { ideal: "environment" },
+    width: { ideal: 1_920 },
+    height: { ideal: 1_080 },
+    aspectRatio: { ideal: 16 / 9 },
+    frameRate: mode === "grid"
+      ? { ideal: 30, max: 30 }
+      : strictHighRate ? { exact: 60 } : { ideal: 60 },
+  };
+}
 
 /**
  * Owns one asynchronous camera startup attempt. Every start, stop, reset, or
@@ -105,26 +121,44 @@ export function fitCaptureDimensions(
 }
 
 /**
- * Grid uses the complete camera field of view but a smaller RGBA raster than
- * dense QR. A 16:9 camera becomes 960x540 (or 540x960 when Safari reports the
- * track rotated), reducing per-exposure bytes by 43.75% from 1280x720.
+ * Grid always decodes the same 16:9 raster shown in the operator preview.
+ * Keeping this geometry fixed avoids squeezing a 248-column landscape PHY
+ * into a 540-pixel portrait raster when Safari reports a rotated camera track.
  */
 export function fitGridCaptureDimensions(
   sourceWidth: number,
   sourceHeight: number,
 ): CaptureDimensions {
-  return fitCaptureDimensions(
-    sourceWidth,
-    sourceHeight,
-    GRID_CAPTURE_LONG_EDGE,
-    GRID_CAPTURE_MAX_PIXELS,
-  );
+  fitCaptureDimensions(sourceWidth, sourceHeight);
+  return { width: GRID_CAPTURE_LONG_EDGE, height: GRID_CAPTURE_MAX_PIXELS / GRID_CAPTURE_LONG_EDGE };
+}
+
+/** Matches CSS object-fit: cover with a centered source crop. */
+export function centeredCoverRegion(
+  sourceWidth: number,
+  sourceHeight: number,
+  targetAspectRatio = 16 / 9,
+): CaptureRegion {
+  if (
+    ![sourceWidth, sourceHeight, targetAspectRatio].every(Number.isFinite) ||
+    sourceWidth <= 0 || sourceHeight <= 0 || targetAspectRatio <= 0
+  ) {
+    throw new Error("Cover crop requires positive finite dimensions.");
+  }
+  const sourceAspectRatio = sourceWidth / sourceHeight;
+  if (sourceAspectRatio > targetAspectRatio) {
+    const width = Math.max(1, Math.floor(sourceHeight * targetAspectRatio));
+    return { x: Math.floor((sourceWidth - width) / 2), y: 0, width, height: sourceHeight };
+  }
+  const height = Math.max(1, Math.floor(sourceWidth / targetAspectRatio));
+  return { x: 0, y: Math.floor((sourceHeight - height) / 2), width: sourceWidth, height };
 }
 
 /**
  * Builds one internally consistent capture geometry from the video's current
- * intrinsic dimensions. Both orientations preserve the complete field of view;
- * dual-lane crops are always derived from the same bounded output raster.
+ * intrinsic dimensions. QR preserves the complete field of view. Grid uses
+ * the centered 16:9 cover crop visible inside the operator's preview, so the
+ * reticle and the pixels sent to the worker describe the same scene.
  */
 export function createCaptureLayout(
   sourceWidth: number,
@@ -135,9 +169,13 @@ export function createCaptureLayout(
   const dimensions = visualMode === "grid"
     ? fitGridCaptureDimensions(sourceWidth, sourceHeight)
     : fitCaptureDimensions(sourceWidth, sourceHeight);
+  const sourceRegion = visualMode === "grid"
+    ? centeredCoverRegion(sourceWidth, sourceHeight)
+    : { x: 0, y: 0, width: sourceWidth, height: sourceHeight };
   return {
     sourceWidth,
     sourceHeight,
+    sourceRegion,
     width: dimensions.width,
     height: dimensions.height,
     laneRegions: visualMode === "qr" && lanes === 2
@@ -149,9 +187,15 @@ export function createCaptureLayout(
 export function captureLayoutsEqual(left: CaptureLayout, right: CaptureLayout): boolean {
   return left.sourceWidth === right.sourceWidth &&
     left.sourceHeight === right.sourceHeight &&
+    equalRegion(left.sourceRegion, right.sourceRegion) &&
     left.width === right.width &&
     left.height === right.height &&
     equalRegions(left.laneRegions, right.laneRegions);
+}
+
+function equalRegion(left: CaptureRegion, right: CaptureRegion): boolean {
+  return left.x === right.x && left.y === right.y &&
+    left.width === right.width && left.height === right.height;
 }
 
 /**

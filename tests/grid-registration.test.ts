@@ -118,6 +118,34 @@ describe("Grid registration recovery", () => {
     expect(decoded.validFrame).toBe(false);
   });
 
+  it("does not discard verified registration when a periodic marker refresh misses", () => {
+    const encoder = new OpticalTransferEncoder(deterministicBytes(8_192), {
+      sessionId: Uint8Array.from({ length: 16 }, (_, index) => (index * 19 + 7) & 0xff),
+      symbolSize: OPTICAL_PROFILES.grid.symbolSize,
+      codec: OPTICAL_PROFILES.grid.codec,
+    });
+    const frame = encoder.frameBytes(4);
+    const visible = renderGridFrame(frame);
+    const decoder = new GridWorkerDecoder();
+
+    expect(decoder.decode(visible).validFrame).toBe(true);
+    for (let job = 1; job < 15; job += 1) {
+      expect(decoder.decode(visible).validFrame).toBe(true);
+    }
+
+    const markerMiss = eraseExactMarkerColours(visible);
+    const refresh = decoder.decode(markerMiss);
+    expect(refresh.validFrame).toBe(true);
+    expect(refresh.registrationReused).toBe(true);
+    expect(refresh.reacquiredSameFrame).toBe(false);
+    expect(refresh.decoded.frame).toEqual(frame);
+
+    const following = decoder.decode(markerMiss);
+    expect(following.validFrame).toBe(true);
+    expect(following.registrationReused).toBe(true);
+    expect(following.decoded.frame).toEqual(frame);
+  });
+
   it("bounds repeated fresh-registration work after an unsuccessful retry", () => {
     const backoff = new GridReacquisitionBackoff(2);
     expect(backoff.allowsFreshAttempt).toBe(true);
@@ -145,4 +173,22 @@ describe("Grid registration recovery", () => {
 
 function deterministicBytes(length: number): Uint8Array {
   return Uint8Array.from({ length }, (_, index) => (index * 31 + 17) & 0xff);
+}
+
+function eraseExactMarkerColours(image: ReturnType<typeof renderGridFrame>) {
+  const data = image.data.slice();
+  for (let offset = 0; offset < data.length; offset += 4) {
+    const red = data[offset];
+    const green = data[offset + 1];
+    const blue = data[offset + 2];
+    const marker = (red === 255 && green === 0 && blue === 0) ||
+      (red === 0 && green === 255 && blue === 0) ||
+      (red === 0 && green === 80 && blue === 255) ||
+      (red === 255 && green === 0 && blue === 255);
+    if (!marker) continue;
+    data[offset] = 255;
+    data[offset + 1] = 255;
+    data[offset + 2] = 255;
+  }
+  return { ...image, data };
 }

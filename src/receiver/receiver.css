@@ -151,6 +151,7 @@ button { -webkit-tap-highlight-color: transparent; }
   .receiver-footer { grid-template-columns: 1fr; }
   .receiver-footer span { padding: 8px 2px; }
   .camera-shell { aspect-ratio: 3 / 4; }
+  .camera-shell.camera-grid { aspect-ratio: 16 / 9; }
   .evidence-actions { grid-template-columns: 1fr; }
   .capacity-actions { grid-template-columns: 1fr; }
   .capacity-scorecard-heading,.capacity-hero,.capacity-comparison > div,.capacity-metric-grid > div,.capacity-diagnostics summary,.capacity-diagnostics dl div { padding-inline: 14px; }

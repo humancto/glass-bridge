@@ -158,6 +158,29 @@
             "frame-magic-invalid"
           ]
         },
+        "grid_furthest_phy_outcome": {
+          "enum": [
+            "decoded",
+            "invalid-image",
+            "markers-not-found",
+            "geometry-invalid",
+            "contrast-low",
+            "frame-magic-invalid"
+          ]
+        },
+        "grid_outcome_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decoded", "invalid-image", "markers-not-found", "geometry-invalid", "contrast-low", "frame-magic-invalid"],
+          "properties": {
+            "decoded": { "type": "integer", "minimum": 0 },
+            "invalid-image": { "type": "integer", "minimum": 0 },
+            "markers-not-found": { "type": "integer", "minimum": 0 },
+            "geometry-invalid": { "type": "integer", "minimum": 0 },
+            "contrast-low": { "type": "integer", "minimum": 0 },
+            "frame-magic-invalid": { "type": "integer", "minimum": 0 }
+          }
+        },
         "grid_contrast": { "type": "number", "minimum": 0, "maximum": 255 },
         "grid_screen_fill_percent": { "type": "number", "minimum": 0, "maximum": 100 },
         "grid_corrected_codewords": { "type": "integer", "minimum": 0 },

@@ -4,6 +4,7 @@ import {
   type CameraSamplingStatus,
   type CapacityCameraMetrics,
 } from "./capacity-report";
+import type { GridDecodeOutcome, GridOutcomeCounts } from "../phy/grid/grid-codec";
 
 export type DeviceRunFailureClass =
   | "camera-error"
@@ -73,6 +74,8 @@ export type DeviceRunFailureReport = {
     sampling_status?: CameraSamplingStatus;
     sampling_warning?: string;
     grid_last_outcome?: string;
+    grid_furthest_phy_outcome?: GridDecodeOutcome;
+    grid_outcome_counts?: GridOutcomeCounts;
     grid_contrast?: number;
     grid_screen_fill_percent?: number;
     grid_corrected_codewords?: number;
@@ -159,20 +162,40 @@ export function createDeviceRunFailureReport(input: {
       worker_round_trip_p50_ms: optionalRound(input.camera.workerRoundTripP50Ms, 2),
       worker_round_trip_p95_ms: optionalRound(input.camera.workerRoundTripP95Ms, 2),
       rgba_bytes_per_second: optionalRound(input.camera.rgbaBytesPerSecond, 2),
-      same_frame_reacquisitions: input.camera.sameFrameReacquisitions,
-      same_frame_reacquisition_successes: input.camera.sameFrameReacquisitionSuccesses,
-      same_frame_reacquisition_p50_ms: optionalRound(input.camera.sameFrameReacquisitionP50Ms, 2),
-      same_frame_reacquisition_p95_ms: optionalRound(input.camera.sameFrameReacquisitionP95Ms, 2),
+      same_frame_reacquisitions: profile?.visualPhy === "mono-grid-v0"
+        ? input.camera.sameFrameReacquisitions
+        : undefined,
+      same_frame_reacquisition_successes: profile?.visualPhy === "mono-grid-v0"
+        ? input.camera.sameFrameReacquisitionSuccesses
+        : undefined,
+      same_frame_reacquisition_p50_ms: profile?.visualPhy === "mono-grid-v0"
+        ? optionalRound(input.camera.sameFrameReacquisitionP50Ms, 2)
+        : undefined,
+      same_frame_reacquisition_p95_ms: profile?.visualPhy === "mono-grid-v0"
+        ? optionalRound(input.camera.sameFrameReacquisitionP95Ms, 2)
+        : undefined,
       sampling_ratio: optionalRound(input.camera.samplingRatio ?? sampling.ratio, 2),
       sampling_status: input.camera.samplingStatus ?? sampling.status,
       sampling_warning: input.camera.samplingWarning ?? sampling.warning,
-      grid_last_outcome: input.camera.gridOutcome,
-      grid_contrast: optionalRound(input.camera.gridContrast, 1),
-      grid_screen_fill_percent: input.camera.gridScreenFillRatio === undefined
+      grid_last_outcome: profile?.visualPhy === "mono-grid-v0" ? input.camera.gridOutcome : undefined,
+      grid_furthest_phy_outcome: profile?.visualPhy === "mono-grid-v0"
+        ? input.camera.gridFurthestPhyOutcome
+        : undefined,
+      grid_outcome_counts: profile?.visualPhy === "mono-grid-v0"
+        ? input.camera.gridOutcomeCounts
+        : undefined,
+      grid_contrast: profile?.visualPhy === "mono-grid-v0"
+        ? optionalRound(input.camera.gridContrast, 1)
+        : undefined,
+      grid_screen_fill_percent: profile?.visualPhy !== "mono-grid-v0" || input.camera.gridScreenFillRatio === undefined
         ? undefined
         : round(input.camera.gridScreenFillRatio * 100, 1),
-      grid_corrected_codewords: input.camera.gridCorrectedCodewords,
-      grid_registration_reuse_percent: optionalRound(input.camera.gridRegistrationReusePercent, 1),
+      grid_corrected_codewords: profile?.visualPhy === "mono-grid-v0"
+        ? input.camera.gridCorrectedCodewords
+        : undefined,
+      grid_registration_reuse_percent: profile?.visualPhy === "mono-grid-v0"
+        ? optionalRound(input.camera.gridRegistrationReusePercent, 1)
+        : undefined,
       time_to_first_valid_ms: optionalRound(input.camera.timeToFirstValidMs, 1),
     },
     device: input.device,
@@ -183,7 +206,9 @@ export function classifyFailure(reason: string): DeviceRunFailureClass {
   if (/operator (?:stopped|aborted)|stopped by (?:the )?operator/iu.test(reason)) {
     return "operator-or-environment-error";
   }
-  if (/camera|permission|secure context|getusermedia/iu.test(reason)) return "camera-error";
+  if (/camera unavailable|camera permission|camera capture|camera stream|camera frame could not be sampled|permission denied|secure context|getusermedia|requires the https receiver/iu.test(reason)) {
+    return "camera-error";
+  }
   if (/decoder|wasm|zxing/iu.test(reason)) return "decode-error";
   if (/different transfer session|wrong.session|pairing/iu.test(reason)) return "session-mismatch";
   if (/rank|not enough independent frames/iu.test(reason)) return "rank-incomplete";

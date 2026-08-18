@@ -44,6 +44,18 @@ describe("registered monochrome Grid PHY", () => {
     expect(result?.contrast).toBeGreaterThan(120);
   });
 
+  it("acquires all four markers through screen glare and camera colour lift", () => {
+    const encoder = makeEncoder(deterministicBytes(8_192));
+    const expected = encoder.frameBytes(12);
+    const captured = skewIntoCapture(upscale(renderGridFrame(expected), 3), 1_280, 720);
+    liftTowardWhite(captured, 0.5);
+
+    const attempt = decodeGridFrame(captured);
+    expect(attempt.outcome).toBe("decoded");
+    expect(attempt.markersFound).toBe(true);
+    expect(attempt.frame).toEqual(expected);
+  });
+
   it("corrects one spatially interleaved bit error in selected codewords", () => {
     const encoder = makeEncoder(deterministicBytes(8_192));
     const expected = encoder.frameBytes(3);
@@ -187,6 +199,17 @@ function degradeCapture(image: PixelBuffer): void {
     const noise = ((pixel * 17 + 11) % 21) - 10;
     for (let channel = 0; channel < 3; channel += 1) {
       image.data[offset + channel] = Math.round(image.data[offset + channel] * 0.72 + noise);
+    }
+  }
+}
+
+function liftTowardWhite(image: PixelBuffer, amount: number): void {
+  for (let pixel = 0; pixel < image.width * image.height; pixel += 1) {
+    const offset = pixel * 4;
+    for (let channel = 0; channel < 3; channel += 1) {
+      image.data[offset + channel] = Math.round(
+        image.data[offset + channel] * (1 - amount) + 255 * amount,
+      );
     }
   }
 }
